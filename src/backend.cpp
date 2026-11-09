@@ -175,7 +175,7 @@ void Backend::applyTuning(QVariantMap tuning) {
         m_actionMessage = tr("Invalid tuning values."); emit actionChanged(); return;
     }
     const auto power = tuning.value("enginePower").toDouble();
-    if (!Protocol::enginePower(power)) { m_actionMessage = tr("Engine power must be between 0.5 and 3."); emit actionChanged(); return; }
+    if (!Protocol::enginePower(power)) { m_actionMessage = tr("Enter a finite positive power multiplier."); emit actionChanged(); return; }
     parameters.insert("enginePower", power);
     const auto gravity = tuning.value("gravity").toDouble();
     if (!Protocol::gravity(gravity)) { m_actionMessage = tr("Gravity must be between -30 and 0 m/s²."); emit actionChanged(); return; }
@@ -185,8 +185,24 @@ void Backend::applyTuning(QVariantMap tuning) {
     send("tuning", parameters);
 }
 void Backend::carAction(const QString &name) {
-    if (!QStringList{"repair", "ignite", "extinguish", "deflate"}.contains(name)) return;
+    if (!QStringList{"repair", "ignite", "extinguish", "deflate", "dealer", "stability"}.contains(name)) return;
     send(name);
+}
+void Backend::applyHandling(QVariantMap settings) {
+    const auto data = QJsonObject::fromVariantMap(settings);
+    if (!Protocol::handling(data)) { m_actionMessage = tr("Invalid handling values."); emit actionChanged(); return; }
+    send("handling", data);
+}
+void Backend::applyGears(const QString &ratios) {
+    if (ratios.size() > 24000) { m_actionMessage = tr("Gear ratios exceed the command size limit."); emit actionChanged(); return; }
+    QJsonArray values;
+    for (const auto &part : ratios.trimmed().split(QRegularExpression("[,;\\s]+"), Qt::SkipEmptyParts)) {
+        bool ok; const auto ratio = part.toDouble(&ok);
+        if (!ok) { m_actionMessage = tr("Separate numeric gear ratios with spaces or commas."); emit actionChanged(); return; }
+        values.append(ratio);
+    }
+    if (!Protocol::gears(values)) { m_actionMessage = tr("Enter forward ratios between 0.01 and 100, within 24 KB."); emit actionChanged(); return; }
+    send("gears", QJsonObject{{"ratios", values}});
 }
 void Backend::toggleFavorite(const QString &model) {
     if (!Protocol::identity(model)) return;
@@ -257,7 +273,7 @@ void Backend::setDemo() {
     m_pending.clear(); m_pendingAction.clear();
     m_error.clear();
     m_state = QJsonDocument::fromJson(R"({"connected":true,"multiplayer":true,"beammpLoaded":true,"server":"Coastal cruising · EU","map":"west_coast_usa","vehicle":"etk800","fps":89,"vehicleCount":14,"sessionSeconds":1452,"distance":18420,"topSpeed":62.5,"playerCount":3,"mpVehicleCount":5,"ping":32,"telemetry":{"speed":28.6,"rpm":3240,"gear":4,"fuel":0.72,"throttle":0.42,"brake":0,"coolant":88,"oil":96},"players":[{"name":"CoastDriver","local":true,"ping":32,"vehicles":1},{"name":"Apex","ping":48,"vehicles":2},{"name":"Tourer","ping":61,"vehicles":2}]})").object().toVariantMap();
-    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.4.0");
+    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.5.0");
     m_state.insert("controlsAvailable", true); m_state.insert("sampleHz", 20);
     m_state.insert("gameSeen", true); m_state.insert("fpsAverage", 86); m_state.insert("fpsMinimum", 63);
     m_gameSeen = true;

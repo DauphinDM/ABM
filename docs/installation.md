@@ -76,7 +76,8 @@ extensions.unload("beamdeck"); extensions.load("beamdeck")
 
 The user folder defaults to `~/.local/share/BeamNG/BeamNG.drive/current` on
 Linux. Do not assume it matches a cloud profile or a relocated installation.
-Garage actions accept bridge 0.3/0.4; Car actions need 0.4.
+Garage actions accept bridge 0.3/0.4/0.5; original Car actions need 0.4 or 0.5.
+The development workshop's handling/gearbox/bounce and uncapped power need 0.5.
 
 ## Migrating a previous development installation
 

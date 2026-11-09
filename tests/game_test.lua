@@ -1,5 +1,12 @@
 -- Strict public-API/socket mocks: no game process or real socket is contacted.
 local sent, objects, inbound, commands = {}, {}, {}, {}
+local m, vmEnv
+serialize=function(value)
+  if type(value)=='string' then return string.format('%q',value) end
+  if type(value)~='table' then return tostring(value) end
+  local out={}; for k,v in pairs(value) do out[#out+1]='['..serialize(k)..']='..serialize(v) end
+  return '{'..table.concat(out,',')..'}'
+end
 local peer, closed
 local udp = {
   settimeout=function(_,value) assert(value==0) end,
@@ -27,7 +34,10 @@ local vehicle={getID=function() return 42 end,getJBeamFilename=function() return
   getDirectionVector=function() return {x=1,y=0,z=0} end,
   queueLuaCommand=function(_,lua)
     if lua:find('local e = electrics.values',1,true) then vehicleCommand=lua
-    else vehicleCommands[#vehicleCommands+1]=lua end
+    else
+      vehicleCommands[#vehicleCommands+1]=lua
+      if vmEnv and lua:find('abmTuning',1,true) then local f=assert(loadstring(lua)); setfenv(f,vmEnv); f() end
+    end
   end}
 quatFromDir=function() return {w=1,x=0,y=0,z=0} end
 spawn={safeTeleport=function(veh,pos,rot,a,b,c,d,repair) assert(veh==vehicle and repair==true); return true end,
@@ -38,10 +48,10 @@ getPlayerVehicle=function() return vehicle end
 local last
 jsonEncode=function(data) last=data; objects[#objects+1]=data; return 'encoded' end
 jsonDecode=function(bytes) return commands[bytes] end
-local m=dofile('game/lua/ge/extensions/beamdeck.lua')
+m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.4.0')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.5.0')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
@@ -107,34 +117,68 @@ local mods={multiplayerbeammp={active=false}}
 core_modmanager={getMods=function() return mods end,activateMod=function(name) assert(name=='multiplayerbeammp');mods[name].active=true end}
 assert(request('enableBeamMP').ok and mods.multiplayerbeammp.active)
 assert(not request('runLua',{code='1'}).ok)
--- Tuning: the cheat channel validates bounds, reaches the vehicle Lua and the
--- environment API, and re-applies itself on snapshot ticks.
+-- Execute vehicle scripts and their result callbacks; queued != successful.
+local engine={torqueCurve={[1000]=200,[2000]=300},idleTorque=50}
+local limits, friction, brakes={}, {}, 1
+local hydro={inputSource='steering_input',inputFactor=2}
+local gearbox={maxGearIndex=2,minGearIndex=-1,gearRatios={[-1]=-3,[0]=0,[1]=3,[2]=2},setGearIndex=function(self,i) self.gearIndex=i end}
+for _,field in ipairs({'gearWhineCoefsOutput','gearWhineCoefsInput','synchroWear','previouslyReportedSynchroWear',
+  'shiftAllowedNonClutchAVDifference','shiftRequiredClutchInput','shiftMaxSynchroAVCapability','shiftMaxSynchroRate','synchroWearCoef'}) do
+  gearbox[field]={[-1]=1,[0]=1,[1]=1,[2]=1}
+end
+vmEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngine=engine} end,
+  getDevicesByType=function() return {gearbox} end,calculateTreeInertia=function() end},
+  wheels={wheels={[0]={},[1]={isTireDeflated=true}},scaleBrakeTorque=function(value) brakes=value end},
+  hydros={hydros={hydro}},controller={getController=function() return nil end},
+  v={data={beams={{cid=4,beamDeform=100,beamStrength=200}},wheels={[0]={treadNodes={5}},[1]={treadNodes={6}}},
+    nodes={[5]={frictionCoef=1.2,slidingFrictionCoef=.8},[6]={frictionCoef=1}}}},
+  obj={setBeamDeform=function(_,cid,value) limits.deform=value end,
+    setBeamStrength=function(_,cid,value) limits.strength=value end,
+    setNodeFrictionSlidingCoefs=function(_,cid,a,b) friction[cid]={a,b} end,
+    getID=function() return 42 end,queueGameEngineLua=function(_,script)
+      local f=assert(loadstring(script)); setfenv(f,setmetatable({extensions={beamdeck=m}}, {__index=_G})); f()
+    end}, extensions={load=function() end}}, {__index=_G})
+local module=assert(loadfile('game/lua/vehicle/extensions/abmTuning.lua')); setfenv(module,vmEnv)
+vmEnv.extensions.abmTuning=module()
 vehicleCommands={}
-assert(not request('tuning',{enginePower=5}).ok)
+assert(not request('tuning',{enginePower=0}).ok)
+assert(not request('tuning',{enginePower=math.huge}).ok)
 assert(not request('tuning',{gravity=-40}).ok)
 assert(not request('tuning',{damageImmunity='yes'}).ok)
 assert(request('tuning',{enginePower=1.5,gravity=-3.71,damageImmunity=true}).ok)
-assert(#vehicleCommands>=1 and vehicleCommands[1]:find('beamdeckBase',1,true) and vehicleCommands[1]:find('switch',1,true)==nil)
-assert(vehicleCommands[1]:find('1.5',1,true) and vehicleCommands[1]:find('true',1,true))
 assert(envGravity==-3.71)
--- Execute the queued code, rather than merely checking its text. Category
--- results may be keyed by device name, and repeated applies must not compound.
-local engine={torqueCurve={[1000]=200,[2000]=300},idleTorque=50}
-local limits={}
-local tuningEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngine=engine} end},
-  v={data={beams={{cid=4,beamDeform=100,beamStrength=200}}}},
-  obj={setBeamDeform=function(_,cid,value) limits.deform=value end,
-    setBeamStrength=function(_,cid,value) limits.strength=value end}}, {__index=_G})
-local tuneCode=assert(loadstring(vehicleCommands[1])); setfenv(tuneCode,tuningEnv)
-tuneCode(); tuneCode()
+assert(request('tuning',{enginePower=1.5,damageImmunity=true}).ok)
 assert(engine.torqueCurve[1000]==300 and limits.deform==1e30)
-vehicleCommands={}
+assert(request('tuning',{enginePower=50,damageImmunity=false}).ok and engine.torqueCurve[1000]==10000)
+assert(not request('tuning',{enginePower=1e308,damageImmunity=true}).ok and engine.torqueCurve[1000]==10000)
 assert(request('tuning',{enginePower=1,gravity=-9.81,damageImmunity=false}).ok)
-tuneCode=assert(loadstring(vehicleCommands[1])); setfenv(tuneCode,tuningEnv); tuneCode()
 assert(engine.torqueCurve[1000]==200 and limits.deform==100 and limits.strength==200)
 vehicleCommands={}
 m.onUpdate(4) -- next snapshot tick re-applies the cheat to the same vehicle
-assert(vehicleCommands[1] and vehicleCommands[1]:find('beamdeckBase',1,true))
+assert(vehicleCommands[1] and vehicleCommands[1]:find('abmTuning',1,true))
+local handling={tireGrip=2,slidingGrip=3,brakePower=4,steeringResponse=1.5}
+assert(request('handling',handling).ok and brakes==4 and hydro.inputFactor==3)
+assert(request('handling',handling).ok and hydro.inputFactor==3)
+assert(friction[5][1]==2.4 and math.abs(friction[5][2]-2.4)<1e-12 and friction[6]==nil)
+assert(not request('stability').ok)
+vmEnv.controller.getController=function() return {isExisting=true,toggleESCMode=function() end} end
+assert(request('stability').ok)
+assert(not request('dealer').ok)
+local bounced=false; vehicle.why=function(_,text) assert(text=='this dealer'); bounced=true end
+assert(request('dealer').ok and bounced)
+speed=25; assert(not request('gears',{ratios={3,2,1}}).ok)
+speed=0; local many={}; for i=1,200 do many[i]=1/i end
+many[200]=.01 -- minimum supported ratio
+for i=101,199 do many[i]=.01 end
+assert(request('gears',{ratios=many}).ok and gearbox.maxGearIndex==200 and gearbox.gearIndex==0)
+assert(gearbox.gearRatios[-1]==-3 and gearbox.gearRatios[0]==0 and gearbox.synchroWear[200]~=nil)
+assert(request('gears',{ratios={3,2,1}}).ok and gearbox.maxGearIndex==3 and gearbox.gearRatios[4]==nil)
+assert(not request('gears',{ratios={0}}).ok)
+vmEnv.extensions.abmTuning.onReset()
+assert(gearbox.maxGearIndex==2 and gearbox.gearRatios[3]==nil and hydro.inputFactor==2)
+MPVehicleGE.isOwn=function() return false end
+assert(not request('handling',handling).ok and not request('dealer').ok)
+MPVehicleGE.isOwn=function() return true end
 -- Car actions: repair requires a stopped vehicle, the rest just fire.
 speed=25
 assert(not request('repair').ok)

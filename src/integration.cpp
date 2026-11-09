@@ -137,7 +137,8 @@ bool Integration::installBridge() {
         setMessage(tr("Choose the BeamNG user folder in Settings (run the game once first).")); return false;
     }
     if (!writeBridgeFile(":/bridge/beamdeck.lua", "lua/ge/extensions/beamdeck.lua", "-- Telemetry is read-only")
-        || !writeBridgeFile(":/bridge/modScript.lua", "scripts/beamdeck/modScript.lua", "-- User-folder startup script")) {
+        || !writeBridgeFile(":/bridge/modScript.lua", "scripts/beamdeck/modScript.lua", "-- User-folder startup script")
+        || !writeBridgeFile(":/bridge/abmTuning.lua", "lua/vehicle/extensions/abmTuning.lua", "-- ABM vehicle tuning")) {
         if (m_message.isEmpty()) setMessage(tr("Could not install the bridge. Check folder permissions."));
         return false;
     }

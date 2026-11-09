@@ -23,7 +23,7 @@ BeamNG GE Lua bridge (game user folder)
 | `src/previews.*` | Bounded local image registration, loose/archive image reads |
 | `src/Main.qml` and components | Basic-style dashboard, dialogs, keyboard/UI behavior |
 | `src/theme.*`, `src/translator.*` | Omarchy theme/language integration and fallback |
-| `game/` | User-folder GE extension/startup script |
+| `game/` | User-folder GE bridge, startup script and vehicle tuning extension |
 | `plugin/AbmWidget.qml`, `AbmModel.js` | Omarchy popup/bar and bounded parsing |
 | `bin/` | Build, test, installation, integration and Windows deployment |
 | `pkgbuild/` | Arch package, desktop entry, service and icon |
@@ -64,11 +64,20 @@ session ID and request ID; replies route to their requester. Bridge-side bounds
 and ownership/movement checks form a second fence. Catalogs/configurations are
 chunked and bounded; arbitrary source code is not accepted as an action payload.
 
-Tuning commands generate fixed vehicle Lua from bounded numeric/boolean values.
+Tuning commands generate fixed vehicle Lua from validated numeric/boolean values.
 Curve baselines live on each engine device to prevent compounded scaling. Beam
 limits restore from the vehicle's original JBeam data. Reapplication is scoped
-to the previously tuned vehicle ID; gravity is global. The acknowledgement is
-not a vehicle-VM completion callback or measured readback.
+to the previously tuned vehicle ID; gravity is global. Bridge 0.5 dispatches to
+`lua/vehicle/extensions/abmTuning.lua` and routes vehicle-ID/request-ID-matched
+completion callbacks, with a 10-second game-side timeout and bounded duplicate
+suppression. Reapplication is silent. Old fire/repair/tire actions still report
+queued/submitted work. None of these acknowledgements is measured readback.
+
+Engine power has no artificial multiplier ceiling; the vehicle preflights
+derived torque for finite results. Handling values have explicit ranges.
+Gear arrays are limited by a 24 KB serialized budget, not a fixed gear count.
+Manual-gearbox indexed tables grow together; an extension reset hook restores
+their original dimensions before the game's own powertrain reset runs.
 
 ## Files and persistence
 

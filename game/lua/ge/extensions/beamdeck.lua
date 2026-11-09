@@ -8,6 +8,7 @@ local metadata, metadataTime = {}, -10
 local models, allowedModels = nil, {}
 local catalogQueue, extensionLoaded = {}
 local completed, completedOrder = {}, {}
+local pending = {}
 
 local function call(module, method, ...)
   if module and type(module[method]) == 'function' then
@@ -143,29 +144,8 @@ end
   local tuning = {}
 
   local function tuningVehicleCommand(power, damageImmune)
-    local factor = string.format('%.6g', power or 1)
-    return string.format([[
-local factor = %s
-local immune = %s
-local engines = powertrain and powertrain.getDevicesByCategory and
-  powertrain.getDevicesByCategory('engine') or {}
-for _, d in pairs(engines) do
-  if d.torqueCurve then
-    if not d.beamdeckBase then
-      d.beamdeckBase, d.beamdeckIdle = {}, d.idleTorque
-      for k, val in pairs(d.torqueCurve) do d.beamdeckBase[k] = val end
-    end
-    for k, val in pairs(d.beamdeckBase) do d.torqueCurve[k] = val * factor end
-    if d.beamdeckIdle then d.idleTorque = d.beamdeckIdle * factor end
-  end
-end
-for _, beam in pairs(v.data.beams or {}) do
-  if type(beam.beamDeform) == 'number' and type(beam.beamStrength) == 'number' then
-    obj:setBeamDeform(beam.cid, immune and 1e30 or beam.beamDeform)
-    obj:setBeamStrength(beam.cid, immune and 1e30 or beam.beamStrength)
-  end
-end
-]], factor, damageImmune == true and 'true' or 'false')
+    return 'pcall(function() extensions.load("abmTuning"); extensions.abmTuning.execute("tuning",' ..
+      serialize({enginePower=power or 1,damageImmunity=damageImmune == true}) .. ') end)'
   end
 
   local function applyTuning()
@@ -176,36 +156,69 @@ end
     tuning.appliedTime = clock
   end
 
-  local function tuningAction(command, result)
+  local function receiveControl(id, sourceVehicle, ok, message)
+    local entry = pending[id]
+    if not entry or entry.vehicle ~= sourceVehicle then return end
+    pending[id] = nil
+    entry.result(ok == true, short(message, 256) or 'Vehicle tuning finished.')
+  end
+
+  local function vehicleAction(command, result)
     local vehicle = getPlayerVehicle and getPlayerVehicle(0)
     if not vehicle then result(false,'Select a vehicle first.'); return end
     if not owned(vehicle:getID(), call(MPCoreNetwork, 'isMPSession') == true) then
       result(false,'Select your own vehicle first.'); return
     end
+    local name = command.action
+    if name == 'gears' and vehicle:getVelocity():length() > 1 then result(false,'Stop before changing gearbox ratios.'); return end
+    if name == 'dealer' then
+      if type(vehicle.why) ~= 'function' then result(false,'This game build has no Why This Dealer easter egg.'); return end
+      local ok = pcall(function() vehicle:why('this dealer') end)
+      result(ok, ok and 'Why This Dealer? Bounce command sent. Reset the vehicle to stop.' or 'The game rejected the bounce command.')
+      return
+    end
     local power, gravity, immune = command.enginePower, command.gravity, command.damageImmunity
-    if power ~= nil and (type(power) ~= 'number' or power ~= power or power < 0.5 or power > 3) then
-      result(false,'Engine power multiplier must be between 0.5 and 3.'); return
-    end
-    if gravity ~= nil and (type(gravity) ~= 'number' or gravity ~= gravity or gravity < -30 or gravity > 0) then
-      result(false,'Gravity must be between -30 and 0 m/s2.'); return
-    end
-    if immune ~= nil and type(immune) ~= 'boolean' then
-      result(false,'Damage immunity must be on or off.'); return
-    end
-    if gravity ~= nil and (not core_environment or type(core_environment.setGravity) ~= 'function') then
-      result(false,'Gravity controls unavailable.'); return
-    end
-    if power ~= nil then tuning.power = power end
-    if immune ~= nil then tuning.damage = immune end
-    if gravity ~= nil and type(core_environment) == 'table'
-      and type(core_environment.setGravity) == 'function' then
-      if not pcall(core_environment.setGravity, gravity) then
-        result(false,'The game rejected the gravity change.'); return
+    if name == 'tuning' then
+      if power ~= nil and (type(power) ~= 'number' or power ~= power or power <= 0 or power == math.huge) then
+        result(false,'Enter a finite positive power multiplier.'); return
       end
-      tuning.gravity = gravity
+      if gravity ~= nil and (type(gravity) ~= 'number' or gravity ~= gravity or gravity < -30 or gravity > 0) then
+        result(false,'Gravity must be between -30 and 0 m/s2.'); return
+      end
+      if immune ~= nil and type(immune) ~= 'boolean' then
+        result(false,'Damage immunity must be on or off.'); return
+      end
+      if gravity ~= nil and (not core_environment or type(core_environment.setGravity) ~= 'function') then
+        result(false,'Gravity controls unavailable.'); return
+      end
     end
-    applyTuning()
-    result(true,'Tuning sent to the selected vehicle. Gravity affects the whole world.')
+    if count(pending) >= 16 then result(false,'Too many pending vehicle actions.'); return end
+    local settings = command
+    if name == 'tuning' then settings = {enginePower=power or 1,damageImmunity=immune == true} end
+    local selected = vehicle:getID()
+    pending[command.requestId] = {vehicle=selected,time=clock,result=function(ok, message)
+      if ok and name == 'tuning' then
+        tuning = {power=settings.enginePower,damage=settings.damageImmunity,appliedTo=selected,appliedTime=clock}
+        if gravity ~= nil then
+          local changed = pcall(core_environment.setGravity, gravity)
+          if not changed then result(false,'Vehicle tuning applied, but gravity was rejected.'); return end
+          tuning.gravity = gravity
+        end
+      end
+      result(ok,message)
+    end}
+    local script = string.format([[
+local ok, message = pcall(function()
+  extensions.load('abmTuning')
+  if not extensions.abmTuning then error('Install the updated ABM vehicle bridge.') end
+  return extensions.abmTuning.execute(%q, %s)
+end)
+obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveControl(' ..
+  string.format('%%q', %q) .. ',' .. tostring(obj:getID()) .. ',' .. tostring(ok) .. ',' ..
+  string.format('%%q', tostring(message):sub(1,256)) .. ') end')
+]], name, serialize(settings), command.requestId)
+    local queued = pcall(function() vehicle:queueLuaCommand(script) end)
+    if not queued then pending[command.requestId] = nil; result(false,'Could not queue vehicle tuning.') end
   end
 
   local function funAction(name, result)
@@ -244,10 +257,12 @@ end
     or #command.requestId == 0 or #command.requestId > 80 then return end
   local name, id = command.action, command.requestId
   if completed[id] then send(completed[id]); return end
+  if pending[id] then return end
   local function result(ok, message)
     local response = {kind='result',requestId=id,ok=ok,message=message}
     if name == 'spawn' or name == 'replace' or name == 'switch' or name == 'enableBeamMP'
-      or name == 'tuning' or name == 'repair' or name == 'ignite' or name == 'extinguish' or name == 'deflate' then
+      or name == 'tuning' or name == 'repair' or name == 'ignite' or name == 'extinguish' or name == 'deflate'
+      or name == 'handling' or name == 'gears' or name == 'stability' or name == 'dealer' then
       completed[id] = response; completedOrder[#completedOrder+1] = id
       if #completedOrder > 128 then completed[table.remove(completedOrder,1)] = nil end
     end
@@ -273,11 +288,11 @@ end
     return
   end
   if name ~= 'spawn' and name ~= 'replace' and name ~= 'switch' and name ~= 'tuning'
-    and not ({repair=true, ignite=true, extinguish=true, deflate=true})[name] then
+    and not ({repair=true, ignite=true, extinguish=true, deflate=true, handling=true, gears=true, stability=true, dealer=true})[name] then
     result(false,'Unsupported action'); return
   end
-  if name == 'tuning' then
-    tuningAction(command, result)
+  if ({tuning=true,handling=true,gears=true,stability=true,dealer=true})[name] then
+    vehicleAction(command, result)
     return
   end
   if ({repair=true, ignite=true, extinguish=true, deflate=true})[name] then
@@ -325,7 +340,7 @@ local function snapshot()
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
     version = short(beamng_versionb), beammpLoaded = mp ~= nil,
-    bridgeVersion = '0.4.0', controlsAvailable = true, sampleHz = 20,
+    bridgeVersion = '0.5.0', controlsAvailable = true, sampleHz = 20,
     gameFolder=FS and FS.getGamePath and FS:getGamePath(),
     userFolder=FS and FS.getUserPath and FS:getUserPath(),
     multiplayer = multiplayer, joining = call(mp, 'isGoingMPSession') == true,
@@ -396,19 +411,22 @@ local function onExtensionLoaded()
   if not udp then log('E', 'beamdeck', 'Cannot create telemetry socket'); return end
   udp:settimeout(0)
   udp:setpeername('127.0.0.1',44444)
-  log('I', 'abm', 'ABM 0.4: telemetry, garage actions, and tuning on localhost:44444')
+  log('I', 'abm', 'ABM 0.5: telemetry, garage, and sandbox controls on localhost:44444')
 end
 
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   timer = timer + (dtReal or 0)
+  for id, entry in pairs(pending) do
+    if clock - entry.time > 10 then pending[id] = nil; entry.result(false,'Vehicle tuning timed out. The game may be paused.') end
+  end
   if not udp then return end
   -- Connected UDP only accepts datagrams from the local receiver's port.
   if udp.receive then
     for _=1,8 do
       local bytes = udp:receive()
       if not bytes then break end
-      if #bytes <= 4096 then
+      if #bytes <= 32768 then
         local ok, data = pcall(jsonDecode,bytes)
         if ok then
           local worked, err = pcall(action,data)
@@ -436,6 +454,7 @@ local function onUpdate(dtReal)
 end
 
 M.receiveVehicle = receiveVehicle
+M.receiveControl = receiveControl
 M.onExtensionLoaded = onExtensionLoaded
 M.onUpdate = onUpdate
 M.onClientStartMission = function()
@@ -444,6 +463,7 @@ M.onClientStartMission = function()
   metadataTime, models, allowedModels = -10, nil, {}
   catalogQueue, extensionLoaded = {}, nil
   completed, completedOrder = {}, {}
+  pending = {}
   tuning = {}
 end
 M.onExtensionUnloaded = function() if udp then udp:close(); udp = nil end end

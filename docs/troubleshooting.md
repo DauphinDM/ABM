@@ -25,7 +25,10 @@ the actual game is connected.
 
 ## Car controls are unavailable or do not change the car
 
-Car controls need bridge **0.4.0**, a loaded active vehicle and ownership.
+Original Car controls need bridge **0.4.0**; new handling, gearbox, bounce and
+uncapped power need **0.5.0**, a loaded active vehicle and ownership. Install the
+bridge again so both GE and vehicle extensions are copied, then restart the game
+when convenient. A paused physics VM may time out; this is not reported as success.
 The bridge installed on disk is not necessarily the one loaded in the running
 game. New controls won't load until reload/restart.
 

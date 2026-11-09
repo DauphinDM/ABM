@@ -25,18 +25,46 @@ or opens diagnostics. Pausing is local display behavior, not a game pause.
 
 ## Car: editing and sandbox actions
 
-Select an active vehicle in BeamNG and load bridge 0.4.0. Adjust **Engine power**,
+Select an active vehicle in BeamNG and load bridge 0.5.0 for the full workshop
+(0.4 retains its original power/world controls). Choose **Power & world**, **Grip &
+handling**, **Gearbox**, or **Fun & recovery**. Adjust **Engine power**,
 **Gravity** and **Deformation immunity**, then choose **Apply tuning**.
 
 | Control | Range / behavior |
 | --- | --- |
-| Engine power | 50–300%, scaling supported engines' runtime torque curves |
+| Engine power | Slider 50–300%; numeric entry accepts any finite positive percentage, scaling supported engines' runtime torque curves; rejects derived overflow |
 | Gravity | −30 to 0 m/s²; affects all world objects |
 | Planet presets | Earth, Moon, Mars, Venus, Jupiter, Pluto, zero gravity; apply immediately |
 | Beam protection | Raises deformation/strength thresholds; disabling restores stock thresholds |
 | Repair | Attempts repair in place; vehicle must be stopped (≤1 m/s) |
 | Fire / Extinguish | Queue the game's vehicle fire functions |
 | Deflate tires | Queues the game's tire-deflation function |
+| Grip / sliding grip | Independently scale intact tire tread static/sliding friction, 0–10× |
+| Brakes | Scale service and parking brake torque, 0–10× |
+| Steering response | Scale steering hydro input from its baseline, 0.1–3×; physical limits remain |
+| ESC / traction mode | Cycle the supported vehicle ESC controller's existing modes |
+| Forward gear ratios | Space/comma/semicolon-separated ratios, 0.01–100 each; supported manual gearboxes only |
+| Why This Dealer? | Call the actual `vehicle:why("this dealer")` easter egg if available; reset the vehicle to stop |
+
+### Handling and extra gears (development 0.5)
+
+Apply handling explicitly; the values shown start at stock **1×** and are not
+live readback. Tire damage and thermal/custom controllers may override changes.
+Deflated/broken tires are skipped, not repaired. Reset restores stock handling.
+
+The gearbox editor accepts more than the factory gear count. **+ Gear** appends
+a progressively taller ratio; you can edit/paste the entire list. There is no
+fixed gear-count cap, but a **24 KB serialized ratio-array budget** bounds each
+request. This is not mathematically unlimited. Automatic, DCT and CVT devices
+are deliberately unsupported. Stop first (≤1 m/s); applying selects neutral,
+rebuilds indexed synchronizer/sound tables from the captured baseline, and may
+restore captured synchronizer wear. Use sequential shift controls for added
+gears. Reset the vehicle to restore its stock gearbox.
+
+The meme button uses the real easter egg, not a replacement impulse. Builds
+without that method report it unavailable. New vehicle actions report the
+vehicle VM's response; this confirms script execution, not measured handling.
+Actual in-game effects still need gameplay validation.
 
 Repeated power changes scale the saved base curve rather than compounding the
 previous multiplier. Not every engine/motor/mod has the same powertrain API;

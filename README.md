@@ -6,7 +6,7 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Version 0.4.0 · First private preview release.** The repository and its releases
+**Latest release: 0.4.0 · Development: 0.5.0.** The repository and its releases
 are private. This is an independent project, not affiliated with BeamNG or BeamMP.
 
 ## What it does
@@ -14,7 +14,7 @@ are private. This is an independent project, not affiliated with BeamNG or BeamM
 | Page | Features |
 | --- | --- |
 | **Drive** | Speed/RPM gauge, gear, fuel, speed history, coolant, boost, warnings |
-| **Car** | 50–300% torque multiplier, gravity slider/planet presets, reversible beam protection, repair, fire/extinguish, tire deflation |
+| **Car** | Power slider + uncapped numeric entry, gravity, beam protection, grip/brakes/steering, manual gearbox ratios, ESC modes, bouncing-car easter egg, repair/fire/tires (new controls require 0.5) |
 | **Garage** | Search real installed models and configurations, preview photos, custom configs, favorites, spawn/replace confirmations |
 | **Session** | Trip time/distance, top/average speed, FPS history, searchable multiplayer players, owned vehicles |
 
@@ -27,6 +27,9 @@ opaque text, and the live Omarchy accent. English is included. The standalone
 app works without Omarchy; Windows support remains experimental.
 
 ## Documentation
+
+The 0.5 workshop additions are development features, not part of the published
+0.4 preview. See the [changelog](CHANGELOG.md) for limits and validation status.
 
 - [Installation and migration](docs/installation.md)
 - [User guide, tuning behavior and shortcuts](docs/user-guide.md)

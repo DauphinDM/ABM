@@ -1,5 +1,7 @@
 #pragma once
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QRegularExpression>
 #include <cmath>
 
@@ -8,7 +10,23 @@ namespace Protocol {
 // bridge re-validates, so these are the outer fence only.
 inline bool enginePower(const QJsonValue &value) {
     const auto v = value.toDouble();
-    return value.isDouble() && std::isfinite(v) && v >= 0.5 && v <= 3.0;
+    return value.isDouble() && std::isfinite(v) && v > 0;
+}
+inline bool handling(const QJsonObject &data) {
+    for (const auto key : {"tireGrip", "slidingGrip", "brakePower", "steeringResponse"}) {
+        const auto value = data.value(key);
+        const auto n = value.toDouble(-1);
+        if (!value.isDouble() || !std::isfinite(n) || n < (QString(key) == "steeringResponse" ? .1 : 0)
+            || n > (QString(key) == "steeringResponse" ? 3 : 10)) return false;
+    }
+    return true;
+}
+inline bool gears(const QJsonValue &value) {
+    if (!value.isArray() || value.toArray().isEmpty()) return false;
+    if (QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact).size() > 24000) return false;
+    for (const auto ratio : value.toArray())
+        if (!ratio.isDouble() || !std::isfinite(ratio.toDouble()) || ratio.toDouble() < .01 || ratio.toDouble() > 100) return false;
+    return true;
 }
 inline bool gravity(const QJsonValue &value) {
     const auto v = value.toDouble();

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0 — Unreleased
+
+- Split the Car workshop into Power & world, Grip & handling, Gearbox, and Fun.
+- Keep the power slider and add positive numeric percentages without a fixed cap.
+  Reject non-finite input and derived torque overflow before mutation.
+- Add static/sliding tire grip, brake strength and steering-response multipliers,
+  plus the supported vehicle ESC/traction-mode cycle. Skip damaged tires.
+- Add editable forward ratios and an Add Gear button for verified manual
+  gearboxes. No fixed gear-count cap; a 24 KB serialized command budget applies.
+  Grow synchro/sound tables together and restore stock on vehicle reset.
+- Add the real `why("this dealer")` bounce command when the game exposes it.
+- Report vehicle-VM completion/errors for new sandbox actions and tuning rather
+  than treating a queued script as successful. Legacy fun actions still queue.
+- Preserve 0.3/0.4 compatibility and require bridge 0.5 for the new features.
+- Real-game effects remain unverified; this does not change release v0.4.0.
+
 ## 0.4.0 — 2026-11-09
 
 First private GitHub preview release as **ABM — Advanced BeamNG.Drive Manager**.

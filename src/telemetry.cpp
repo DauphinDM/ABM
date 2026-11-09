@@ -141,7 +141,7 @@ Telemetry::Telemetry(const QString &path, QObject *parent) : QObject(parent), m_
             connect(client, &QLocalSocket::readyRead, this, [this, client] {
                 auto &buffer = m_buffers[client];
                 buffer += client->readAll();
-                if (buffer.size() > 8192) { client->abort(); return; }
+                if (buffer.size() > 32768) { client->abort(); return; }
                 while (buffer.contains('\n')) {
                     const int index = buffer.indexOf('\n');
                     const auto line = buffer.left(index); buffer.remove(0, index + 1);
@@ -318,15 +318,18 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     if (!m_lastPacket.isValid() || m_lastPacket.elapsed() >= 3000) {
         reply(false, tr("Game is not running; start BeamNG first.")); return;
     }
-    if (!QStringList{"catalog", "configs", "enableBeamMP", "spawn", "replace", "switch", "tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) || m_requests.size() >= 16 || m_requests.contains(id)) {
+    if (!QStringList{"catalog", "configs", "enableBeamMP", "spawn", "replace", "switch", "tuning", "repair", "ignite", "extinguish", "deflate", "handling", "gears", "stability", "dealer"}.contains(action) || m_requests.size() >= 16 || m_requests.contains(id)) {
         reply(false, tr("Unsupported action or too many pending requests.")); return;
     }
     const bool driveAction = QStringList{"spawn", "replace", "switch"}.contains(action);
     const auto bridgeVersion = m_data.value("bridgeVersion").toString();
-    if (QStringList{"tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) && bridgeVersion != "0.4.0") {
+    if (QStringList{"handling", "gears", "stability", "dealer"}.contains(action) && bridgeVersion != "0.5.0") {
+        reply(false, tr("Install the bridge and restart BeamNG for the 0.5 sandbox controls.")); return;
+    }
+    if (QStringList{"tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) && bridgeVersion != "0.4.0" && bridgeVersion != "0.5.0") {
         reply(false, tr("Restart BeamNG to load the updated Car controls.")); return;
     }
-    if (!m_data.value("controlsAvailable").toBool() || (bridgeVersion != "0.3.0" && bridgeVersion != "0.4.0")) {
+    if (!m_data.value("controlsAvailable").toBool() || (bridgeVersion != "0.3.0" && bridgeVersion != "0.4.0" && bridgeVersion != "0.5.0")) {
         reply(false, tr("Reload the ABM game extension to enable car controls.")); return;
     }
     if (action == "catalog" && !m_catalogRequest.isEmpty()) { reply(false, tr("A catalog request is already running.")); return; }
@@ -348,12 +351,12 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
         command.insert("vehicleId", vehicle);
     }
     if (action == "tuning") {
-        if (bridgeVersion != "0.4.0") {
-            reply(false, tr("Restart the game so the updated bridge with tuning loads.")); return;
-        }
         const auto power = message.value("enginePower");
         if (!power.isUndefined() && !power.isNull() && !Protocol::enginePower(power)) {
-            reply(false, tr("Engine power must be between 0.5 and 3.")); return;
+            reply(false, tr("Enter a finite positive power multiplier.")); return;
+        }
+        if (bridgeVersion == "0.4.0" && power.isDouble() && (power.toDouble() < .5 || power.toDouble() > 3)) {
+            reply(false, tr("Power beyond 50–300% needs bridge 0.5. Install it and restart BeamNG.")); return;
         }
         const auto gravity = message.value("gravity");
         if (!gravity.isUndefined() && !gravity.isNull() && !Protocol::gravity(gravity)) {
@@ -367,7 +370,15 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
         if (!gravity.isUndefined() && !gravity.isNull()) command.insert("gravity", gravity.toDouble());
         if (!immunity.isUndefined() && !immunity.isNull()) command.insert("damageImmunity", immunity.toBool());
     }
-    if (driveAction) {
+    if (action == "handling") {
+        if (!Protocol::handling(message)) { reply(false, tr("Invalid handling values.")); return; }
+        for (const auto key : {"tireGrip", "slidingGrip", "brakePower", "steeringResponse"}) command.insert(key, message.value(key));
+    }
+    if (action == "gears") {
+        if (!Protocol::gears(message.value("ratios"))) { reply(false, tr("Invalid ratios or command size exceeded.")); return; }
+        command.insert("ratios", message.value("ratios"));
+    }
+    if (driveAction || action == "gears") {
         const auto t = m_data.value("telemetry").toObject();
         if (t.contains("speed") && t.value("speed").toDouble() > 1) { reply(false, tr("Stop before changing vehicles.")); return; }
     }

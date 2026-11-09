@@ -8,6 +8,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
+#include <QQuickStyle>
 #include <QTemporaryDir>
 #include <QBuffer>
 #include <QtTest>
@@ -65,6 +66,10 @@ class AbmTests : public QObject {
         QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(bytes),bytes.size());
     }
 private slots:
+    void initTestCase() {
+        // Exercise the same customizable controls as the app on every platform.
+        QQuickStyle::setStyle("Basic");
+    }
     void rejectsInvalidPackets() {
         for (const auto &p : {QByteArray("[]"),QByteArray("null"),QByteArray("{}"),QByteArray("{bad"),QByteArray(40000,'x'),QByteArray(R"({"schema":2,"source":"beamdeck"})")})
             QVERIFY(Telemetry::sanitize(p).isEmpty());
@@ -92,12 +97,18 @@ private slots:
         QCOMPARE(Telemetry::cleanName("^1Red ^2Green ^nUnderlined"),"Red Green Underlined");
     }
     void tuningBoundsMatchTheBridge() {
-        // The bridge accepts 0.5–3 power, -30–0 gravity, boolean immunity only.
+        // Power has no artificial ceiling. Non-finite and non-positive fail.
         QVERIFY(Protocol::enginePower(QJsonValue(1.0)) && Protocol::enginePower(QJsonValue(0.5)) && Protocol::enginePower(QJsonValue(3.0)));
-        QVERIFY(!Protocol::enginePower(QJsonValue(0.49)) && !Protocol::enginePower(QJsonValue(3.01)) && !Protocol::enginePower(QJsonValue(-1)));
+        QVERIFY(Protocol::enginePower(QJsonValue(0.01)) && Protocol::enginePower(QJsonValue(1e100)));
+        QVERIFY(!Protocol::enginePower(QJsonValue(0)) && !Protocol::enginePower(QJsonValue(-1)));
         QVERIFY(Protocol::gravity(QJsonValue(-9.81)) && Protocol::gravity(QJsonValue(0.0)) && Protocol::gravity(QJsonValue(-30.0)));
         QVERIFY(!Protocol::gravity(QJsonValue(-30.01)) && !Protocol::gravity(QJsonValue(0.01)) && !Protocol::gravity(QJsonValue(9)));
         QVERIFY(!Protocol::enginePower(QJsonValue("1")) && !Protocol::gravity(QJsonValue(true)));
+        QVERIFY(Protocol::handling({{"tireGrip",2.0},{"slidingGrip",0.0},{"brakePower",10.0},{"steeringResponse",.1}}));
+        QVERIFY(!Protocol::handling({{"tireGrip",11.0},{"slidingGrip",1.0},{"brakePower",1.0},{"steeringResponse",1.0}}));
+        QJsonArray ratios; for (int i=0;i<200;++i) ratios.append(.5);
+        QVERIFY(Protocol::gears(ratios)); QVERIFY(!Protocol::gears(QJsonArray{0}));
+        QVERIFY(!Protocol::gears(QJsonArray{"1"})); QVERIFY(!Protocol::gears(QJsonArray{}));
     }
     void tuningRoundTripAndBusyRequest() {
         Fixture f; QVERIFY(f.start());
@@ -111,6 +122,22 @@ private slots:
         backend.applyTuning({{"enginePower",2.0},{"gravity",0.0},{"damageImmunity",false}});
         f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true},{"message","Queued"}});
         QTRY_VERIFY(!backend.busy()); QCOMPARE(backend.tuning().value("enginePower").toDouble(),1.5);
+    }
+    void sandboxCommandsRequireNewBridgeAndStop() {
+        Fixture f; QVERIFY(f.start());
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("bridgeVersion","0.4.0"); f.send(state);
+        Backend backend(f.path); QTRY_VERIFY(backend.connected()); QTest::qWait(100);
+        backend.carAction("dealer"); QTRY_VERIFY(!backend.busy());
+        QVERIFY(backend.actionMessage().contains("0.5")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("bridgeVersion","0.5.0"); state.insert("telemetry",QJsonObject{{"speed",0}}); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.5.0"));
+        backend.applyGears("3.5, 2.1 1 .8"); QTRY_VERIFY(f.game.hasPendingDatagrams());
+        auto command=f.command(); QCOMPARE(command.value("ratios").toArray().size(),4);
+        f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
+        state.insert("telemetry",QJsonObject{{"speed",20}}); f.send(state);
+        QTRY_COMPARE(backend.state().value("telemetry").toMap().value("speed").toDouble(),20.0);
+        backend.applyGears("3,2,1"); QTRY_VERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
+        backend.applyGears("3, nope"); QVERIFY(!backend.busy()); QVERIFY(backend.actionMessage().contains("numeric"));
     }
     void preferencesStayInTestDirectory() {
         QTemporaryDir dir; Backend first(dir.filePath("state.json"));
@@ -226,7 +253,7 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.4.0")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.5.0")); file.close();
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());
         QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(),QByteArray("User-owned unrelated extension"));
     }
