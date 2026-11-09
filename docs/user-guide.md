@@ -46,7 +46,8 @@ handling**, **Gearbox**, or **Fun & recovery**. Adjust **Engine power**,
 | Steering response | Scale steering hydro input from its baseline, 0.1–3×; physical limits remain |
 | ESC / traction mode | Cycle the supported vehicle ESC controller's existing modes |
 | Forward gear ratios | Space/comma/semicolon-separated ratios, 0.01–100 each; supported manual gearboxes only |
-| Why This Dealer? | Call the actual `vehicle:why("this dealer")` easter egg if available; reset the vehicle to stop |
+| Why This Dealer? / Stop bouncing | Start with `vehicle:why("this dealer")`, stop with `vehicle:why("stop")`; Stop needs bridge 0.6.1, no reset needed |
+| Dimensions | Experimental independent width/length/height, 0.5–2× captured shape; stopped and single-player only; bridge 0.6.1 |
 
 ### Handling and extra gears (development 0.5)
 
@@ -75,6 +76,30 @@ measurement. Higher torque can cause overheating or mechanical failure.
 
 Beam protection is **not complete godmode**: tires, powertrain components and
 other systems can still fail. It cannot repair existing deformation.
+
+### Physical dimensions (development 0.6.1)
+
+Car → **Dimensions · experimental** exposes three independent sliders. Accept
+the physics warning, stop bouncing and stop the vehicle, then Apply. Multiplayer
+is refused, including your own vehicles. Broken beams require repair/reset first.
+
+The first apply captures the current physical node shape and beam rest lengths.
+Further applies are relative to that capture, not compounded. Width/length use
+the car's own orientation; height scales around its captured lowest node. Beam
+rest lengths follow endpoint scaling while preserving their captured preload.
+This uses the same node/rest-length/commit APIs as the game's state loader, not
+an editor-only visual scale. **1× returns to the captured shape, not necessarily
+an undamaged factory shape. Reset the vehicle for stock geometry.**
+
+This is an experimental sandbox deformation, not a complete vehicle rebuild:
+mass, tire radius/pressure, hydro targets, controllers, props and drivetrain
+parameters are not rescaled. Suspension may fight the change, meshes may distort,
+and the vehicle may become unstable or damaged. No saved JBeam/config is edited.
+The API path and math are mock-tested; actual game physics remain unverified.
+
+Bounce can also be stopped immediately from the game's **GE Lua** console:
+`be:getPlayerVehicle(0):why("stop")`, provided a vehicle is selected and the
+game exposes the easter egg. The ABM Stop button checks availability/ownership.
 
 ### Engine strength and protection (development 0.6)
 

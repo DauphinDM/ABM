@@ -26,6 +26,13 @@ inline bool engine(const QJsonObject &data) {
     return strength.isDouble() && std::isfinite(strength.toDouble()) && strength.toDouble() >= .1
         && strength.toDouble() <= 100 && data.value("engineIndestructible").isBool();
 }
+inline bool dimensions(const QJsonObject &data) {
+    for (const auto key : {"width", "length", "height"}) {
+        const auto value = data.value(key);
+        if (!value.isDouble() || !std::isfinite(value.toDouble()) || value.toDouble() < .5 || value.toDouble() > 2) return false;
+    }
+    return true;
+}
 inline bool gears(const QJsonValue &value) {
     if (!value.isArray() || value.toArray().isEmpty()) return false;
     if (QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact).size() > 24000) return false;

@@ -185,7 +185,7 @@ void Backend::applyTuning(QVariantMap tuning) {
     send("tuning", parameters);
 }
 void Backend::carAction(const QString &name) {
-    if (!QStringList{"repair", "ignite", "extinguish", "deflate", "dealer", "stability"}.contains(name)) return;
+    if (!QStringList{"repair", "ignite", "extinguish", "deflate", "dealer", "dealerStop", "stability"}.contains(name)) return;
     send(name);
 }
 void Backend::applyHandling(QVariantMap settings) {
@@ -197,6 +197,11 @@ void Backend::applyEngine(QVariantMap settings) {
     const auto data = QJsonObject::fromVariantMap(settings);
     if (!Protocol::engine(data)) { m_actionMessage = tr("Engine strength must be 0.1–100×, with protection on or off."); emit actionChanged(); return; }
     send("engine", data);
+}
+void Backend::applyDimensions(QVariantMap settings) {
+    const auto data = QJsonObject::fromVariantMap(settings);
+    if (!Protocol::dimensions(data)) { m_actionMessage = tr("Width, length and height must each be 0.5–2×."); emit actionChanged(); return; }
+    send("dimensions", data);
 }
 void Backend::applyGears(const QString &ratios) {
     if (ratios.size() > 24000) { m_actionMessage = tr("Gear ratios exceed the command size limit."); emit actionChanged(); return; }
@@ -278,7 +283,7 @@ void Backend::setDemo() {
     m_pending.clear(); m_pendingAction.clear();
     m_error.clear();
     m_state = QJsonDocument::fromJson(R"({"connected":true,"multiplayer":true,"beammpLoaded":true,"server":"Coastal cruising · EU","map":"west_coast_usa","vehicle":"etk800","fps":89,"vehicleCount":14,"sessionSeconds":1452,"distance":18420,"topSpeed":62.5,"playerCount":3,"mpVehicleCount":5,"ping":32,"telemetry":{"speed":28.6,"rpm":3240,"gear":4,"fuel":0.72,"throttle":0.42,"brake":0,"coolant":88,"oil":96},"players":[{"name":"CoastDriver","local":true,"ping":32,"vehicles":1},{"name":"Apex","ping":48,"vehicles":2},{"name":"Tourer","ping":61,"vehicles":2}]})").object().toVariantMap();
-    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.6.0");
+    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.6.1");
     m_state.insert("controlsAvailable", true); m_state.insert("sampleHz", 20);
     m_state.insert("gameSeen", true); m_state.insert("fpsAverage", 86); m_state.insert("fpsMinimum", 63);
     m_gameSeen = true;

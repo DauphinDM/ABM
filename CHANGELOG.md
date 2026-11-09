@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.6.0 — Unreleased
+## 0.6.1 — Unreleased
+
+- Add a separate Stop bouncing button using the real `vehicle:why("stop")`
+  command. No reset, guessed toggle state, or repair is needed.
+- Add independent 0.5–2× width, length and height sliders. Experimental
+  physical-node/rest-length scaling, preserving captured preload and mass;
+  stopped, single-player and unbroken-beam guards. Reset restores stock.
+  Controllers/tires/props are not rebuilt; real-game behavior remains unverified.
+- Require bridge 0.6.1 for both additions; retain older action compatibility.
+- Canonicalize Windows CLI-test temp/skill paths before checking containment,
+  accommodating 8.3 aliases without weakening the isolated-HOME requirement.
+  The preceding Windows run passed all Qt tests and failed this path assertion;
+  the updated Windows job still needs to pass.
+
+## 0.6.0 — Development snapshot
 
 - Add a 0.1–100× combustion-engine strength slider and immediate protection
   toggle. Scale stock torque tolerance and over-torque/over-rev damage budgets

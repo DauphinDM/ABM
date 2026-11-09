@@ -1,6 +1,7 @@
 -- ABM vehicle tuning: fixed actions only, with preflight before mutation.
 local M = {}
 local gearBase
+local dimensionBase
 local engineBases = {}
 local strengthFields = {'maxTorqueRating', 'maxOverTorqueDamage', 'maxOverRevDamage'}
 local protectionMethods = {'lockUp', 'onBreak', 'applyDeformGroupDamage', 'checkHydroLocking', 'scaleOutputTorque'}
@@ -178,6 +179,69 @@ local function gears(ratios)
   return 'Manual gearbox ratios applied. Shift with sequential up/down controls; reset the vehicle to restore stock.'
 end
 
+-- Use the same node/rest-length/commit API as beamstate.load. Scale physical
+-- nodes in the car's own axes, not the scene object's purely visual transform.
+local function dimensions(settings)
+  local width, length, height = settings.width, settings.length, settings.height
+  if not between(width, .5, 2) or not between(length, .5, 2) or not between(height, .5, 2) then error('Dimensions must be 0.5–2x on each axis.') end
+  for _, method in ipairs({'getNodePosition','setNodePosition','getBeamRestLength','setBeamLength','beamIsBroken','commitLoad','getDirectionVector','getDirectionVectorUp'}) do
+    if type(obj[method]) ~= 'function' then error('Physical resizing API unavailable: '..method) end
+  end
+  local function unit(p)
+    if not finite(p.x) or not finite(p.y) or not finite(p.z) then error('Invalid vehicle orientation.') end
+    local n = math.sqrt(p.x*p.x+p.y*p.y+p.z*p.z)
+    if not between(n, .9, 1.1) then error('Invalid vehicle orientation.') end
+    return {x=p.x/n,y=p.y/n,z=p.z/n}
+  end
+  local function dot(a,b) return a.x*b.x+a.y*b.y+a.z*b.z end
+  local forward, up = unit(obj:getDirectionVector()), unit(obj:getDirectionVectorUp())
+  if math.abs(dot(forward,up)) > .01 then error('Vehicle orientation axes are not orthogonal.') end
+  local right = unit({x=forward.y*up.z-forward.z*up.y,y=forward.z*up.x-forward.x*up.z,z=forward.x*up.y-forward.y*up.x})
+  for _, beam in pairs(v.data.beams or {}) do
+    if obj:beamIsBroken(beam.cid) then error('Repair/reset the vehicle before resizing broken beams.') end
+  end
+  local base = dimensionBase
+  if not base then
+    base = {nodes={},beams={},bottom=math.huge}
+    for _, node in pairs(v.data.nodes or {}) do
+      local p = obj:getNodePosition(node.cid)
+      if not finite(p.x) or not finite(p.y) or not finite(p.z) then error('Invalid node geometry.') end
+      local point = {x=dot(p,right),y=dot(p,forward),z=dot(p,up)}
+      base.nodes[node.cid] = point
+      base.bottom = math.min(base.bottom,point.z)
+    end
+    if not next(base.nodes) then error('No physical nodes available.') end
+    for _, beam in pairs(v.data.beams or {}) do
+      local a,b = base.nodes[beam.id1],base.nodes[beam.id2]
+      local rest = obj:getBeamRestLength(beam.cid)
+      if not a or not b or not finite(rest) or rest <= 0 then error('Unsupported beam geometry.') end
+      local dx,dy,dz = a.x-b.x,a.y-b.y,a.z-b.z
+      local span = math.sqrt(dx*dx+dy*dy+dz*dz)
+      if not finite(span) or span < 1e-9 then error('Cannot resize coincident beam endpoints.') end
+      base.beams[#base.beams+1] = {cid=beam.cid,dx=dx,dy=dy,dz=dz,span=span,rest=rest}
+    end
+  end
+  -- Precompute everything before the first mutation. Preserve beam preload,
+  -- mass and the bottom of the captured car; never compound repeated applies.
+  local positions, rests = {}, {}
+  for cid,p in pairs(base.nodes) do
+    local x,y,z = p.x*width,p.y*length,base.bottom+(p.z-base.bottom)*height
+    local q = {x=right.x*x+forward.x*y+up.x*z,y=right.y*x+forward.y*y+up.y*z,z=right.z*x+forward.z*y+up.z*z}
+    if not finite(q.x) or not finite(q.y) or not finite(q.z) then error('Scaled node would overflow.') end
+    positions[cid] = vec3(q.x,q.y,q.z)
+  end
+  for _,b in ipairs(base.beams) do
+    local rest = b.rest*math.sqrt((b.dx*width)^2+(b.dy*length)^2+(b.dz*height)^2)/b.span
+    if not finite(rest) or rest <= 0 then error('Scaled beam would overflow.') end
+    rests[b.cid] = rest
+  end
+  dimensionBase = base
+  for cid,p in pairs(positions) do obj:setNodePosition(cid,p) end
+  for cid,rest in pairs(rests) do obj:setBeamLength(cid,rest) end
+  obj:commitLoad()
+  return 'Experimental physical dimensions applied. Suspension/controllers may fight scaling; reset the vehicle to restore stock.'
+end
+
 local function stability()
   local esc = controller and controller.getController and controller.getController('esc')
   if not esc or not esc.isExisting or type(esc.toggleESCMode) ~= 'function' then error('This vehicle has no supported ESC controller.') end
@@ -188,6 +252,7 @@ end
 local function execute(action, settings)
   if action == 'tuning' then return tuning(settings)
   elseif action == 'engine' then return engineStrength(settings)
+  elseif action == 'dimensions' then return dimensions(settings)
   elseif action == 'handling' then return apply(settings)
   elseif action == 'gears' then return gears(settings.ratios)
   elseif action == 'stability' then return stability()
@@ -197,6 +262,7 @@ end
 
 M.execute = execute
 M.onReset = function()
+  dimensionBase = nil -- The physics reset restores stock node geometry.
   for device, base in pairs(engineBases) do restoreEngine(device, base) end
   engineBases = {}
   -- Vehicle extensions reset before powertrain/controllers. Restore dimensions

@@ -113,6 +113,10 @@ private slots:
         QVERIFY(Protocol::engine({{"engineStrength",100.0},{"engineIndestructible",false}}));
         QVERIFY(!Protocol::engine({{"engineStrength",100.1},{"engineIndestructible",false}}));
         QVERIFY(!Protocol::engine({{"engineStrength",1.0},{"engineIndestructible","yes"}}));
+        QVERIFY(Protocol::dimensions({{"width",.5},{"length",2.0},{"height",1.0}}));
+        QVERIFY(!Protocol::dimensions({{"width",0.0},{"length",1.0},{"height",1.0}}));
+        QVERIFY(!Protocol::dimensions({{"width",1.0},{"length",2.01},{"height",1.0}}));
+        QVERIFY(!Protocol::dimensions({{"width","1"},{"length",1.0},{"height",1.0}}));
     }
     void tuningRoundTripAndBusyRequest() {
         Fixture f; QVERIFY(f.start());
@@ -160,6 +164,27 @@ private slots:
         QTRY_VERIFY(!backend.busy()); QCOMPARE(backend.actionMessage(),QString("Engine protection ON"));
         backend.applyEngine({{"engineStrength",0.0},{"engineIndestructible",true}});
         QVERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
+    }
+    void dimensionsAndBounceStopRequire061() {
+        Fixture f; QVERIFY(f.start()); Backend backend(f.path); QTRY_VERIFY(backend.connected());
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("bridgeVersion","0.6.0"); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.0"));
+        backend.carAction("dealerStop"); QTRY_VERIFY(!backend.busy());
+        QVERIFY(backend.actionMessage().contains("0.6.1")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("bridgeVersion","0.6.1"); state.insert("multiplayer",false); state.insert("telemetry",QJsonObject{{"speed",0}}); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.1"));
+        backend.applyDimensions({{"width",1.5},{"length",.8},{"height",1.2},{"code","ignored"}});
+        QTRY_VERIFY(f.game.hasPendingDatagrams()); auto command=f.command();
+        QCOMPARE(command.value("action").toString(),QString("dimensions")); QCOMPARE(command.value("width").toDouble(),1.5); QVERIFY(!command.contains("code"));
+        f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
+        backend.carAction("dealerStop"); QTRY_VERIFY(f.game.hasPendingDatagrams()); command=f.command();
+        QCOMPARE(command.value("action").toString(),QString("dealerStop"));
+        f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
+        state.insert("multiplayer",true); f.send(state); QTRY_VERIFY(backend.state().value("multiplayer").toBool());
+        backend.applyDimensions({{"width",1.0},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("multiplayer",false); state.insert("telemetry",QJsonObject{{"speed",5}}); f.send(state);
+        QTRY_COMPARE(backend.state().value("telemetry").toMap().value("speed").toDouble(),5.0);
+        backend.applyDimensions({{"width",1.0},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
     }
     void preferencesStayInTestDirectory() {
         QTemporaryDir dir; Backend first(dir.filePath("state.json"));
@@ -275,7 +300,7 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.6.0")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.6.1")); file.close();
         QVERIFY(QFileInfo::exists(dir.filePath("lua/vehicle/extensions/abmTuning.lua")));
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());
         QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(),QByteArray("User-owned unrelated extension"));

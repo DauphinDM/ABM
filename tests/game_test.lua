@@ -40,7 +40,8 @@ local vehicle={getID=function() return 42 end,getJBeamFilename=function() return
     end
   end}
 quatFromDir=function() return {w=1,x=0,y=0,z=0} end
-spawn={safeTeleport=function(veh,pos,rot,a,b,c,d,repair) assert(veh==vehicle and repair==true); return true end,
+local repairs=0
+spawn={safeTeleport=function(veh,pos,rot,a,b,c,d,repair) assert(veh==vehicle and repair==true); repairs=repairs+1; return true end,
   spawnNewVehicle=function() end}
 local envGravity
 core_environment={setGravity=function(g) envGravity=g end}
@@ -51,7 +52,7 @@ jsonDecode=function(bytes) return commands[bytes] end
 m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.6.0')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.6.1')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
@@ -187,8 +188,39 @@ assert(not request('stability').ok)
 vmEnv.controller.getController=function() return {isExisting=true,toggleESCMode=function() end} end
 assert(request('stability').ok)
 assert(not request('dealer').ok)
-local bounced=false; vehicle.why=function(_,text) assert(text=='this dealer'); bounced=true end
+local bounced=false; vehicle.why=function(_,text) assert(text=='this dealer' or text=='stop'); bounced=text~='stop' end
 assert(request('dealer').ok and bounced)
+assert(request('dealerStop').ok and not bounced)
+assert(request('dealerStop').ok and not bounced) -- Stops effects started elsewhere, too.
+local shape,rest,commits={[5]={x=-1,y=-2,z=0},[6]={x=1,y=2,z=1}},math.sqrt(21),0
+local broken=false
+vmEnv.v.data.nodes[5].cid=5; vmEnv.v.data.nodes[6].cid=6
+vmEnv.v.data.beams[1].id1=5; vmEnv.v.data.beams[1].id2=6
+vmEnv.vec3=function(x,y,z) return {x=x,y=y,z=z} end
+vmEnv.obj.getDirectionVector=function() return {x=0,y=-1,z=0} end
+vmEnv.obj.getDirectionVectorUp=function() return {x=0,y=0,z=1} end
+vmEnv.obj.getNodePosition=function(_,cid) return shape[cid] end
+vmEnv.obj.setNodePosition=function(_,cid,p) shape[cid]=p end
+vmEnv.obj.getBeamRestLength=function() return rest end
+vmEnv.obj.setBeamLength=function(_,cid,n) assert(cid==4); rest=n end
+vmEnv.obj.beamIsBroken=function() return broken end
+vmEnv.obj.commitLoad=function() commits=commits+1 end
+local sizes={width=2,length=.5,height=1.5}
+assert(not request('dimensions',sizes).ok and commits==0) -- Multiplayer, even own car.
+MPCoreNetwork.isMPSession=function() return false end
+speed=5; assert(not request('dimensions',sizes).ok and commits==0)
+speed=0; broken=true; assert(not request('dimensions',sizes).ok and commits==0)
+broken=false; assert(request('dimensions',sizes).ok and commits==1)
+assert(shape[5].x==-2 and shape[5].y==-1 and shape[5].z==0)
+assert(shape[6].x==2 and shape[6].y==1 and shape[6].z==1.5 and math.abs(rest-math.sqrt(22.25))<1e-12)
+assert(request('dimensions',sizes).ok and shape[6].x==2 and commits==2)
+-- Turning the vehicle must rotate its captured dimensions, not use world axes.
+vmEnv.obj.getDirectionVector=function() return {x=1,y=0,z=0} end
+assert(request('dimensions',sizes).ok and shape[6].x==-1 and shape[6].y==2)
+assert(not request('dimensions',{width=3,length=1,height=1}).ok and commits==3)
+vmEnv.obj.getDirectionVector=function() return {x=0,y=-1,z=0} end
+assert(request('dimensions',{width=1,length=1,height=1}).ok and shape[6].x==1)
+MPCoreNetwork.isMPSession=function() return true end
 speed=25; assert(not request('gears',{ratios={3,2,1}}).ok)
 speed=0; local many={}; for i=1,200 do many[i]=1/i end
 many[200]=.01 -- minimum supported ratio
@@ -198,21 +230,27 @@ assert(gearbox.gearRatios[-1]==-3 and gearbox.gearRatios[0]==0 and gearbox.synch
 assert(request('gears',{ratios={3,2,1}}).ok and gearbox.maxGearIndex==3 and gearbox.gearRatios[4]==nil)
 assert(not request('gears',{ratios={0}}).ok)
 vmEnv.extensions.abmTuning.onReset()
+shape={[5]={x=-1,y=-2,z=0},[6]={x=3,y=2,z=1}}; rest=math.sqrt(33)
+MPCoreNetwork.isMPSession=function() return false end
+assert(request('dimensions',{width=2,length=1,height=1}).ok and shape[6].x==6) -- Reset drops the old capture.
+MPCoreNetwork.isMPSession=function() return true end
 assert(gearbox.maxGearIndex==2 and gearbox.gearRatios[3]==nil and hydro.inputFactor==2)
 assert(engine.maxTorqueRating==500 and engine.maxOverRevDamage==1500 and engine.lockUp==damageHook)
 MPVehicleGE.isOwn=function() return false end
 assert(not request('handling',handling).ok and not request('dealer').ok)
 assert(not request('engine',{engineStrength=2,engineIndestructible=true}).ok)
+assert(not request('dealerStop').ok)
 MPVehicleGE.isOwn=function() return true end
 -- Car actions: repair requires a stopped vehicle, the rest just fire.
 speed=25
 assert(not request('repair').ok)
 speed=0
 vehicleCommands={}
-assert(request('repair').ok and vehicleCommands[1]==nil)
-assert(request('ignite').ok and vehicleCommands[1]=='fire.igniteVehicle()')
-assert(request('extinguish').ok and vehicleCommands[2]=='fire.extinguishVehicle()')
-assert(request('deflate').ok and vehicleCommands[3]=='beamstate.deflateTires()')
+assert(request('repair').ok and repairs==1)
+-- Periodic tuning reapply can interleave with these independent fire commands.
+assert(request('ignite').ok and table.concat(vehicleCommands,'\n'):find('fire.igniteVehicle()',1,true))
+assert(request('extinguish').ok and table.concat(vehicleCommands,'\n'):find('fire.extinguishVehicle()',1,true))
+assert(request('deflate').ok and table.concat(vehicleCommands,'\n'):find('beamstate.deflateTires()',1,true))
 assert(not request('launchMissiles').ok)
 -- Verify multi-frame configurations are chunked, complete and never silently lost.
 for i=1,60 do configurations['config'..i]={Configuration='Config '..i,pcFilename='/vehicles/etk800/config'..i..'.pc'} end

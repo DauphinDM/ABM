@@ -9,8 +9,10 @@ import sys
 binary = Path(os.environ.get('BEAMSIDE_BINARY', Path(__file__).resolve().parent.parent / ('build/release/abm.exe' if sys.platform == 'win32' else 'build/abm')))
 scratch_parent = '/tmp/opencode' if Path('/tmp/opencode').is_dir() else None
 with tempfile.TemporaryDirectory(prefix='beamdeck-cli-', dir=scratch_parent) as scratch:
-    root = Path(scratch)
-    env = dict(os.environ, HOME=scratch, USERPROFILE=scratch, APPDATA=str(root / 'roaming'), LOCALAPPDATA=str(root / 'local'), XDG_CONFIG_HOME=str(root / 'config'), XDG_RUNTIME_DIR=scratch)
+    # Windows temp paths may contain 8.3 aliases while Qt returns long names.
+    # Compare canonical paths, and still require the installed file inside HOME.
+    root = Path(scratch).resolve()
+    env = dict(os.environ, HOME=str(root), USERPROFILE=str(root), APPDATA=str(root / 'roaming'), LOCALAPPDATA=str(root / 'local'), XDG_CONFIG_HOME=str(root / 'config'), XDG_RUNTIME_DIR=str(root))
     env.update(BEAMSIDE_CONFIG_DIR=str(root/'config'), BEAMSIDE_RUNTIME_DIR=str(root/'runtime'))
     def run(*args, ok=True):
         result = subprocess.run([str(binary), *args], env=env, text=True, capture_output=True)
@@ -21,8 +23,8 @@ with tempfile.TemporaryDirectory(prefix='beamdeck-cli-', dir=scratch_parent) as 
     run('preferences', '--units', 'bad', '--json', ok=False)
     run('preferences', '--favorite', '../bad', '--json', ok=False)
     result = run('skill', 'install', '--json')
-    target = Path(result['path'])
-    assert target.is_relative_to(root) and target.is_file()
+    target = Path(result['path']).resolve()
+    assert target.is_relative_to(root) and target.is_file(), (target, root)
     run('skill', 'install', '--json')
     target.write_text('Existing user content')
     run('skill', 'install', '--json', ok=False)

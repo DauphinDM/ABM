@@ -1,5 +1,18 @@
 # ABM visual audit
 
+## 0.6.1 — bounce stop and physical dimensions
+
+- Captured and inspected Fun and Dimensions at 440×700; both fit, zero QML
+  warnings. Local evidence: `/tmp/opencode/abm-061-audit/` (not release assets).
+- One review run: 27 Qt tests passed. Lua reached/passed the new scaling,
+  reset, ownership and bounce-stop cases, then failed an older repair assertion
+  that assumed background tuning never interleaved. Fixed that assertion to
+  check the actual repair call, and fire assertions to allow background tuning.
+  No second full-suite run after the review fixes.
+- Physical gameplay remains unverified; experimental warning/consent and
+  stopped/single-player gates are explicit. Windows path-normalization fix
+  awaits CI; no claim of a passing Windows build yet.
+
 Demo captures are reproduced below; private desktop evidence is kept locally,
 not committed. Rebranded demo screenshots are included in this directory.
 
