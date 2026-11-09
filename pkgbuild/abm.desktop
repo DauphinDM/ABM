@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ABM
+Comment=Advanced BeamNG.Drive Manager — tuning, garage, launch controls and live dashboard
+Exec=abm open
+Icon=abm
+Terminal=false
+Categories=Game;Utility;
+StartupWMClass=abm

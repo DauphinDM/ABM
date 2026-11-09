@@ -1,0 +1,23 @@
+[Unit]
+Description=ABM (Advanced BeamNG.Drive Manager) telemetry receiver
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/abm serve
+Restart=on-failure
+RestartSec=3
+UMask=0077
+RuntimeDirectory=abm
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+ReadWritePaths=%t/abm
+Environment=GSETTINGS_BACKEND=memory
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET
+PrivateTmp=yes
+
+[Install]
+WantedBy=graphical-session.target

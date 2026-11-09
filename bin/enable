@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Install user-owned integration files without replacing unrelated work."""
+import argparse
+import datetime
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--user-folder', type=Path, default=Path.home() / '.local/share/BeamNG/BeamNG.drive/current')
+parser.add_argument('--json', action='store_true')
+args = parser.parse_args()
+root = Path(__file__).resolve().parent.parent
+if not (root / 'plugin').is_dir():
+    root = Path('/usr/share')
+user = args.user_folder.expanduser().resolve()
+config = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
+plugin = config / 'omarchy/plugins/snobbledev.abm'
+stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+
+def install_file(source, target):
+    if target.is_symlink():
+        raise RuntimeError(f'Refusing to replace symlink: {target}')
+    if target.exists():
+        if target.read_bytes() == source.read_bytes():
+            return
+        shutil.copy2(target, target.with_name(target.name + '.bak.' + stamp))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as f:
+        temp = Path(f.name)
+        f.write(source.read_bytes())
+        f.flush()
+        os.fsync(f.fileno())
+    temp.chmod(0o644)
+    temp.replace(target)
+
+def run(*command):
+    result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+    if result.stdout:
+        print(result.stdout.rstrip(), file=sys.stderr)
+    if result.stderr:
+        print(result.stderr.rstrip(), file=sys.stderr)
+    result.check_returncode()
+
+try:
+    if not (user / 'beamng.log').is_file():
+        raise RuntimeError(f'Not a recognized BeamNG user folder: {user}')
+    if not shutil.which('abm'):
+        raise RuntimeError('Install the ABM package before enabling it.')
+    plugin_source = root / ('abm-plugin' if root == Path('/usr/share') else 'plugin')
+    game_source = root / ('abm-game' if root == Path('/usr/share') else 'game')
+    run('omarchy', 'plugin', 'validate', str(plugin_source))
+    for source in plugin_source.rglob('*'):
+        if source.is_file():
+            install_file(source, plugin / source.relative_to(plugin_source))
+    for source in game_source.rglob('*'):
+        if source.is_file():
+            install_file(source, user / source.relative_to(game_source))
+    run('omarchy', 'plugin', 'validate', str(plugin))
+    shell = config / 'omarchy/shell.json'
+    if shell.exists():
+        shutil.copy2(shell, shell.with_name(shell.name + '.bak.abm.' + stamp))
+    # Retire the old receiver before claiming its fixed localhost port. Keep
+    # legacy user files and backups intact so the migration is reversible.
+    legacy_unit = config / 'systemd/user/beamdeck.service'
+    if legacy_unit.exists() or (config / 'systemd/user/default.target.wants/beamdeck.service').exists():
+        run('systemctl', '--user', 'disable', '--now', 'beamdeck.service')
+    if (config / 'omarchy/plugins/snobbledev.beamdeck/manifest.json').exists():
+        run('omarchy', 'plugin', 'disable', 'snobbledev.beamdeck')
+    legacy_preferences = config / 'beamdeck'
+    for filename in ('preferences.ini', 'integration.ini'):
+        source, target = legacy_preferences / filename, config / 'abm' / filename
+        if source.is_file() and not target.exists():
+            install_file(source, target)
+    run('systemctl', '--user', 'daemon-reload')
+    run('systemctl', '--user', 'enable', '--now', 'abm.service')
+    run('systemctl', '--user', 'restart', 'abm.service')
+    run('omarchy-shell', 'shell', 'rescanPlugins')
+    run('omarchy', 'plugin', 'enable', 'snobbledev.abm', '--section', 'centerEnd')
+    print(json.dumps({'ok': True, 'plugin': str(plugin), 'gameUserFolder': str(user),
+        'loadCommand': 'extensions.load("beamdeck")'}) if args.json else
+        'ABM enabled. Restart BeamNG when convenient, or run extensions.load("beamdeck") in the GE Lua console.')
+except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+    print(json.dumps({'ok': False, 'error': str(error)}) if args.json else str(error), file=sys.stderr)
+    sys.exit(1)

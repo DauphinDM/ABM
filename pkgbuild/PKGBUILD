@@ -1,0 +1,32 @@
+pkgname=abm
+pkgver=0.4.0
+pkgrel=1
+pkgdesc='ABM (Advanced BeamNG.Drive Manager): tuning, garage, telemetry and Omarchy integration'
+url='https://github.com/DauphinDM/ABM'
+conflicts=('beamdeck')
+replaces=('beamdeck')
+arch=('x86_64' 'aarch64')
+license=('MIT')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'qt6-svg' 'libarchive')
+makedepends=('gcc' 'make')
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/.."
+  ./bin/build
+}
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 build/abm "$pkgdir/usr/bin/abm"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 pkgbuild/abm.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/abm.svg"
+  install -Dm644 pkgbuild/abm.desktop "$pkgdir/usr/share/applications/abm.desktop"
+  install -Dm644 pkgbuild/abm.service "$pkgdir/usr/lib/systemd/user/abm.service"
+  install -Dm755 bin/enable "$pkgdir/usr/share/abm/bin/enable"
+  install -Dm755 bin/enable "$pkgdir/usr/bin/abm-enable"
+  cp -r plugin "$pkgdir/usr/share/abm-plugin"
+  install -Dm644 game/lua/ge/extensions/beamdeck.lua "$pkgdir/usr/share/abm-game/lua/ge/extensions/beamdeck.lua"
+  install -Dm644 game/scripts/beamdeck/modScript.lua "$pkgdir/usr/share/abm-game/scripts/beamdeck/modScript.lua"
+}

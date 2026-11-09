@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build"
+exec 9>"$ROOT/build/.build.lock"
+flock 9
+cd "$ROOT/build"
+qmake6 "$ROOT/abm.pro"
+make -j"$(nproc)"

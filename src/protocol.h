@@ -1,0 +1,43 @@
+#pragma once
+#include <QJsonObject>
+#include <QRegularExpression>
+#include <cmath>
+
+namespace Protocol {
+// Tuning-range checks shared by the service and the test suite. The vehicle
+// bridge re-validates, so these are the outer fence only.
+inline bool enginePower(const QJsonValue &value) {
+    const auto v = value.toDouble();
+    return value.isDouble() && std::isfinite(v) && v >= 0.5 && v <= 3.0;
+}
+inline bool gravity(const QJsonValue &value) {
+    const auto v = value.toDouble();
+    return value.isDouble() && std::isfinite(v) && v >= -30.0 && v <= 0.0;
+}
+inline bool model(const QString &value) {
+    return QRegularExpression("^[A-Za-z0-9_-]{1,80}$").match(value).hasMatch();
+}
+inline bool config(const QString &value) {
+    if (value.isEmpty() || value.size() > 160 || value == "." || value == "..") return false;
+    for (const auto c : value)
+        if (c.unicode() < 32 || c == '/' || c == '\\' || c.unicode() == 127) return false;
+    return true;
+}
+inline bool identity(const QString &value) {
+    const auto slash = value.indexOf('/');
+    return slash < 0 ? model(value) : model(value.left(slash)) && config(value.mid(slash + 1));
+}
+inline QJsonObject preview(const QJsonValue &value, const QString &modelKey) {
+    const auto input = value.toObject();
+    const auto path = input.value("path").toString();
+    if (!path.startsWith("/vehicles/" + modelKey + "/") || path.size() > 512
+        || path.contains("..") || path.contains('\\')
+        || (!path.endsWith(".jpg", Qt::CaseInsensitive) && !path.endsWith(".png", Qt::CaseInsensitive))) return {};
+    QJsonObject out{{"path", path}};
+    for (const auto key : {"archive", "real"}) {
+        const auto source = input.value(key).toString();
+        if (!source.contains(QChar(0)) && source.size() <= 2048) out.insert(key, source);
+    }
+    return out;
+}
+}

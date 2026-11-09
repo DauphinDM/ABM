@@ -1,0 +1,35 @@
+name: Windows standalone
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          cache: true
+      - name: Install archive reader
+        shell: pwsh
+        run: |
+          $root = $env:VCPKG_INSTALLATION_ROOT
+          "VCPKG_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & "$root/vcpkg.exe" install libarchive:x64-windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build, deploy and test
+        shell: pwsh
+        run: ./bin/build-windows.ps1 -Test
+      - name: Test plugin model
+        run: node tests/plugin_test.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ABM-Windows-x64
+          path: dist/ABM/
+          if-no-files-found: error

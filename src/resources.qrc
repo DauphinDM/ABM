@@ -1,0 +1,12 @@
+<RCC><qresource prefix="/">
+  <file>Main.qml</file>
+  <file>PlainLabel.qml</file>
+  <file>MetricCard.qml</file>
+  <file>DriveGauge.qml</file>
+  <file>TrendChart.qml</file>
+  <file>VariantCard.qml</file>
+  <file>agent-skill.md</file>
+  <file>i18n/en.json</file>
+  <file alias="bridge/beamdeck.lua">../game/lua/ge/extensions/beamdeck.lua</file>
+  <file alias="bridge/modScript.lua">../game/scripts/beamdeck/modScript.lua</file>
+</qresource></RCC>

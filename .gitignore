@@ -1,0 +1,12 @@
+/build/
+/pkgbuild/pkg/
+/pkgbuild/src/
+*.pkg.tar.*
+__pycache__/
+/dist/
+*.log
+*.bak
+*.bak.*
+.env
+.env.*
+!.env.example

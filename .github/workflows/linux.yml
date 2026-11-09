@@ -1,0 +1,17 @@
+name: Linux tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install build and test dependencies
+        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg libarchive python nodejs luajit
+      - uses: actions/checkout@v4
+      - name: Build and test
+        run: ./bin/test

@@ -1,0 +1,42 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const model = vm.createContext({});
+vm.runInContext(fs.readFileSync('plugin/AbmModel.js', 'utf8'), model);
+const now = Date.now();
+const payload = {connected:true, updatedAt:now, multiplayer:true, telemetry:{speed:25}, playerCount:3,
+    server:'<img src="https://example.invalid/tracker">', players:[{name:'<b>A</b>'}]};
+const state = model.parse(JSON.stringify(payload), now);
+assert.equal(state.speed, 25);
+assert.equal(state.playerCount, 3);
+assert.equal(state.server, payload.server);
+assert.equal(state.players, undefined);
+assert.equal(model.cleanTitle('^l^eA ^rServer'), 'A Server');
+assert.equal(model.clickAction(1), 'toggle');
+assert.equal(model.clickAction(2), 'launch');
+assert.equal(model.clickAction(4), 'launch');
+assert.equal(model.clickAction(99), 'none');
+assert.equal(model.clickAction(1, false), 'start');
+assert.equal(model.clickAction(1, true), 'toggle');
+assert.equal(model.parse(JSON.stringify(payload), now + 4000).connected, undefined);
+assert.equal(model.parse(JSON.stringify(payload), now - 4000).connected, undefined);
+for (const text of ['null', '[]', '{}', '{bad', 'x'.repeat(70000)]) assert.equal(model.parse(text, now).connected, undefined);
+payload.telemetry.speed = '<img src="https://example.invalid/tracker">';
+assert.equal(model.parse(JSON.stringify(payload), now).speed, null);
+const widget = fs.readFileSync('plugin/AbmWidget.qml', 'utf8');
+assert.match(widget, /tooltipText: strings.t\("open"\)/);
+assert.doesNotMatch(widget, /tooltipText:.*snapshot/);
+assert.match(widget, /execDetached\(\["abm", "open"\]\)/);
+assert.match(widget, /KeyboardPanel\s*\{/);
+assert.match(widget, /function triggerPress\(mouseButton\)/);
+assert.match(widget, /"launch", "--auto", "--json"/);
+assert.match(widget, /strings.t\("startBeamMP"\)/);
+assert.match(widget, /!isFinite\(value\)/);
+assert.doesNotMatch(widget, /omarchy\.menu|fullscreen|launch-menu/);
+assert.equal((widget.match(/\bText\s*\{/g)||[]).length, (widget.match(/textFormat: Text.PlainText/g)||[]).length);
+for (const file of ['src/PlainLabel.qml', 'src/Main.qml', 'src/MetricCard.qml']) {
+    const source = fs.readFileSync(file, 'utf8');
+    if (file.endsWith('PlainLabel.qml')) assert.match(source, /textFormat: Text.PlainText/);
+    else assert.doesNotMatch(source, /\b(?:Label|Text)\s*\{/);
+}
+console.log('Plugin security/model tests passed');
