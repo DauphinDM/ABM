@@ -1,5 +1,5 @@
 -- ABM vehicle tuning: fixed actions only, with preflight before mutation.
-local M = {}
+local M = {version='0.6.2'}
 local gearBase
 local dimensionBase
 local engineBases = {}
@@ -136,6 +136,47 @@ end
 -- Runtime expansion is deliberately restricted to the verified manual gearbox.
 -- Reverse/neutral are preserved. All indexed synchro/sound tables must grow
 -- together; changing maxGearIndex alone causes nil-index physics failures.
+local function upvalue(fn, wanted)
+  if type(fn) ~= 'function' or not debug or type(debug.getupvalue) ~= 'function' then return end
+  for index=1,100 do
+    local name, value = debug.getupvalue(fn,index)
+    if not name then return end
+    if name == wanted then return value end
+  end
+end
+
+local function controllerShiftPoints(gearbox)
+  -- BeamNG exposes this getter only to its shift-logic module, not through
+  -- mainController. Read named closures, never replace code or guess indices.
+  -- Fail closed on changed/modded controllers before touching the powertrain.
+  local main = controller and controller.mainController
+  local logic = main and upvalue(main.updateGFX,'controlLogicModule')
+  local shared = logic and upvalue(logic.init,'sharedFunctions')
+  if not shared or type(shared.getShiftPoints) ~= 'function'
+    or upvalue(logic.init,'gearbox') ~= gearbox then error('Unsupported shift controller; gearbox left unchanged.') end
+  local points = shared.getShiftPoints()
+  if type(points) ~= 'table' then error('Shift-point table unavailable; gearbox left unchanged.') end
+  for index=gearbox.minGearIndex,gearbox.maxGearIndex do
+    local point = points[index]
+    if type(point) ~= 'table' then error('Missing controller shift points; reset the vehicle first.') end
+    for _, field in ipairs({'lowShiftDownAV','highShiftDownAV','lowShiftUpAV','highShiftUpAV'}) do
+      if not finite(point[field]) or point[field] < 0 then error('Unsupported controller shift points; gearbox left unchanged.') end
+    end
+  end
+  return points
+end
+
+local function copyPoints(points)
+  local out = {}
+  for index, point in pairs(points) do out[index] = type(point)=='table' and copy(point) or point end
+  return out
+end
+
+local function replacePoints(target, source)
+  for index in pairs(target) do target[index]=nil end
+  for index, point in pairs(copyPoints(source)) do target[index]=point end
+end
+
 local function gears(ratios)
   if type(ratios) ~= 'table' or #ratios < 1 then error('Enter forward gear ratios.') end
   for _, ratio in ipairs(ratios) do
@@ -152,30 +193,48 @@ local function gears(ratios)
   for _, field in ipairs(fields) do
     if type(gearbox[field]) ~= 'table' or gearbox[field][template] == nil then error('Unsupported gearbox table: '..field) end
   end
+  local points = controllerShiftPoints(gearbox)
   if not gearBase or gearBase.device ~= gearbox then
     gearBase = {device=gearbox, max=template, count=gearbox.gearCount,
-      minRatio=gearbox.minGearRatio,maxRatio=gearbox.maxGearRatio}
+      minRatio=gearbox.minGearRatio,maxRatio=gearbox.maxGearRatio,
+      points=points,stockPoints=copyPoints(points)}
     for _, field in ipairs(fields) do gearBase[field] = copy(gearbox[field]) end
+  end
+  if points ~= gearBase.points then error('Shift controller changed; reset the vehicle before editing gears.') end
+  local nextPoints = copyPoints(gearBase.stockPoints)
+  for index in pairs(nextPoints) do if type(index)=='number' and index>0 then nextPoints[index]=nil end end
+  for index=1,#ratios do nextPoints[index]=copy(gearBase.stockPoints[math.min(index,gearBase.max)]) end
+  local staged, previous = {}, {}
+  for _, field in ipairs(fields) do
+    previous[field] = gearbox[field]
+    staged[field] = copy(gearBase[field])
+    for index in pairs(staged[field]) do if type(index)=='number' and index>0 then staged[field][index]=nil end end
+    for index=1,#ratios do
+      staged[field][index] = field == 'gearRatios' and ratios[index] or gearBase[field][math.min(index,gearBase.max)]
+    end
   end
   -- The GE bridge requires a stopped vehicle; select neutral before resizing.
   gearbox:setGearIndex(0)
-  for _, field in ipairs(fields) do
-    local base = gearBase[field]
-    local out = copy(base)
-    for index in pairs(out) do if type(index)=='number' and index > 0 then out[index]=nil end end
-    for index=1,#ratios do
-      out[index] = field == 'gearRatios' and ratios[index] or base[math.min(index,gearBase.max)]
-    end
-    gearbox[field] = out
-  end
-  gearbox.maxGearIndex = #ratios
-  gearbox.gearCount = #ratios + math.abs(gearbox.minGearIndex or -1)
+  local oldMax,oldCount,oldLow,oldHigh = gearbox.maxGearIndex,gearbox.gearCount,gearbox.minGearRatio,gearbox.maxGearRatio
+  local oldPoints = copyPoints(points)
   local low, high = math.huge, 0
-  for _, ratio in pairs(gearbox.gearRatios) do
+  for _, ratio in pairs(staged.gearRatios) do
     if ratio ~= 0 then low, high = math.min(low, math.abs(ratio)), math.max(high, math.abs(ratio)) end
   end
-  gearbox.minGearRatio, gearbox.maxGearRatio = low, high
-  powertrain.calculateTreeInertia()
+  local ok, err = pcall(function()
+    replacePoints(points,nextPoints)
+    for _, field in ipairs(fields) do gearbox[field]=staged[field] end
+    gearbox.maxGearIndex,gearbox.gearCount = #ratios,#ratios+math.abs(gearbox.minGearIndex or -1)
+    gearbox.minGearRatio,gearbox.maxGearRatio = low,high
+    powertrain.calculateTreeInertia()
+  end)
+  if not ok then
+    for _, field in ipairs(fields) do gearbox[field]=previous[field] end
+    replacePoints(points,oldPoints)
+    gearbox.maxGearIndex,gearbox.gearCount,gearbox.minGearRatio,gearbox.maxGearRatio = oldMax,oldCount,oldLow,oldHigh
+    pcall(powertrain.calculateTreeInertia)
+    error('Gearbox update failed; previous tables restored: '..tostring(err))
+  end
   return 'Manual gearbox ratios applied. Shift with sequential up/down controls; reset the vehicle to restore stock.'
 end
 
@@ -272,6 +331,7 @@ M.onReset = function()
     for _, field in ipairs(gearFields) do device[field] = copy(gearBase[field]) end
     device.maxGearIndex, device.gearCount = gearBase.max, gearBase.count
     device.minGearRatio, device.maxGearRatio = gearBase.minRatio, gearBase.maxRatio
+    replacePoints(gearBase.points,gearBase.stockPoints)
     gearBase = nil
   end
   for _, hydro in pairs(hydros and hydros.hydros or {}) do

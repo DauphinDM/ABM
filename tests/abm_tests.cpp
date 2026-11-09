@@ -137,8 +137,12 @@ private slots:
         Backend backend(f.path); QTRY_VERIFY(backend.connected()); QTest::qWait(100);
         backend.carAction("dealer"); QTRY_VERIFY(!backend.busy());
         QVERIFY(backend.actionMessage().contains("0.5")); QVERIFY(!f.game.hasPendingDatagrams());
-        state.insert("bridgeVersion","0.5.0"); state.insert("telemetry",QJsonObject{{"speed",0}}); f.send(state);
-        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.5.0"));
+        state.insert("bridgeVersion","0.6.1"); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.1"));
+        backend.applyGears("3,2,1"); QTRY_VERIFY(!backend.busy());
+        QVERIFY(backend.actionMessage().contains("0.6.2")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("bridgeVersion","0.6.2"); state.insert("telemetry",QJsonObject{{"speed",0}}); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.2"));
         backend.applyGears("3.5, 2.1 1 .8"); QTRY_VERIFY(f.game.hasPendingDatagrams());
         auto command=f.command(); QCOMPARE(command.value("ratios").toArray().size(),4);
         f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
@@ -182,6 +186,11 @@ private slots:
         f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
         state.insert("multiplayer",true); f.send(state); QTRY_VERIFY(backend.state().value("multiplayer").toBool());
         backend.applyDimensions({{"width",1.0},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("bridgeVersion","0.6.2"); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.2"));
+        backend.applyDimensions({{"width",1.5},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(f.game.hasPendingDatagrams()); command=f.command();
+        QCOMPARE(command.value("action").toString(),QString("dimensions"));
+        f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
         state.insert("multiplayer",false); state.insert("telemetry",QJsonObject{{"speed",5}}); f.send(state);
         QTRY_COMPARE(backend.state().value("telemetry").toMap().value("speed").toDouble(),5.0);
         backend.applyDimensions({{"width",1.0},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
@@ -300,7 +309,7 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.6.1")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.6.2")); file.close();
         QVERIFY(QFileInfo::exists(dir.filePath("lua/vehicle/extensions/abmTuning.lua")));
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());
         QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(),QByteArray("User-owned unrelated extension"));

@@ -47,7 +47,7 @@ handling**, **Gearbox**, or **Fun & recovery**. Adjust **Engine power**,
 | ESC / traction mode | Cycle the supported vehicle ESC controller's existing modes |
 | Forward gear ratios | Space/comma/semicolon-separated ratios, 0.01–100 each; supported manual gearboxes only |
 | Why This Dealer? / Stop bouncing | Start with `vehicle:why("this dealer")`, stop with `vehicle:why("stop")`; Stop needs bridge 0.6.1, no reset needed |
-| Dimensions | Experimental independent width/length/height, 0.5–2× captured shape; stopped and single-player only; bridge 0.6.1 |
+| Dimensions | Experimental independent width/length/height, 0.5–2× captured shape; stopped, owned car; BeamMP requires bridge 0.6.2 and is local only |
 
 ### Handling and extra gears (development 0.5)
 
@@ -60,9 +60,17 @@ a progressively taller ratio; you can edit/paste the entire list. There is no
 fixed gear-count cap, but a **24 KB serialized ratio-array budget** bounds each
 request. This is not mathematically unlimited. Automatic, DCT and CVT devices
 are deliberately unsupported. Stop first (≤1 m/s); applying selects neutral,
-rebuilds indexed synchronizer/sound tables from the captured baseline, and may
+rebuilds indexed synchronizer/sound and controller shift-point tables from the captured baseline, and may
 restore captured synchronizer wear. Use sequential shift controls for added
 gears. Reset the vehicle to restore its stock gearbox.
+
+**Bridge 0.6.2 is required for all gear edits.** Earlier bridges left the
+controller's shift-point table at its factory size, causing a nil-entry exception
+and vehicle shutdown when arcade mode reached an added gear. Added entries now
+inherit stock top-gear thresholds. This uses named Lua closure introspection to
+reach the game's internal getter (not a stable public API); unsupported/modded
+controllers are refused before mutation. Reset a previously disabled vehicle
+after updating. Driving the fix in the real game remains to be verified.
 
 The meme button uses the real easter egg, not a replacement impulse. Builds
 without that method report it unavailable. New vehicle actions report the
@@ -77,11 +85,15 @@ measurement. Higher torque can cause overheating or mechanical failure.
 Beam protection is **not complete godmode**: tires, powertrain components and
 other systems can still fail. It cannot repair existing deformation.
 
-### Physical dimensions (development 0.6.1)
+### Physical dimensions (development 0.6.2)
 
 Car → **Dimensions · experimental** exposes three independent sliders. Accept
-the physics warning, stop bouncing and stop the vehicle, then Apply. Multiplayer
-is refused, including your own vehicles. Broken beams require repair/reset first.
+the physics warning, stop bouncing and stop the vehicle, then Apply. BeamMP now
+allows your **own car only** with bridge 0.6.2. Broken beams require repair/reset first.
+**Resized geometry is local, not synchronized to peers.** Other players may see
+stock dimensions and collisions can disagree. Use on consenting/private servers,
+follow their rules, and reset if behavior diverges. ABM does not install a server
+mod, broadcast resizing, edit other players' cars, or bypass server restrictions.
 
 The first apply captures the current physical node shape and beam rest lengths.
 Further applies are relative to that capture, not compounded. Width/length use

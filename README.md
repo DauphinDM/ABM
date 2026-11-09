@@ -6,7 +6,7 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest release: 0.4.0 · Development: 0.6.1.** The repository and its releases
+**Latest release: 0.4.0 · Development: 0.6.2.** The repository and its releases
 are private. This is an independent project, not affiliated with BeamNG or BeamMP.
 
 ## What it does
@@ -14,7 +14,7 @@ are private. This is an independent project, not affiliated with BeamNG or BeamM
 | Page | Features |
 | --- | --- |
 | **Drive** | Speed/RPM gauge, gear, fuel, speed history, coolant, boost, warnings |
-| **Car** | Power entry, engine strength/protection, gravity, grip/brakes/steering, manual gears, ESC, bounce start/stop, experimental width/length/height, repair/fire/tires (resizing and bounce stop require bridge 0.6.1) |
+| **Car** | Power entry, engine strength/protection, gravity, grip/brakes/steering, manual gears, ESC, bounce start/stop, experimental width/length/height, repair/fire/tires (safe extra gears and own-car multiplayer resizing require bridge 0.6.2; resizing is not synchronized to peers) |
 | **Garage** | Search real installed models and configurations, preview photos, custom configs, favorites, spawn/replace confirmations |
 | **Session** | Trip time/distance, top/average speed, FPS history, searchable multiplayer players, owned vehicles |
 

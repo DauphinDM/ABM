@@ -172,7 +172,6 @@ end
     local name = command.action
     if name == 'gears' and vehicle:getVelocity():length() > 1 then result(false,'Stop before changing gearbox ratios.'); return end
     if name == 'dimensions' then
-      if call(MPCoreNetwork, 'isMPSession') == true then result(false,'Physical resizing is single-player only.'); return end
       local speed = vehicle:getVelocity():length()
       if speed ~= speed or speed > 1 then result(false,'Stop the vehicle before resizing.'); return end
     end
@@ -210,18 +209,22 @@ end
           tuning.gravity = gravity
         end
       end
+      if ok and name == 'dimensions' and call(MPCoreNetwork, 'isMPSession') == true then
+        message = 'Applied to your own car locally. Resized geometry is not synchronized to peers; server rules still apply.'
+      end
       result(ok,message)
     end}
     local script = string.format([[
 local ok, message = pcall(function()
   extensions.load('abmTuning')
   if not extensions.abmTuning then error('Install the updated ABM vehicle bridge.') end
+  if %q == 'gears' and extensions.abmTuning.version ~= '0.6.2' then error('Restart BeamNG to load the safe gearbox bridge 0.6.2.') end
   return extensions.abmTuning.execute(%q, %s)
 end)
 obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveControl(' ..
   string.format('%%q', %q) .. ',' .. tostring(obj:getID()) .. ',' .. tostring(ok) .. ',' ..
   string.format('%%q', tostring(message):sub(1,256)) .. ') end')
-]], name, serialize(settings), command.requestId)
+]], name, name, serialize(settings), command.requestId)
     local queued = pcall(function() vehicle:queueLuaCommand(script) end)
     if not queued then pending[command.requestId] = nil; result(false,'Could not queue vehicle tuning.') end
   end
@@ -345,7 +348,7 @@ local function snapshot()
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
     version = short(beamng_versionb), beammpLoaded = mp ~= nil,
-    bridgeVersion = '0.6.1', controlsAvailable = true, sampleHz = 20,
+    bridgeVersion = '0.6.2', controlsAvailable = true, sampleHz = 20,
     gameFolder=FS and FS.getGamePath and FS:getGamePath(),
     userFolder=FS and FS.getUserPath and FS:getUserPath(),
     multiplayer = multiplayer, joining = call(mp, 'isGoingMPSession') == true,

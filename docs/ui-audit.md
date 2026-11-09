@@ -1,5 +1,18 @@
 # ABM visual audit
 
+## 0.6.2 — extra-gear crash and multiplayer dimensions
+
+- Confirmed the real Pigeon failure in `beamng.1.log`: controller
+  `selectShiftPoints` indexed missing gear 4, disabling the vehicle.
+- Single suite passed: 27 Qt tests, Lua bridge, plugin, CLI and standalone
+  lifecycle. Regression coverage includes controller lookups through 200 gears,
+  unsupported/missing controllers, stale vehicle-module versions, inertia-error
+  rollback, shrinking/reset and own/foreign multiplayer resizing.
+- Inspected Gearbox and Dimensions screenshots at 440×700, zero QML warnings:
+  `/tmp/opencode/abm-062-audit/`. Local-geometry multiplayer limitation is visible.
+- Final review corrected portable CI's Qt 6.8 Linux architecture identifier;
+  portable/Windows CI and live-game driving are not claimed verified.
+
 ## 0.6.1 — bounce stop and physical dimensions
 
 - Captured and inspected Fun and Dimensions at 440×700; both fit, zero QML

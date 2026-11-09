@@ -323,19 +323,22 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     }
     const bool driveAction = QStringList{"spawn", "replace", "switch"}.contains(action);
     const auto bridgeVersion = m_data.value("bridgeVersion").toString();
-    if ((action == "dimensions" || action == "dealerStop") && bridgeVersion != "0.6.1") {
+    if (action == "gears" && bridgeVersion != "0.6.2") {
+        reply(false, tr("Safe extra gears need bridge 0.6.2. Install it and restart BeamNG when ready.")); return;
+    }
+    if ((action == "dimensions" || action == "dealerStop") && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2") {
         reply(false, tr("Resizing and bounce stop need bridge 0.6.1. Install it and restart BeamNG when ready.")); return;
     }
-    if (action == "engine" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1") {
+    if (action == "engine" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2") {
         reply(false, tr("Engine durability needs bridge 0.6. Install it and restart BeamNG when ready.")); return;
     }
-    if (QStringList{"handling", "gears", "stability", "dealer"}.contains(action) && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1") {
+    if (QStringList{"handling", "stability", "dealer"}.contains(action) && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2") {
         reply(false, tr("Install the bridge and restart BeamNG for the 0.5 sandbox controls.")); return;
     }
-    if (QStringList{"tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) && bridgeVersion != "0.4.0" && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1") {
+    if (QStringList{"tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) && bridgeVersion != "0.4.0" && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2") {
         reply(false, tr("Restart BeamNG to load the updated Car controls.")); return;
     }
-    if (!m_data.value("controlsAvailable").toBool() || !QStringList{"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1"}.contains(bridgeVersion)) {
+    if (!m_data.value("controlsAvailable").toBool() || !QStringList{"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2"}.contains(bridgeVersion)) {
         reply(false, tr("Reload the ABM game extension to enable car controls.")); return;
     }
     if (action == "catalog" && !m_catalogRequest.isEmpty()) { reply(false, tr("A catalog request is already running.")); return; }
@@ -391,7 +394,7 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     }
     if (action == "dimensions") {
         if (!Protocol::dimensions(message)) { reply(false, tr("Dimensions must be 0.5–2× per axis.")); return; }
-        if (m_data.value("multiplayer").toBool()) { reply(false, tr("Physical resizing is single-player only.")); return; }
+        if (m_data.value("multiplayer").toBool() && bridgeVersion != "0.6.2") { reply(false, tr("Multiplayer resizing needs bridge 0.6.2.")); return; }
         const auto speed = m_data.value("telemetry").toObject().value("speed");
         if (!speed.isDouble() || speed.toDouble() > 1) { reply(false, tr("Stop the vehicle before resizing.")); return; }
         for (const auto key : {"width", "length", "height"}) command.insert(key, message.value(key));

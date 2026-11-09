@@ -52,7 +52,7 @@ jsonDecode=function(bytes) return commands[bytes] end
 m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.6.1')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.6.2')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
@@ -130,6 +130,14 @@ local combustion={mainEngine=engine}
 local limits, friction, brakes={}, {}, 1
 local hydro={inputSource='steering_input',inputFactor=2}
 local gearbox={maxGearIndex=2,minGearIndex=-1,gearRatios={[-1]=-3,[0]=0,[1]=3,[2]=2},setGearIndex=function(self,i) self.gearIndex=i end}
+-- Mirror the controller's named closure boundary and its formerly crashing
+-- shift-point lookup, rather than testing only gearbox dimensions.
+local shiftPoints={}
+for i=-1,2 do shiftPoints[i]={lowShiftDownAV=100,highShiftDownAV=150,lowShiftUpAV=400,highShiftUpAV=600} end
+local sharedFunctions={getShiftPoints=function() return shiftPoints end}
+local controlLogicModule={init=function() return sharedFunctions,gearbox end,
+  updateGearboxGFX=function(index) local point=shiftPoints[index]; return point.lowShiftDownAV+point.highShiftUpAV end}
+local mainController={updateGFX=function(index) return controlLogicModule.updateGearboxGFX(index) end}
 for _,field in ipairs({'gearWhineCoefsOutput','gearWhineCoefsInput','synchroWear','previouslyReportedSynchroWear',
   'shiftAllowedNonClutchAVDifference','shiftRequiredClutchInput','shiftMaxSynchroAVCapability','shiftMaxSynchroRate','synchroWearCoef'}) do
   gearbox[field]={[-1]=1,[0]=1,[1]=1,[2]=1}
@@ -137,7 +145,7 @@ end
 vmEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngine=engine} end,
   getDevicesByType=function(kind) return kind=='combustionEngine' and combustion or {gearbox} end,calculateTreeInertia=function() end},
   wheels={wheels={[0]={},[1]={isTireDeflated=true}},scaleBrakeTorque=function(value) brakes=value end},
-  hydros={hydros={hydro}},controller={getController=function() return nil end},
+  hydros={hydros={hydro}},controller={mainController=mainController,getController=function() return nil end},
   v={data={beams={{cid=4,beamDeform=100,beamStrength=200}},wheels={[0]={treadNodes={5}},[1]={treadNodes={6}}},
     nodes={[5]={frictionCoef=1.2,slidingFrictionCoef=.8},[6]={frictionCoef=1}}}},
   obj={setBeamDeform=function(_,cid,value) limits.deform=value end,
@@ -206,8 +214,13 @@ vmEnv.obj.setBeamLength=function(_,cid,n) assert(cid==4); rest=n end
 vmEnv.obj.beamIsBroken=function() return broken end
 vmEnv.obj.commitLoad=function() commits=commits+1 end
 local sizes={width=2,length=.5,height=1.5}
-assert(not request('dimensions',sizes).ok and commits==0) -- Multiplayer, even own car.
+local scaled=request('dimensions',sizes)
+assert(scaled.ok and commits==1 and scaled.message:find('not synchronized',1,true)) -- Own car in multiplayer.
+MPVehicleGE.isOwn=function() return false end
+assert(not request('dimensions',sizes).ok and commits==1)
+MPVehicleGE.isOwn=function() return true end
 MPCoreNetwork.isMPSession=function() return false end
+commits=0
 speed=5; assert(not request('dimensions',sizes).ok and commits==0)
 speed=0; broken=true; assert(not request('dimensions',sizes).ok and commits==0)
 broken=false; assert(request('dimensions',sizes).ok and commits==1)
@@ -227,7 +240,23 @@ many[200]=.01 -- minimum supported ratio
 for i=101,199 do many[i]=.01 end
 assert(request('gears',{ratios=many}).ok and gearbox.maxGearIndex==200 and gearbox.gearIndex==0)
 assert(gearbox.gearRatios[-1]==-3 and gearbox.gearRatios[0]==0 and gearbox.synchroWear[200]~=nil)
+for i=-1,200 do assert(mainController.updateGFX(i)==700) end -- Arcade upshift beyond factory top gear.
+assert(shiftPoints[200]~=shiftPoints[2])
+local oldUpdate=mainController.updateGFX
+mainController.updateGFX=function() end
+assert(not request('gears',{ratios={3,2,1}}).ok and gearbox.maxGearIndex==200 and shiftPoints[200])
+mainController.updateGFX=oldUpdate
+vmEnv.powertrain.calculateTreeInertia=function() error('test inertia failure') end
+assert(not request('gears',{ratios={3,2,1}}).ok and gearbox.maxGearIndex==200 and mainController.updateGFX(200)==700)
+vmEnv.powertrain.calculateTreeInertia=function() end
 assert(request('gears',{ratios={3,2,1}}).ok and gearbox.maxGearIndex==3 and gearbox.gearRatios[4]==nil)
+assert(shiftPoints[4]==nil and mainController.updateGFX(3)==700)
+local point3=shiftPoints[3]; shiftPoints[3]=nil
+assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
+shiftPoints[3]=point3
+vmEnv.extensions.abmTuning.version='0.6.1'
+assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
+vmEnv.extensions.abmTuning.version='0.6.2'
 assert(not request('gears',{ratios={0}}).ok)
 vmEnv.extensions.abmTuning.onReset()
 shape={[5]={x=-1,y=-2,z=0},[6]={x=3,y=2,z=1}}; rest=math.sqrt(33)
@@ -235,6 +264,7 @@ MPCoreNetwork.isMPSession=function() return false end
 assert(request('dimensions',{width=2,length=1,height=1}).ok and shape[6].x==6) -- Reset drops the old capture.
 MPCoreNetwork.isMPSession=function() return true end
 assert(gearbox.maxGearIndex==2 and gearbox.gearRatios[3]==nil and hydro.inputFactor==2)
+assert(shiftPoints[3]==nil and mainController.updateGFX(2)==700)
 assert(engine.maxTorqueRating==500 and engine.maxOverRevDamage==1500 and engine.lockUp==damageHook)
 MPVehicleGE.isOwn=function() return false end
 assert(not request('handling',handling).ok and not request('dealer').ok)

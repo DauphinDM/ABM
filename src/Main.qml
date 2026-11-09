@@ -23,11 +23,12 @@ ApplicationWindow {
     readonly property var telemetry: game.telemetry || ({})
     readonly property bool live: backend.connected
     readonly property var launcher: backend.launcher
-    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
-    readonly property bool tuningReady: controls && ["0.4.0", "0.5.0", "0.6.0", "0.6.1"].indexOf(game.bridgeVersion) >= 0
-    readonly property bool sandboxReady: controls && ["0.5.0", "0.6.0", "0.6.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool engineReady: controls && ["0.6.0", "0.6.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool dimensionsReady: controls && game.bridgeVersion === "0.6.1" && !backend.busy
+    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
+    readonly property bool tuningReady: controls && ["0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0
+    readonly property bool sandboxReady: controls && ["0.5.0", "0.6.0", "0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool engineReady: controls && ["0.6.0", "0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool dimensionsReady: controls && ["0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool gearsReady: controls && game.bridgeVersion === "0.6.2" && !backend.busy
     readonly property var tuning: backend.tuning
     readonly property bool canDriveAction: controls && !backend.busy && !demoMode && (!telemetry.speed || telemetry.speed <= 1) && !!game.map
     property var selectedModel: ({})
@@ -328,9 +329,9 @@ ApplicationWindow {
                             RowLayout { Layout.fillWidth: true
                                 Button { text: qsTr("+ Gear"); font.pixelSize: 11; implicitHeight: 30
                                     onClicked: { var values = ratiosInput.text.trim().split(/[,;\s]+/); var last = Number(values[values.length-1]); if (isFinite(last) && last >= 0.01 && last <= 100) ratiosInput.text += ", " + Math.max(.01,last*.85).toFixed(4) } }
-                                Button { text: qsTr("Apply ratios"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.sandboxReady && win.telemetry.speed !== undefined && win.telemetry.speed <= 1; onClicked: backend.applyGears(ratiosInput.text) }
+                                Button { text: qsTr("Apply ratios"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.gearsReady && win.telemetry.speed !== undefined && win.telemetry.speed <= 1; onClicked: backend.applyGears(ratiosInput.text) }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("Stop first. Supported manual gearboxes only; not automatic, DCT or CVT. Applying selects neutral and rebuilds synchronizer tables. Use sequential shift controls. Reset the vehicle for stock ratios."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("Bridge 0.6.2 required. Stop first. Supported manual gearboxes/controllers only; not automatic, DCT or CVT. Rebuilds synchronizers AND controller shift points, selecting neutral. Extra gears inherit stock top-gear shift thresholds. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
                         GridLayout { visible: win.controls && carSection.currentIndex === 3; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: gap
                             Button { text: qsTr("Why This Dealer?"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.sandboxReady; onClicked: backend.carAction("dealer") }
@@ -384,12 +385,12 @@ ApplicationWindow {
                                     }
                                 }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("0.5–2× each axis. Stop first; single-player only. Stop bouncing and repair broken beams first. Suspension, wheels, props and mod controllers may fight resizing; mass and tire parameters are not rescaled. Vehicle reset restores stock geometry."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("0.5–2× each axis. Stop and repair broken beams first. Your own car only in BeamMP (bridge 0.6.2): resized geometry is NOT synchronized to other players. Follow server rules. Suspension, wheels and props may fight resizing; mass/tire parameters stay unchanged. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             CheckBox { id: dimensionConsent; text: qsTr("I accept unstable physics and vehicle damage"); font.pixelSize: 10; Layout.fillWidth: true }
                             Button { text: qsTr("Apply physical dimensions"); objectName: "dimensionsApplyButton"; Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11
-                                enabled: win.dimensionsReady && win.game.multiplayer !== true && win.telemetry.speed !== undefined && win.telemetry.speed <= 1 && dimensionConsent.checked
+                                enabled: win.dimensionsReady && (win.game.multiplayer !== true || win.game.bridgeVersion === "0.6.2") && win.telemetry.speed !== undefined && win.telemetry.speed <= 1 && dimensionConsent.checked
                                 onClicked: backend.applyDimensions({width:dimensionSliders.itemAt(0).factor,length:dimensionSliders.itemAt(1).factor,height:dimensionSliders.itemAt(2).factor}) }
-                            PlainLabel { visible: !win.dimensionsReady || win.game.multiplayer === true; Layout.fillWidth: true; text: win.game.multiplayer === true ? qsTr("Unavailable in multiplayer.") : qsTr("Install bridge 0.6.1 and restart BeamNG when ready."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { visible: !win.dimensionsReady || (win.game.multiplayer === true && win.game.bridgeVersion !== "0.6.2"); Layout.fillWidth: true; text: qsTr("Install bridge 0.6.2 and restart BeamNG when ready."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
                         PlainLabel { visible: win.controls; Layout.fillWidth: true; text: qsTr("Sandbox changes affect your selected vehicle, not saved configs. Last requested values are not live readback. Multiplayer servers may overrule changes."); font.pixelSize: 9; color: textDim; wrapMode: Text.Wrap }
                         RowLayout { visible: win.controls && carSection.currentIndex === 0 && win.tuning.enginePower !== undefined; Layout.fillWidth: true; spacing: gap

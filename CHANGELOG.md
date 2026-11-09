@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.6.1 — Unreleased
+## 0.6.2 — Unreleased
+
+- Fix the confirmed `selectShiftPoints` nil-entry crash beyond factory top gear:
+  extend the controller shift-point table alongside gearbox/synchro/sound tables.
+  Added gears inherit stock top-gear thresholds. Reject unsupported controller
+  closures before mutation, restore stock on reset, roll back inertia failures.
+- Block gear edits on pre-0.6.2 bridges, which still contain the crash.
+- Allow stopped, owned-car resizing in BeamMP. Geometry is local and is **not
+  synchronized to peers**; server rules still apply. No server bypass or remote
+  vehicle edits. Real-game driving and peer behavior remain unverified.
+- Correct portable CI's Qt 6.8 architecture from `gcc_64` to `linux_gcc_64`;
+  the previous job failed installing Qt, before compilation. CI pending.
+
+## 0.6.1 — Development snapshot
 
 - Add a separate Stop bouncing button using the real `vehicle:why("stop")`
   command. No reset, guessed toggle state, or repair is needed.
