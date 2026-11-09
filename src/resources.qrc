@@ -10,4 +10,5 @@
   <file alias="bridge/beamdeck.lua">../game/lua/ge/extensions/beamdeck.lua</file>
   <file alias="bridge/modScript.lua">../game/scripts/beamdeck/modScript.lua</file>
   <file alias="bridge/abmTuning.lua">../game/lua/vehicle/extensions/abmTuning.lua</file>
+  <file alias="bridge/official-servers.json">../game/lua/ge/extensions/abm-official-servers.json</file>
 </qresource></RCC>

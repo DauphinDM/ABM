@@ -9,6 +9,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QPointer>
+#include "serverpolicy.h"
 
 // Only the receiver owns the socket. Apps and bar instances share its snapshot.
 class Telemetry : public QObject {
@@ -29,12 +30,16 @@ private:
     void broadcast(const QJsonObject &message);
     void command(QLocalSocket *client, const QJsonObject &message);
     void resetTrip();
+    void updatePolicy();
+    QJsonObject policy() const;
     QString m_path;
     QString m_error;
     QUdpSocket m_socket;
     QTimer m_timer;
     QElapsedTimer m_lastPacket, m_session, m_sample;
     QJsonObject m_data;
+    ServerPolicy m_policy;
+    QElapsedTimer m_policySent;
     QLocalServer m_server;
     QSet<QLocalSocket *> m_clients;
     QHash<QLocalSocket *, QByteArray> m_buffers;

@@ -138,7 +138,8 @@ bool Integration::installBridge() {
     }
     if (!writeBridgeFile(":/bridge/beamdeck.lua", "lua/ge/extensions/beamdeck.lua", "-- Telemetry is read-only")
         || !writeBridgeFile(":/bridge/modScript.lua", "scripts/beamdeck/modScript.lua", "-- User-folder startup script")
-        || !writeBridgeFile(":/bridge/abmTuning.lua", "lua/vehicle/extensions/abmTuning.lua", "-- ABM vehicle tuning")) {
+        || !writeBridgeFile(":/bridge/abmTuning.lua", "lua/vehicle/extensions/abmTuning.lua", "-- ABM vehicle tuning")
+        || !writeBridgeFile(":/bridge/official-servers.json", "lua/ge/extensions/abm-official-servers.json", "{\"schema\":1,")) {
         if (m_message.isEmpty()) setMessage(tr("Could not install the bridge. Check folder permissions."));
         return false;
     }

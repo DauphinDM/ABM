@@ -38,7 +38,8 @@ struct Fixture {
         if (!reservation.bind(QHostAddress(QHostAddress::LocalHost),quint16(0))) return false;
         port=reservation.localPort(); reservation.close();
         if (!receiver.start(port) || !game.bind(QHostAddress(QHostAddress::LocalHost),quint16(0))) return false;
-        game.writeDatagram(packet(),QHostAddress::LocalHost,port); return true;
+        auto initial=QJsonDocument::fromJson(packet()).object(); initial.insert("multiplayer",false);
+        game.writeDatagram(QJsonDocument(initial).toJson(QJsonDocument::Compact),QHostAddress::LocalHost,port); return true;
     }
     void send(QJsonObject data, QUdpSocket *sender = nullptr) {
         data.insert("source","beamdeck"); data.insert("schema",1);
@@ -120,7 +121,7 @@ private slots:
     }
     void tuningRoundTripAndBusyRequest() {
         Fixture f; QVERIFY(f.start());
-        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("bridgeVersion","0.4.0"); f.send(state);
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("multiplayer",false); state.insert("bridgeVersion","0.4.0"); f.send(state);
         Backend backend(f.path); QTRY_VERIFY(backend.connected());
         QTest::qWait(100);
         backend.applyTuning({{"enginePower",1.5},{"gravity",-1.62},{"damageImmunity",true}});
@@ -133,7 +134,7 @@ private slots:
     }
     void sandboxCommandsRequireNewBridgeAndStop() {
         Fixture f; QVERIFY(f.start());
-        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("bridgeVersion","0.4.0"); f.send(state);
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("multiplayer",false); state.insert("bridgeVersion","0.4.0"); f.send(state);
         Backend backend(f.path); QTRY_VERIFY(backend.connected()); QTest::qWait(100);
         backend.carAction("dealer"); QTRY_VERIFY(!backend.busy());
         QVERIFY(backend.actionMessage().contains("0.5")); QVERIFY(!f.game.hasPendingDatagrams());
@@ -153,7 +154,7 @@ private slots:
     }
     void engineCommandsRequireNewBridge() {
         Fixture f; QVERIFY(f.start());
-        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("bridgeVersion","0.5.0"); f.send(state);
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("multiplayer",false); state.insert("bridgeVersion","0.5.0"); f.send(state);
         Backend backend(f.path); QTRY_VERIFY(backend.connected()); QTest::qWait(100);
         backend.applyEngine({{"engineStrength",2.0},{"engineIndestructible",true}});
         QTRY_VERIFY(!backend.busy()); QVERIFY(backend.actionMessage().contains("0.6")); QVERIFY(!f.game.hasPendingDatagrams());
@@ -171,7 +172,7 @@ private slots:
     }
     void dimensionsAndBounceStopRequire061() {
         Fixture f; QVERIFY(f.start()); Backend backend(f.path); QTRY_VERIFY(backend.connected());
-        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("bridgeVersion","0.6.0"); f.send(state);
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("multiplayer",false); state.insert("bridgeVersion","0.6.0"); f.send(state);
         QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.0"));
         backend.carAction("dealerStop"); QTRY_VERIFY(!backend.busy());
         QVERIFY(backend.actionMessage().contains("0.6.1")); QVERIFY(!f.game.hasPendingDatagrams());
@@ -188,6 +189,9 @@ private slots:
         backend.applyDimensions({{"width",1.0},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
         state.insert("bridgeVersion","0.6.2"); f.send(state);
         QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.2"));
+        backend.applyDimensions({{"width",1.5},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(!backend.busy());
+        QVERIFY(backend.actionMessage().contains("0.7")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("multiplayer",false); f.send(state); QTRY_VERIFY(!backend.state().value("multiplayer").toBool());
         backend.applyDimensions({{"width",1.5},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(f.game.hasPendingDatagrams()); command=f.command();
         QCOMPARE(command.value("action").toString(),QString("dimensions"));
         f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
@@ -200,6 +204,48 @@ private slots:
         first.setMetric(false); first.toggleFavorite("etk800"); first.toggleFavorite("etk800/Racely (M)"); first.toggleFavorite("../bad");
         Backend second(dir.filePath("state.json")); QVERIFY(!second.metric()); QCOMPARE(second.favorites().size(),2);
         second.toggleFavorite("etk800"); QCOMPARE(second.favorites(),QStringList{"etk800/Racely (M)"});
+    }
+    void officialServerRosterDecisions() {
+        const QString name="Official BeamMP Server | OGC TWO (02) | US-East | 2 Vehicle | Modded";
+        QJsonObject server{{"serverIp","15.204.242.33"},{"serverPort",30814},{"serverRaw",name}};
+        QJsonObject row{{"ip","15.204.242.33"},{"port",30814},{"sname",name},{"official",true}};
+        auto decide=[&]{return ServerPolicy::evaluate(server,QJsonArray{row});};
+        QVERIFY(decide().value("allowed").toBool());
+        QVERIFY(!ServerPolicy::evaluate(server,{}).value("allowed").toBool());
+        row.insert("sname",name+" event"); server.insert("serverRaw",row.value("sname"));
+        QVERIFY(!decide().value("allowed").toBool());
+        server.insert("serverRaw",name); row.insert("sname",name); row.insert("port",30815); server.insert("serverPort",30815);
+        QVERIFY(!decide().value("allowed").toBool());
+        row.insert("ip","203.0.113.7"); server.insert("serverIp","203.0.113.7");
+        QVERIFY(!decide().value("allowed").toBool());
+        row.insert("sname","New official event"); server.insert("serverRaw","New official event");
+        QVERIFY(!decide().value("allowed").toBool());
+        row.insert("official",false); QVERIFY(decide().value("allowed").toBool());
+        row.insert("official","false"); QVERIFY(!decide().value("allowed").toBool());
+        row.insert("official",false);
+        QVERIFY(!ServerPolicy::evaluate(server,QJsonArray{row,row}).value("allowed").toBool());
+        row={{"ip","15.204.242.33"},{"port",30816},{"sname","Official BeamMP x Moza - Qualifying Server [US-East]"},{"official",true}};
+        server={{"serverIp",row.value("ip")},{"serverPort",row.value("port")},{"serverRaw",row.value("sname")}};
+        QVERIFY(!decide().value("allowed").toBool());
+        row.insert("official",false); QVERIFY(!decide().value("allowed").toBool());
+        QFile roster(":/bridge/official-servers.json"); QVERIFY(roster.open(QIODevice::ReadOnly));
+        const auto data=QJsonDocument::fromJson(roster.readAll()).object(); int count=0;
+        const auto groups=data.value("groups").toObject(); for (const auto &group:groups) count+=group.toArray().size();
+        QCOMPARE(count,108); QCOMPARE(data.value("excluded").toArray().size(),4);
+    }
+    void multiplayerCannotSelfAuthorizeViaTelemetry() {
+        Fixture f; QVERIFY(f.start()); Backend backend(f.path); QTRY_VERIFY(backend.connected());
+        auto state=QJsonDocument::fromJson(packet()).object();
+        state.insert("bridgeVersion","0.6.2"); state.insert("sandboxAllowed",true); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.2"));
+        backend.applyTuning({{"enginePower",2.0},{"gravity",-9.81},{"damageImmunity",false}}); QTRY_VERIFY(!backend.busy());
+        QVERIFY(backend.actionMessage().contains("0.7")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("bridgeVersion","0.7.0"); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.7.0"));
+        QVERIFY(!backend.state().value("sandboxAllowed").toBool());
+        backend.applyTuning({{"enginePower",2.0},{"gravity",-9.81},{"damageImmunity",false}}); QTRY_VERIFY(!backend.busy());
+        QVERIFY(backend.actionMessage().contains("unverified",Qt::CaseInsensitive));
+        while(f.game.hasPendingDatagrams()) QCOMPARE(f.command().value("action").toString(),QString("serverPolicy"));
     }
     void demoDoesNotIncludeRuntimeData() {
         QTemporaryDir dir; auto data=QJsonDocument::fromJson(packet()).object();
@@ -309,8 +355,9 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.6.2")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.7.0")); file.close();
         QVERIFY(QFileInfo::exists(dir.filePath("lua/vehicle/extensions/abmTuning.lua")));
+        QVERIFY(QFileInfo::exists(dir.filePath("lua/ge/extensions/abm-official-servers.json")));
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());
         QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(),QByteArray("User-owned unrelated extension"));
     }

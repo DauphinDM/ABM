@@ -23,14 +23,15 @@ ApplicationWindow {
     readonly property var telemetry: game.telemetry || ({})
     readonly property bool live: backend.connected
     readonly property var launcher: backend.launcher
-    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
-    readonly property bool tuningReady: controls && ["0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0
-    readonly property bool sandboxReady: controls && ["0.5.0", "0.6.0", "0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool engineReady: controls && ["0.6.0", "0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool dimensionsReady: controls && ["0.6.1", "0.6.2"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool gearsReady: controls && game.bridgeVersion === "0.6.2" && !backend.busy
+    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
+    readonly property bool sandboxAllowed: game.joining !== true && game.policyCleanup !== true && (game.multiplayer !== true || game.sandboxAllowed === true)
+    readonly property bool tuningReady: controls && sandboxAllowed && ["0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0
+    readonly property bool sandboxReady: controls && sandboxAllowed && ["0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool engineReady: controls && sandboxAllowed && ["0.6.0", "0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool dimensionsReady: controls && sandboxAllowed && ["0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool gearsReady: controls && sandboxAllowed && ["0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
     readonly property var tuning: backend.tuning
-    readonly property bool canDriveAction: controls && !backend.busy && !demoMode && (!telemetry.speed || telemetry.speed <= 1) && !!game.map
+    readonly property bool canDriveAction: controls && sandboxAllowed && !backend.busy && !demoMode && (!telemetry.speed || telemetry.speed <= 1) && !!game.map
     property var selectedModel: ({})
     property var selectedConfig: ({})
     property var actionTarget: ({})
@@ -54,7 +55,7 @@ ApplicationWindow {
     onDevOpenChanged: {
         const targets = {drive:0, car:1, garage:2, session:3}
         if (targets[devOpen] !== undefined) win.page = targets[devOpen]
-        else if (["handling", "gears", "fun", "engine", "dimensions"].indexOf(devOpen) >= 0) { win.page = 1; carSection.currentIndex = {handling:1,gears:2,fun:3,engine:4,dimensions:5}[devOpen] }
+        else if (["handling", "gears", "fun", "engine", "dimensions", "blocked"].indexOf(devOpen) >= 0) { win.page = 1; carSection.currentIndex = {handling:1,gears:2,fun:3,engine:4,dimensions:5,blocked:0}[devOpen] }
         else if (devOpen === "owned") ownedDialog.open()
         else if (devOpen === "trip") tripDialog.open()
         else if (devOpen === "diagnostics") diagnostics.open()
@@ -187,6 +188,14 @@ ApplicationWindow {
                         : win.launcher.gameRunning ? qsTr("Game running · waiting for bridge") : qsTr("Game closed")
                 }
             }
+            Rectangle {
+                visible: win.live && !win.sandboxAllowed
+                Layout.fillWidth: true; implicitHeight: policyText.implicitHeight + 14
+                color: "#d02a2117"; border.color: "#c59b55"; border.width: 1
+                PlainLabel { id: policyText; objectName: "serverPolicyBanner"; anchors.fill: parent; anchors.margins: 7
+                    text: qsTr("Gameplay locked · %1").arg(win.game.policyReason || qsTr("Install bridge 0.7 and restart BeamNG for server verification."))
+                    color: "#f0d3a0"; wrapMode: Text.Wrap; font.pixelSize: 10 }
+            }
             // Navigation
             RowLayout {
                 Layout.fillWidth: true; spacing: gap
@@ -234,7 +243,7 @@ ApplicationWindow {
                         width: parent.width; spacing: gap
                         PlainLabel { text: qsTr("Sandbox workshop"); font.pixelSize: 13; color: textMain }
                         PlainLabel { visible: !win.controls; Layout.fillWidth: true; text: win.launcher.gameRunning ? qsTr("The game is open, but its bridge is not connected.") : qsTr("Connect the bridge (game or settings) to tune your vehicle."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
-                        PlainLabel { visible: win.controls && !win.tuningReady; Layout.fillWidth: true; text: qsTr("Restart BeamNG once so the bridge with tuning support loads."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
+                        PlainLabel { visible: win.controls && win.sandboxAllowed && !win.tuningReady; Layout.fillWidth: true; text: qsTr("Restart BeamNG once so the bridge with tuning support loads."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
                         RowLayout { visible: win.controls; Layout.fillWidth: true; spacing: gap
                             MetricCard { Layout.fillWidth: true; label: qsTr("VEHICLE"); value: (win.game.vehicleName || win.game.vehicle || "—"); unit: (win.telemetry.speed !== undefined ? win.speed(win.telemetry.speed) + " " + (win.metric ? "km/h" : "mph") : "parked or unknown") }
                             MetricCard { Layout.fillWidth: true; label: qsTr("GEAR"); value: win.telemetry.gear === undefined ? "—" : win.telemetry.gear === 0 ? "N" : win.telemetry.gear < 0 ? "R" : win.number(win.telemetry.gear); unit: qsTr("RPM %1").arg(win.telemetry.rpm === undefined ? "—" : win.number(win.smoothRpm)) }
@@ -296,7 +305,7 @@ ApplicationWindow {
                             id: damageToggle; visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; checkable: true; checked: win.tuning.damageImmunity === true
                             text: checked ? qsTr("Deformation immunity: ON") : qsTr("Deformation immunity")
                             font.pixelSize: 11; padding: 6; implicitHeight: 30; enabled: win.tuningReady && !backend.busy
-                            background: Rectangle { color: damageToggle.checked ? accent : surface; radius: 0 }
+                            background: Rectangle { color: damageToggle.enabled && damageToggle.checked ? accent : surface; radius: 0 }
                         }
                         PlainLabel { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; text: qsTr("Raises beam strength and deformation limits. Turn off to restore stock limits. Engines and tires can still take damage."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         Button { text: qsTr("Apply tuning"); visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11
@@ -335,7 +344,7 @@ ApplicationWindow {
                         }
                         GridLayout { visible: win.controls && carSection.currentIndex === 3; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: gap
                             Button { text: qsTr("Why This Dealer?"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.sandboxReady; onClicked: backend.carAction("dealer") }
-                            Button { text: qsTr("Stop bouncing"); objectName: "dealerStopButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.dimensionsReady; onClicked: backend.carAction("dealerStop") }
+                            Button { text: qsTr("Stop bouncing"); objectName: "dealerStopButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.controls && ["0.6.1", "0.6.2", "0.7.0"].indexOf(win.game.bridgeVersion) >= 0 && !backend.busy; onClicked: backend.carAction("dealerStop") }
                             PlainLabel { Layout.columnSpan: 2; Layout.fillWidth: true; text: qsTr("The real easter egg: why(\"this dealer\") starts; why(\"stop\") ends it without a reset. Stop needs bridge 0.6.1. Only game builds that expose this API."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             Button { text: qsTr("Repair"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("repair") }
                             Button { text: qsTr("Fire"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("ignite") }
@@ -388,9 +397,9 @@ ApplicationWindow {
                             PlainLabel { Layout.fillWidth: true; text: qsTr("0.5–2× each axis. Stop and repair broken beams first. Your own car only in BeamMP (bridge 0.6.2): resized geometry is NOT synchronized to other players. Follow server rules. Suspension, wheels and props may fight resizing; mass/tire parameters stay unchanged. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             CheckBox { id: dimensionConsent; text: qsTr("I accept unstable physics and vehicle damage"); font.pixelSize: 10; Layout.fillWidth: true }
                             Button { text: qsTr("Apply physical dimensions"); objectName: "dimensionsApplyButton"; Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11
-                                enabled: win.dimensionsReady && (win.game.multiplayer !== true || win.game.bridgeVersion === "0.6.2") && win.telemetry.speed !== undefined && win.telemetry.speed <= 1 && dimensionConsent.checked
+                                enabled: win.dimensionsReady && (win.game.multiplayer !== true || ["0.6.2", "0.7.0"].indexOf(win.game.bridgeVersion) >= 0) && win.telemetry.speed !== undefined && win.telemetry.speed <= 1 && dimensionConsent.checked
                                 onClicked: backend.applyDimensions({width:dimensionSliders.itemAt(0).factor,length:dimensionSliders.itemAt(1).factor,height:dimensionSliders.itemAt(2).factor}) }
-                            PlainLabel { visible: !win.dimensionsReady || (win.game.multiplayer === true && win.game.bridgeVersion !== "0.6.2"); Layout.fillWidth: true; text: qsTr("Install bridge 0.6.2 and restart BeamNG when ready."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { visible: !win.dimensionsReady; Layout.fillWidth: true; text: qsTr("Multiplayer changes require bridge 0.7 and server permission. Restart BeamNG after installing the bridge."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
                         PlainLabel { visible: win.controls; Layout.fillWidth: true; text: qsTr("Sandbox changes affect your selected vehicle, not saved configs. Last requested values are not live readback. Multiplayer servers may overrule changes."); font.pixelSize: 9; color: textDim; wrapMode: Text.Wrap }
                         RowLayout { visible: win.controls && carSection.currentIndex === 0 && win.tuning.enginePower !== undefined; Layout.fillWidth: true; spacing: gap

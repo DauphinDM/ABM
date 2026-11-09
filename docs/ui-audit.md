@@ -1,5 +1,18 @@
 # ABM visual audit
 
+## 0.7 — official-server lock
+
+- Captured allowed and blocked Car pages in `/tmp/opencode/abm-07-audit`,
+  reviewed at 440×700; zero QML warnings. The lock reason wraps within margins.
+- Final-review fixes: hide misleading bridge-restart advice during a policy
+  lock, dim the disabled immunity surface, preserve exact raw server identity,
+  and initiate cleanup immediately on permission loss (retry failures later).
+- One test pass: 28 Qt checks passed and one new test failed because it omitted
+  required tuning fields before reaching the gateway. Fixed its input; no repeat
+  run. Lua policy/cleanup tests, Node, headless CLI and standalone lifecycle passed.
+- Live server transitions/reset completion remain unverified. No live game
+  commands or game restarts were performed during this audit.
+
 ## 0.6.2 — extra-gear crash and multiplayer dimensions
 
 - Confirmed the real Pigeon failure in `beamng.1.log`: controller

@@ -73,13 +73,15 @@ extensions.unload("beamdeck"); extensions.load("beamdeck")
 <user folder>/lua/ge/extensions/beamdeck.lua
 <user folder>/scripts/beamdeck/modScript.lua
 <user folder>/lua/vehicle/extensions/abmTuning.lua
+<user folder>/lua/ge/extensions/abm-official-servers.json
 ```
 
 The user folder defaults to `~/.local/share/BeamNG/BeamNG.drive/current` on
 Linux. Do not assume it matches a cloud profile or a relocated installation.
 Garage actions accept bridge 0.3–0.6; original Car actions need 0.4 or newer.
 Handling/gearbox/bounce and uncapped power need 0.5 or newer; engine durability
-needs 0.6. Restart the game after upgrading all three files: reloading GE Lua
+needs 0.6. Multiplayer gameplay changes require bridge 0.7 and verified server
+permission. Restart the game after upgrading all four files: reloading GE Lua
 alone does not replace a vehicle extension already loaded in its separate VM.
 
 ## Migrating a previous development installation
@@ -103,7 +105,7 @@ sudo pacman -R abm
 ```
 
 Unload the bridge in GE Lua with `extensions.unload("beamdeck")`. To stop
-future loading, remove only the three ABM-owned bridge files listed above after
+future loading, remove only the four ABM-owned bridge files listed above after
 checking ownership/backups. Do not delete your BeamNG user folder or BeamMP
 managed files. Preferences and user plugin copies remain until you remove them
 explicitly.

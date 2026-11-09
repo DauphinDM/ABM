@@ -1,5 +1,5 @@
 pkgname=abm
-pkgver=0.6.2
+pkgver=0.7.0
 pkgrel=1
 pkgdesc='ABM (Advanced BeamNG.Drive Manager): tuning, garage, telemetry and Omarchy integration'
 url='https://github.com/DauphinDM/ABM'
@@ -28,6 +28,7 @@ package() {
   install -Dm755 bin/enable "$pkgdir/usr/bin/abm-enable"
   cp -r plugin "$pkgdir/usr/share/abm-plugin"
   install -Dm644 game/lua/ge/extensions/beamdeck.lua "$pkgdir/usr/share/abm-game/lua/ge/extensions/beamdeck.lua"
+  install -Dm644 game/lua/ge/extensions/abm-official-servers.json "$pkgdir/usr/share/abm-game/lua/ge/extensions/abm-official-servers.json"
   install -Dm644 game/lua/vehicle/extensions/abmTuning.lua "$pkgdir/usr/share/abm-game/lua/vehicle/extensions/abmTuning.lua"
   install -Dm644 game/scripts/beamdeck/modScript.lua "$pkgdir/usr/share/abm-game/scripts/beamdeck/modScript.lua"
 }

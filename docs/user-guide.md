@@ -1,5 +1,16 @@
 # ABM user guide
 
+## Official-server guard (development 0.7)
+
+Multiplayer gameplay changes require bridge 0.7 and verified server permission.
+The frozen 108 regular official identities are allowed only by exact IP, port
+and raw name. Official events/new or mismatched official servers are blocked;
+verified non-official servers have no extra ABM restriction. Unknown status
+locks changes. A banner explains the decision. Telemetry/browsing and Stop
+bouncing remain available. Permission loss stops reapply and requests cleanup,
+which **can reset your car while moving**. See [policy, privacy and important
+limitations](server-policy.md); this is not anti-cheat or staff protection.
+
 ## Launch and connection state
 
 The main button starts BeamNG through Steam when the game is closed. When the

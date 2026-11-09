@@ -9,6 +9,11 @@ local models, allowedModels = nil, {}
 local catalogQueue, extensionLoaded = {}
 local completed, completedOrder = {}, {}
 local pending = {}
+local policyLease, approvedServers, officialEndpoints, officialNames = nil, {}, {}, {}
+local dirtyVehicles, cleanupPending = {}, {}
+local gravityBase, previousIdentity, cleanupTime = nil, nil, -10
+local gravityCleanup = false
+local previousAllowed = true
 
 local function call(module, method, ...)
   if module and type(module[method]) == 'function' then
@@ -83,6 +88,54 @@ local function owned(id, multiplayer)
   return call(MPVehicleGE, 'isOwn', id) == true
 end
 
+local function currentServer()
+  local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
+  local server = call(mp,'getCurrentServer')
+  if type(server) ~= 'table' or type(server.ip) ~= 'string' or type(server.name) ~= 'string'
+    or #server.ip > 64 or #server.name > 512 then return nil end
+  local port = tonumber(server.port)
+  if not port or port % 1 ~= 0 or port < 1 or port > 65535 then return nil end
+  return {ip=server.ip,port=port,name=server.name,key=server.ip..':'..port}
+end
+
+local function permission()
+  local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
+  if call(mp,'isGoingMPSession') == true then return false,'Joining BeamMP: gameplay changes are locked.' end
+  if next(cleanupPending) or gravityCleanup then return false,'Clearing previous ABM changes. Reset/reload if cleanup cannot finish.' end
+  if call(mp,'isMPSession') ~= true then return true,'Single player: no server restriction.' end
+  local server = currentServer()
+  local lease = policyLease
+  if not server or not lease or clock >= lease.expires or server.key ~= lease.key or server.name ~= lease.name then
+    return false,'Server status unverified. Gameplay changes are locked.'
+  end
+  return lease.allowed, lease.reason
+end
+
+local function acceptPolicy(data)
+  local server = currentServer()
+  if not server or data.serverIp ~= server.ip or tonumber(data.serverPort) ~= server.port or data.serverName ~= server.name then return end
+  local valid = next(approvedServers) ~= nil and data.verified == true and type(data.official) == 'boolean'
+    and type(data.ttl) == 'number' and data.ttl > 0 and data.ttl <= 3
+  local official = data.official == true or officialEndpoints[server.key] or officialNames[server.name]
+  local allowed = valid and data.allowed == true and (not official or approvedServers[server.key] == server.name)
+  policyLease = {key=server.key,name=server.name,allowed=allowed == true,expires=clock+(valid and data.ttl or 0),
+    reason=allowed and (official and 'Approved regular official server.' or 'Non-official server: no ABM official-server restriction.')
+      or 'Official event/new, mismatched or unverified server: gameplay changes are blocked.'}
+end
+
+local function loadRoster()
+  approvedServers, officialEndpoints, officialNames = {}, {}, {}
+  local ok, root = pcall(function() return jsonReadFile('/lua/ge/extensions/abm-official-servers.json') end)
+  if not ok or type(root) ~= 'table' or root.schema ~= 1 or type(root.prefix) ~= 'string' then return end
+  for ip, rows in pairs(root.groups or {}) do
+    for _, row in ipairs(rows) do
+      local key, name = ip..':'..row[1],root.prefix..row[2]
+      approvedServers[key], officialEndpoints[key], officialNames[name] = name, true, true
+    end
+  end
+  for _, row in ipairs(root.excluded or {}) do officialEndpoints[row[1]..':'..row[2]], officialNames[row[3]] = true, true end
+end
+
 local function buildMetadata()
   local data = {activeVehicles = {}}
   local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
@@ -143,12 +196,67 @@ end
   -- Lua keeps the original curve on first touch, so repeats are idempotent.
   local tuning = {}
 
+  local function receivePolicyCleanup(id, ok)
+    if cleanupPending[id] and ok == true then cleanupPending[id], dirtyVehicles[id] = nil, nil end
+  end
+
+  local function clearChanges()
+    tuning = {} -- Never re-apply a cheat after a permission/identity change.
+    for id, entry in pairs(pending) do
+      pending[id] = nil
+      entry.result(false,'Server permission changed; pending action cancelled and cleanup requested.')
+    end
+    if gravityBase ~= nil then
+      gravityCleanup = true
+      if core_environment and type(core_environment.setGravity) == 'function' and pcall(core_environment.setGravity,gravityBase) then
+        gravityBase, gravityCleanup = nil, false
+      end
+    end
+    local mp = call(MPCoreNetwork,'isMPSession') == true
+    for id in pairs(dirtyVehicles) do
+      local vehicle = be and be.getObjectByID and be:getObjectByID(id)
+      if not vehicle or not owned(id,mp) then
+        dirtyVehicles[id], cleanupPending[id] = nil, nil
+      else
+        cleanupPending[id] = true
+        if type(vehicle.why) == 'function' then pcall(function() vehicle:why('stop') end) end
+        pcall(function() vehicle:queueLuaCommand([[
+local ok = pcall(function()
+  extensions.load('abmTuning')
+  if not extensions.abmTuning or type(extensions.abmTuning.restoreForPolicy) ~= 'function' then error('Restart BeamNG for ABM server protection.') end
+  extensions.abmTuning.restoreForPolicy()
+end)
+obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receivePolicyCleanup(' ..
+  tostring(obj:getID()) .. ',' .. tostring(ok) .. ') end')
+]]) end)
+      end
+    end
+  end
+
+  local function policyTick()
+    local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
+    local server = currentServer()
+    local identity = (call(mp,'isMPSession') == true or call(mp,'isGoingMPSession') == true)
+      and (server and server.key..'\n'..server.name or 'joining') or 'single-player'
+    local changed = previousIdentity ~= nil and previousIdentity ~= identity
+    if changed then policyLease = nil end
+    previousIdentity = identity
+    local allowed = permission()
+    local lost = previousAllowed and not allowed
+    previousAllowed = allowed
+    if changed or lost or (not allowed and (next(dirtyVehicles) or gravityBase ~= nil) and clock-cleanupTime > 5) then
+      cleanupTime = clock
+      clearChanges()
+    end
+  end
+
   local function tuningVehicleCommand(power, damageImmune)
     return 'pcall(function() extensions.load("abmTuning"); extensions.abmTuning.execute("tuning",' ..
       serialize({enginePower=power or 1,damageImmunity=damageImmune == true}) .. ') end)'
   end
 
   local function applyTuning()
+    if not permission() then return end
     local command = tuningVehicleCommand(tuning.power, tuning.damage)
     local vehicle = getPlayerVehicle and getPlayerVehicle(0)
     if vehicle then vehicle:queueLuaCommand(command) end
@@ -160,6 +268,7 @@ end
     local entry = pending[id]
     if not entry or entry.vehicle ~= sourceVehicle then return end
     pending[id] = nil
+    if not permission() then entry.result(false,'Server permission changed. Cleanup is required.'); return end
     entry.result(ok == true, short(message, 256) or 'Vehicle tuning finished.')
   end
 
@@ -178,6 +287,7 @@ end
     if name == 'dealer' or name == 'dealerStop' then
       if type(vehicle.why) ~= 'function' then result(false,'This game build has no Why This Dealer easter egg.'); return end
       local ok = pcall(function() vehicle:why(name == 'dealerStop' and 'stop' or 'this dealer') end)
+      if name == 'dealer' then dirtyVehicles[vehicle:getID()] = true end
       result(ok, ok and (name == 'dealerStop' and 'Bounce stop command sent.' or 'Bounce started. Use Stop bouncing to end it without a reset.') or 'The game rejected the bounce command.')
       return
     end
@@ -195,8 +305,14 @@ end
       if gravity ~= nil and (not core_environment or type(core_environment.setGravity) ~= 'function') then
         result(false,'Gravity controls unavailable.'); return
       end
+      if gravity ~= nil and gravityBase == nil then
+        local original = call(core_environment,'getGravity')
+        if type(original) ~= 'number' or original ~= original or math.abs(original) == math.huge then result(false,'Cannot capture original gravity safely.'); return end
+        gravityBase = original
+      end
     end
     if count(pending) >= 16 then result(false,'Too many pending vehicle actions.'); return end
+    dirtyVehicles[vehicle:getID()] = true
     local settings = command
     if name == 'tuning' then settings = {enginePower=power or 1,damageImmunity=immune == true} end
     local selected = vehicle:getID()
@@ -218,13 +334,13 @@ end
 local ok, message = pcall(function()
   extensions.load('abmTuning')
   if not extensions.abmTuning then error('Install the updated ABM vehicle bridge.') end
-  if %q == 'gears' and extensions.abmTuning.version ~= '0.6.2' then error('Restart BeamNG to load the safe gearbox bridge 0.6.2.') end
+   if extensions.abmTuning.version ~= '0.7.0' then error('Restart BeamNG to load the ABM server-protected vehicle bridge 0.7.') end
   return extensions.abmTuning.execute(%q, %s)
 end)
 obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveControl(' ..
   string.format('%%q', %q) .. ',' .. tostring(obj:getID()) .. ',' .. tostring(ok) .. ',' ..
   string.format('%%q', tostring(message):sub(1,256)) .. ') end')
-]], name, name, serialize(settings), command.requestId)
+]], name, serialize(settings), command.requestId)
     local queued = pcall(function() vehicle:queueLuaCommand(script) end)
     if not queued then pending[command.requestId] = nil; result(false,'Could not queue vehicle tuning.') end
   end
@@ -240,6 +356,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
         result(false,'Stop the vehicle before repairing it.'); return
       end
       local ok, err = true, nil
+      if name ~= 'repair' then dirtyVehicles[vehicle:getID()] = true end
       if name == 'repair' then
         ok = type(spawn) == 'table' and type(spawn.safeTeleport) == 'function' and
           pcall(spawn.safeTeleport, vehicle, vehicle:getPosition(),
@@ -261,7 +378,9 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
 
   local function action(command)
   if type(command) ~= 'table' or command.schema ~= 1 or command.source ~= 'beamdeck-control'
-    or command.sessionId ~= sessionId or type(command.requestId) ~= 'string'
+    or command.sessionId ~= sessionId then return end
+  if command.action == 'serverPolicy' then acceptPolicy(command); return end
+  if type(command.requestId) ~= 'string'
     or #command.requestId == 0 or #command.requestId > 80 then return end
   local name, id = command.action, command.requestId
   if completed[id] then send(completed[id]); return end
@@ -275,6 +394,10 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
       if #completedOrder > 128 then completed[table.remove(completedOrder,1)] = nil end
     end
     send(response)
+  end
+  if name ~= 'catalog' and name ~= 'configs' and name ~= 'enableBeamMP' and name ~= 'dealerStop' then
+    local allowed, reason = permission()
+    if not allowed then result(false,reason); return end
   end
   if name == 'catalog' then
     local ok, err = pcall(catalog,id)
@@ -348,7 +471,7 @@ local function snapshot()
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
     version = short(beamng_versionb), beammpLoaded = mp ~= nil,
-    bridgeVersion = '0.6.2', controlsAvailable = true, sampleHz = 20,
+    bridgeVersion = '0.7.0', controlsAvailable = true, sampleHz = 20,
     gameFolder=FS and FS.getGamePath and FS:getGamePath(),
     userFolder=FS and FS.getUserPath and FS:getUserPath(),
     multiplayer = multiplayer, joining = call(mp, 'isGoingMPSession') == true,
@@ -360,6 +483,8 @@ local function snapshot()
     vehicleCount = be and be:getObjectCount() or nil,
     telemetry = {}
   }
+  data.sandboxAllowed, data.policyReason = permission()
+  data.policyCleanup = next(cleanupPending) ~= nil or gravityBase ~= nil and not data.sandboxAllowed
   if clock - metadataTime > .5 then metadata, metadataTime = buildMetadata(), clock end
   data.activeVehicles = metadata.activeVehicles
   if data.map then data.map = data.map:match('/levels/([^/]+)') or data.map end
@@ -384,7 +509,9 @@ local function snapshot()
   end
   if multiplayer then
     local server = call(mp, 'getCurrentServer')
-    data.server = type(server) == 'table' and short(server.name) or nil
+    data.server = type(server) == 'table' and short(server.name,512) or nil
+    data.serverIp = type(server) == 'table' and short(server.ip,64) or nil
+    data.serverPort = type(server) == 'table' and tonumber(server.port) or nil
     data.players = {}
     local players = call(vehicles, 'getPlayers')
     data.playerCount = type(players) == 'table' and count(players) or nil
@@ -412,6 +539,7 @@ local function snapshot()
 end
 
 local function onExtensionLoaded()
+  loadRoster()
   setExtensionUnloadMode(M, 'manual')
   local ok, socket = pcall(require, 'socket')
   if not ok then log('E', 'beamdeck', 'LuaSocket unavailable: ' .. tostring(socket)); return end
@@ -419,12 +547,13 @@ local function onExtensionLoaded()
   if not udp then log('E', 'beamdeck', 'Cannot create telemetry socket'); return end
   udp:settimeout(0)
   udp:setpeername('127.0.0.1',44444)
-  log('I', 'abm', 'ABM 0.6: telemetry, garage, and sandbox controls on localhost:44444')
+  log('I', 'abm', 'ABM 0.7: official-server protected controls on localhost:44444')
 end
 
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   timer = timer + (dtReal or 0)
+  policyTick()
   for id, entry in pairs(pending) do
     if clock - entry.time > 10 then pending[id] = nil; entry.result(false,'Vehicle tuning timed out. The game may be paused.') end
   end
@@ -463,9 +592,12 @@ end
 
 M.receiveVehicle = receiveVehicle
 M.receiveControl = receiveControl
+M.receivePolicyCleanup = receivePolicyCleanup
 M.onExtensionLoaded = onExtensionLoaded
 M.onUpdate = onUpdate
 M.onClientStartMission = function()
+  clearChanges()
+  policyLease, previousIdentity = nil, nil
   sessionId = tostring(os.time()) .. '-' .. tostring(clock)
   vehicleData, vehicleId, vehicleSample = {}, nil, -10
   metadataTime, models, allowedModels = -10, nil, {}

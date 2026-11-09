@@ -35,11 +35,11 @@ int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("abm");
     app.setApplicationDisplayName("ABM");
-    app.setApplicationVersion("0.6.2");
+    app.setApplicationVersion("0.7.0");
     app.setDesktopFileName("abm");
     app.setWindowIcon(QIcon::fromTheme("abm"));
     if (help) {
-        puts("ABM 0.6 — Advanced BeamNG.Drive Manager\n\nabm open [--tab drive|car|garage|session]\nabm serve\nabm status --json\nabm launch --auto --json   Start BeamNG, or BeamMP with --no-launch\nabm launch-status --json\nabm setup --user-folder PATH [--game-folder PATH] [--launcher PATH] --json\nabm preferences --json [--units kmh|mph] [--favorite MODEL/CONFIG]\nabm skill install --json\nabm open --demo --screenshot PATH");
+        puts("ABM 0.7 — Advanced BeamNG.Drive Manager\n\nabm open [--tab drive|car|garage|session]\nabm serve\nabm status --json\nabm launch --auto --json   Start BeamNG, or BeamMP with --no-launch\nabm launch-status --json\nabm setup --user-folder PATH [--game-folder PATH] [--launcher PATH] --json\nabm preferences --json [--units kmh|mph] [--favorite MODEL/CONFIG]\nabm skill install --json\nabm open --demo --screenshot PATH");
         return 0;
     }
     if (!commands.contains(command)) { fputs("Unknown command; use --help.\n", stderr); return 1; }
@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
     Backend backend;
     QQmlApplicationEngine engine;
     auto *previews = new Previews; engine.addImageProvider("vehicles",previews); backend.setPreviews(previews);
-    if (demo) backend.setDemo();
+    if (demo) backend.setDemo(args.contains("--dev-open") && args.value(args.indexOf("--dev-open") + 1) == "blocked");
     else if (!receiverError.isEmpty()) backend.launcher()->setMessage(QObject::tr("Cannot start the receiver: %1").arg(receiverError));
     else if (!backend.launcher()->userFolder().isEmpty()) backend.launcher()->installBridge();
     QObject::connect(&translator,&Translator::changed,&engine,&QQmlEngine::retranslate);

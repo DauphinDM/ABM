@@ -1,5 +1,5 @@
 -- ABM vehicle tuning: fixed actions only, with preflight before mutation.
-local M = {version='0.6.2'}
+local M = {version='0.7.0'}
 local gearBase
 local dimensionBase
 local engineBases = {}
@@ -337,5 +337,13 @@ M.onReset = function()
   for _, hydro in pairs(hydros and hydros.hydros or {}) do
     if hydro.abmInputFactor then hydro.inputFactor, hydro.abmInputFactor = hydro.abmInputFactor, nil end
   end
+end
+M.restoreForPolicy = function()
+  -- Restore ABM-owned values before the normal physics reset. Reset alone does
+  -- not rebuild a modified torque curve or the manual gearbox's private tables.
+  tuning({enginePower=1,damageImmunity=false})
+  apply({tireGrip=1,slidingGrip=1,brakePower=1,steeringResponse=1})
+  M.onReset()
+  obj:requestReset(RESET_PHYSICS)
 end
 return M

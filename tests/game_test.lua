@@ -43,8 +43,11 @@ quatFromDir=function() return {w=1,x=0,y=0,z=0} end
 local repairs=0
 spawn={safeTeleport=function(veh,pos,rot,a,b,c,d,repair) assert(veh==vehicle and repair==true); repairs=repairs+1; return true end,
   spawnNewVehicle=function() end}
-local envGravity
-core_environment={setGravity=function(g) envGravity=g end}
+local envGravity=-9.81
+core_environment={getGravity=function() return envGravity end,setGravity=function(g) envGravity=g end}
+jsonReadFile=function() return {schema=1,prefix='Official BeamMP Server | ',
+  groups={['15.204.242.33']={{30814,'Regular test'}}},
+  excluded={{'15.204.242.33',30816,'Official BeamMP x Moza - Qualifying Server [US-East]'}}} end
 getPlayerVehicle=function() return vehicle end
 local last
 jsonEncode=function(data) last=data; objects[#objects+1]=data; return 'encoded' end
@@ -52,11 +55,12 @@ jsonDecode=function(bytes) return commands[bytes] end
 m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.6.2')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.7.0')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
-MPCoreNetwork={isMPSession=function() return true end,getCurrentServer=function() return {name='<b>Server</b>'} end}
+local currentServer={ip='203.0.113.10',port=30814,name='<b>Server</b>'}
+MPCoreNetwork={isMPSession=function() return true end,getCurrentServer=function() return currentServer end}
 MPVehicleGE={getPlayers=function() return {
   {name='<img src="https://example.invalid">',isLocal=true,ping=-1,vehicles={IDs={a=true}}},
   {name='Other',ping=45,vehicles={IDs={b=true,c=true}}}} end,
@@ -66,7 +70,14 @@ assert(last.multiplayer and last.playerCount==2 and last.mpVehicleCount==3 and l
 assert(last.players[2].ping==45)
 MPCoreNetwork.isMPSession=function() return false end
 local serial=0
+local autoPolicy=true
+local function lease(official,allowed)
+  commands.policy={source='beamdeck-control',schema=1,sessionId=last.sessionId,action='serverPolicy',
+    verified=true,official=official,allowed=allowed,serverIp=currentServer.ip,serverPort=currentServer.port,serverName=currentServer.name,ttl=3}
+  inbound[#inbound+1]='policy'; m.onUpdate(0)
+end
 local function request(action,values,session)
+  if autoPolicy and MPCoreNetwork.isMPSession() then lease(false,true) end
   serial=serial+1
   local id='request'..serial
   local c=values or {}
@@ -118,6 +129,7 @@ local mods={multiplayerbeammp={active=false}}
 core_modmanager={getMods=function() return mods end,activateMod=function(name) assert(name=='multiplayerbeammp');mods[name].active=true end}
 assert(request('enableBeamMP').ok and mods.multiplayerbeammp.active)
 assert(not request('runLua',{code='1'}).ok)
+MPCoreNetwork.isMPSession=function() return false end
 -- Execute vehicle scripts and their result callbacks; queued != successful.
 local damageCalls, thermalCalls=0,0
 local function damageHook() damageCalls=damageCalls+1 end
@@ -128,6 +140,7 @@ local engine={torqueCurve={[1000]=200,[2000]=300},idleTorque=50,
   checkHydroLocking=damageHook,scaleOutputTorque=damageHook,thermals={updateGFX=thermalHook}}
 local combustion={mainEngine=engine}
 local limits, friction, brakes={}, {}, 1
+local policyResets=0
 local hydro={inputSource='steering_input',inputFactor=2}
 local gearbox={maxGearIndex=2,minGearIndex=-1,gearRatios={[-1]=-3,[0]=0,[1]=3,[2]=2},setGearIndex=function(self,i) self.gearIndex=i end}
 -- Mirror the controller's named closure boundary and its formerly crashing
@@ -151,6 +164,7 @@ vmEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngi
   obj={setBeamDeform=function(_,cid,value) limits.deform=value end,
     setBeamStrength=function(_,cid,value) limits.strength=value end,
     setNodeFrictionSlidingCoefs=function(_,cid,a,b) friction[cid]={a,b} end,
+    requestReset=function() policyResets=policyResets+1 end,
     getID=function() return 42 end,queueGameEngineLua=function(_,script)
       local f=assert(loadstring(script)); setfenv(f,setmetatable({extensions={beamdeck=m}}, {__index=_G})); f()
     end}, extensions={load=function() end}}, {__index=_G})
@@ -215,11 +229,7 @@ vmEnv.obj.beamIsBroken=function() return broken end
 vmEnv.obj.commitLoad=function() commits=commits+1 end
 local sizes={width=2,length=.5,height=1.5}
 local scaled=request('dimensions',sizes)
-assert(scaled.ok and commits==1 and scaled.message:find('not synchronized',1,true)) -- Own car in multiplayer.
-MPVehicleGE.isOwn=function() return false end
-assert(not request('dimensions',sizes).ok and commits==1)
-MPVehicleGE.isOwn=function() return true end
-MPCoreNetwork.isMPSession=function() return false end
+assert(scaled.ok and commits==1)
 commits=0
 speed=5; assert(not request('dimensions',sizes).ok and commits==0)
 speed=0; broken=true; assert(not request('dimensions',sizes).ok and commits==0)
@@ -233,7 +243,6 @@ assert(request('dimensions',sizes).ok and shape[6].x==-1 and shape[6].y==2)
 assert(not request('dimensions',{width=3,length=1,height=1}).ok and commits==3)
 vmEnv.obj.getDirectionVector=function() return {x=0,y=-1,z=0} end
 assert(request('dimensions',{width=1,length=1,height=1}).ok and shape[6].x==1)
-MPCoreNetwork.isMPSession=function() return true end
 speed=25; assert(not request('gears',{ratios={3,2,1}}).ok)
 speed=0; local many={}; for i=1,200 do many[i]=1/i end
 many[200]=.01 -- minimum supported ratio
@@ -256,16 +265,16 @@ assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
 shiftPoints[3]=point3
 vmEnv.extensions.abmTuning.version='0.6.1'
 assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
-vmEnv.extensions.abmTuning.version='0.6.2'
+vmEnv.extensions.abmTuning.version='0.7.0'
 assert(not request('gears',{ratios={0}}).ok)
 vmEnv.extensions.abmTuning.onReset()
 shape={[5]={x=-1,y=-2,z=0},[6]={x=3,y=2,z=1}}; rest=math.sqrt(33)
 MPCoreNetwork.isMPSession=function() return false end
 assert(request('dimensions',{width=2,length=1,height=1}).ok and shape[6].x==6) -- Reset drops the old capture.
-MPCoreNetwork.isMPSession=function() return true end
 assert(gearbox.maxGearIndex==2 and gearbox.gearRatios[3]==nil and hydro.inputFactor==2)
 assert(shiftPoints[3]==nil and mainController.updateGFX(2)==700)
 assert(engine.maxTorqueRating==500 and engine.maxOverRevDamage==1500 and engine.lockUp==damageHook)
+MPCoreNetwork.isMPSession=function() return true end
 MPVehicleGE.isOwn=function() return false end
 assert(not request('handling',handling).ok and not request('dealer').ok)
 assert(not request('engine',{engineStrength=2,engineIndestructible=true}).ok)
@@ -286,6 +295,51 @@ assert(not request('launchMissiles').ok)
 for i=1,60 do configurations['config'..i]={Configuration='Config '..i,pcFilename='/vehicles/etk800/config'..i..'.pc'} end
 response=request('configs',{model='etk800'})
 assert(response.complete and response.chunk==5)
+-- No GUI or receiver is needed to prove the game bridge denies direct actions.
+autoPolicy=false
+currentServer={ip='15.204.242.33',port=30814,name='Official BeamMP Server | Regular test'}
+m.onUpdate(.06)
+assert(not request('dealer').ok and not last.sandboxAllowed)
+lease(true,true)
+assert(request('dealer').ok and bounced)
+assert(request('tuning',{enginePower=2,gravity=-3.71,damageImmunity=true}).ok)
+assert(request('engine',{engineStrength=2,engineIndestructible=true}).ok)
+assert(request('gears',{ratios={3,2,1}}).ok)
+assert(engine.torqueCurve[1000]==400 and gearbox.maxGearIndex==3)
+local resets=policyResets
+m.onUpdate(6) -- Expired policy stops reapply and restores ABM-owned state.
+assert(not last.sandboxAllowed and not bounced and policyResets>resets)
+assert(engine.torqueCurve[1000]==200 and engine.maxTorqueRating==500 and gearbox.maxGearIndex==2 and envGravity==-9.81)
+assert(not request('dealer').ok)
+assert(request('dealerStop').ok and request('catalog').complete)
+lease(true,true); assert(request('dealer').ok)
+currentServer.name='Official BeamMP x Moza - Qualifying Server [US-East]'; currentServer.port=30816
+m.onUpdate(.06); lease(true,true)
+assert(not request('dealer').ok and not bounced) -- Even an erroneous allow lease cannot override the frozen roster.
+currentServer={ip='203.0.113.11',port=30814,name='New official event'}
+m.onUpdate(.06); lease(true,true); assert(not request('dealer').ok)
+currentServer.name='Official BeamMP Server | Regular test'
+m.onUpdate(.06); lease(false,true); assert(not request('dealer').ok) -- Official name, wrong IP.
+currentServer={ip='15.204.242.33',port=30814,name='Renamed regular server'}
+m.onUpdate(.06); lease(false,true); assert(not request('dealer').ok) -- Known official endpoint, wrong name.
+currentServer={ip='203.0.113.12',port=30814,name='Community server'}
+m.onUpdate(.06); lease(false,true); assert(request('dealer').ok)
+MPCoreNetwork.isGoingMPSession=function() return true end
+assert(not request('dealer').ok); MPCoreNetwork.isGoingMPSession=nil
+lease(false,true)
+local oldKey=currentServer.port; currentServer.port=oldKey+1
+assert(not request('dealer').ok) -- Lease is bound to IP + port + exact raw name.
+currentServer.port=oldKey; m.onUpdate(.06); lease(false,true)
+assert(request('dimensions',{width=1,length=1,height=1}).ok)
+MPVehicleGE.isOwn=function() return false end
+assert(not request('dimensions',{width=1,length=1,height=1}).ok)
+MPVehicleGE.isOwn=function() return true end
+local resetFunction=vmEnv.obj.requestReset
+vmEnv.obj.requestReset=function() error('Reset temporarily unavailable') end
+m.onUpdate(6); lease(false,true)
+assert(not request('dealer').ok and last.policyCleanup) -- Failure never silently unlocks.
+vmEnv.obj.requestReset=resetFunction
+m.onUpdate(6); lease(false,true); assert(request('dealer').ok)
 local collected
 local env={electrics={values={rpm=3200,abs=true,running=true,turboBoost=14.504}},
   powertrain={getDevice=function() return {maxRPM=7200} end},sensors={gx2=9.81,gy2=0},

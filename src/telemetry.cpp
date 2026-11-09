@@ -65,6 +65,9 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
     for (const auto key : {"gameFolder", "userFolder"}) out.insert(key, bounded(in.value(key), 2048));
     for (const auto &key : {"paused", "beammpLoaded", "multiplayer", "joining"})
         out.insert(key, in.value(key).toBool());
+    out.insert("sandboxAllowed", in.value("sandboxAllowed").toBool());
+    out.insert("policyReason", bounded(in.value("policyReason"), 256));
+    out.insert("policyCleanup", in.value("policyCleanup").toBool());
     number(out, in, "fps", 0, 2000);
     number(out, in, "vehicleCount", 0, 10000);
     number(out, in, "vehicleId", 0, 10000000);
@@ -94,8 +97,11 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
         if (v.value(key).isBool()) t.insert(key, v.value(key));
     out.insert("telemetry", t);
     if (out.value("multiplayer").toBool()) {
-        out.insert("serverRaw", bounded(in.value("server"), 512));
+        const auto rawName = in.value("server").toString();
+        out.insert("serverRaw", rawName.size() <= 512 ? rawName : QString());
         out.insert("server", cleanName(bounded(in.value("server"), 512)));
+        out.insert("serverIp", bounded(in.value("serverIp"), 64));
+        number(out, in, "serverPort", 1, 65535);
         number(out, in, "ping", 0, 60000);
         const auto list = in.value("players").toArray();
         QJsonArray players;
@@ -127,6 +133,7 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
 }
 
 Telemetry::Telemetry(const QString &path, QObject *parent) : QObject(parent), m_path(path) {
+    connect(&m_policy, &ServerPolicy::changed, this, [this] { m_policySent.invalidate(); updatePolicy(); broadcast(state()); });
     connect(&m_socket, &QUdpSocket::readyRead, this, &Telemetry::drain);
     m_timer.setInterval(250);
     connect(&m_timer, &QTimer::timeout, this, &Telemetry::publish);
@@ -271,6 +278,7 @@ void Telemetry::drain() {
         m_sample.start();
         m_data = data;
         m_lastPacket.start();
+        updatePolicy();
     }
     broadcast(state());
     if (m_socket.hasPendingDatagrams()) QTimer::singleShot(0, this, &Telemetry::drain);
@@ -288,6 +296,11 @@ QJsonObject Telemetry::state() const {
     state.insert("gameSeen", m_gameWasSeen);
     state.insert("updatedAt", QDateTime::currentMSecsSinceEpoch());
     if (connected) {
+        const auto guard = policy();
+        state.insert("sandboxAllowed", guard.value("allowed").toBool()
+            && (!m_data.value("multiplayer").toBool() || m_data.value("sandboxAllowed").toBool()));
+        state.insert("policyReason", m_data.value("policyCleanup").toBool()
+            ? tr("Clearing previous ABM changes. Gameplay stays locked until cleanup succeeds.") : guard.value("reason").toString());
         state.insert("sessionSeconds", m_session.elapsed() / 1000);
         state.insert("distance", m_distance);
         state.insert("topSpeed", m_topSpeed);
@@ -298,6 +311,26 @@ QJsonObject Telemetry::state() const {
         state.insert("packetAgeMs", m_lastPacket.elapsed());
     }
     return state;
+}
+QJsonObject Telemetry::policy() const {
+    if (m_data.value("joining").toBool()) return {{"allowed", false}, {"reason", tr("Joining BeamMP: gameplay changes are locked.")}};
+    if (!m_data.value("multiplayer").toBool()) return {{"allowed", true}, {"reason", tr("Single player: no server restriction.")}};
+    if (m_data.value("bridgeVersion").toString() != "0.7.0")
+        return {{"allowed", false}, {"reason", tr("Multiplayer changes need bridge 0.7. Install it and restart BeamNG.")}};
+    return m_policy.decision(m_data);
+}
+void Telemetry::updatePolicy() {
+    if (!m_lastPacket.isValid() || m_lastPacket.elapsed() >= 3000 || m_data.value("bridgeVersion").toString() != "0.7.0"
+        || !m_data.value("multiplayer").toBool()) return;
+    m_policy.refresh();
+    if (m_policySent.isValid() && m_policySent.elapsed() < 1000) return;
+    m_policySent.start();
+    auto record = policy();
+    record.insert("source", "beamdeck-control"); record.insert("schema", 1);
+    record.insert("sessionId", m_peerSession); record.insert("action", "serverPolicy");
+    record.insert("serverIp", m_data.value("serverIp")); record.insert("serverPort", m_data.value("serverPort"));
+    record.insert("serverName", m_data.value("serverRaw")); record.insert("ttl", 3);
+    m_socket.writeDatagram(QJsonDocument(record).toJson(QJsonDocument::Compact), QHostAddress::LocalHost, m_peerPort);
 }
 void Telemetry::broadcast(const QJsonObject &message) {
     const auto bytes = QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
@@ -323,22 +356,27 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     }
     const bool driveAction = QStringList{"spawn", "replace", "switch"}.contains(action);
     const auto bridgeVersion = m_data.value("bridgeVersion").toString();
-    if (action == "gears" && bridgeVersion != "0.6.2") {
+    const bool mutates = !QStringList{"catalog", "configs", "enableBeamMP", "dealerStop"}.contains(action);
+    if (mutates && (!policy().value("allowed").toBool() || m_data.value("policyCleanup").toBool()
+        || (m_data.value("multiplayer").toBool() && !m_data.value("sandboxAllowed").toBool()))) {
+        reply(false, state().value("policyReason").toString()); return;
+    }
+    if (action == "gears" && bridgeVersion != "0.6.2" && bridgeVersion != "0.7.0") {
         reply(false, tr("Safe extra gears need bridge 0.6.2. Install it and restart BeamNG when ready.")); return;
     }
-    if ((action == "dimensions" || action == "dealerStop") && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2") {
+    if ((action == "dimensions" || action == "dealerStop") && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2" && bridgeVersion != "0.7.0") {
         reply(false, tr("Resizing and bounce stop need bridge 0.6.1. Install it and restart BeamNG when ready.")); return;
     }
-    if (action == "engine" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2") {
+    if (action == "engine" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2" && bridgeVersion != "0.7.0") {
         reply(false, tr("Engine durability needs bridge 0.6. Install it and restart BeamNG when ready.")); return;
     }
-    if (QStringList{"handling", "stability", "dealer"}.contains(action) && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2") {
+    if (QStringList{"handling", "stability", "dealer"}.contains(action) && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2" && bridgeVersion != "0.7.0") {
         reply(false, tr("Install the bridge and restart BeamNG for the 0.5 sandbox controls.")); return;
     }
-    if (QStringList{"tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) && bridgeVersion != "0.4.0" && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2") {
+    if (QStringList{"tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) && bridgeVersion != "0.4.0" && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2" && bridgeVersion != "0.7.0") {
         reply(false, tr("Restart BeamNG to load the updated Car controls.")); return;
     }
-    if (!m_data.value("controlsAvailable").toBool() || !QStringList{"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2"}.contains(bridgeVersion)) {
+    if (!m_data.value("controlsAvailable").toBool() || !QStringList{"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0"}.contains(bridgeVersion)) {
         reply(false, tr("Reload the ABM game extension to enable car controls.")); return;
     }
     if (action == "catalog" && !m_catalogRequest.isEmpty()) { reply(false, tr("A catalog request is already running.")); return; }
@@ -394,7 +432,7 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     }
     if (action == "dimensions") {
         if (!Protocol::dimensions(message)) { reply(false, tr("Dimensions must be 0.5–2× per axis.")); return; }
-        if (m_data.value("multiplayer").toBool() && bridgeVersion != "0.6.2") { reply(false, tr("Multiplayer resizing needs bridge 0.6.2.")); return; }
+        if (m_data.value("multiplayer").toBool() && bridgeVersion != "0.6.2" && bridgeVersion != "0.7.0") { reply(false, tr("Multiplayer resizing needs bridge 0.6.2.")); return; }
         const auto speed = m_data.value("telemetry").toObject().value("speed");
         if (!speed.isDouble() || speed.toDouble() > 1) { reply(false, tr("Stop the vehicle before resizing.")); return; }
         for (const auto key : {"width", "length", "height"}) command.insert(key, message.value(key));
@@ -416,6 +454,7 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     });
 }
 void Telemetry::publish() {
+    updatePolicy();
     const auto snapshot = state();
     broadcast(snapshot);
     const QString directory = QFileInfo(m_path).absolutePath();

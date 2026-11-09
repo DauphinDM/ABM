@@ -1,6 +1,22 @@
 # Changelog
 
-## 0.6.2 — Unreleased
+## 0.7.0 — Unreleased
+
+- Freeze 108 regular official BeamMP identities (IP, port and exact raw name),
+  excluding the four MOZA qualifying servers. New/mismatched official servers
+  are denied; verified non-official servers remain unrestricted by this policy.
+- Classify through BeamMP's public HTTPS directory, fail closed when unverified,
+  and enforce bounded identity-bound leases in both receiver and game bridge.
+- Lock gameplay actions, stop reapply, cancel pending commands, restore captured
+  values and request owned-car physics resets on permission/identity changes.
+  Keep telemetry/browsing and bounce stop available. Cleanup errors remain locked.
+- Require bridge 0.7 for multiplayer mutations; bundle the fourth roster file.
+  Add a visible lock reason and blocked-server demo capture.
+- This is not tamper-proof anti-cheat or permission from a server. Approved
+  identities repurposed without changes cannot be detected. Live transitions
+  and cleanup remain unverified; see docs/server-policy.md.
+
+## 0.6.2 — Development snapshot
 
 - Fix the confirmed `selectShiftPoints` nil-entry crash beyond factory top gear:
   extend the controller shift-point table alongside gearbox/synchro/sound tables.

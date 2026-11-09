@@ -71,7 +71,7 @@ public:
     Q_INVOKABLE bool launcherAvailable();
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void toggleMonitoring();
-    void setDemo();
+    void setDemo(bool blocked = false);
 signals:
     void changed();
     void historyChanged();

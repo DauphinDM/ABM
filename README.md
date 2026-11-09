@@ -6,7 +6,7 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest release: 0.4.0 · Development: 0.6.2.** The repository and its releases
+**Latest release: 0.4.0 · Development: 0.7.0.** The repository and its releases
 are private. This is an independent project, not affiliated with BeamNG or BeamMP.
 
 ## What it does
@@ -28,7 +28,7 @@ app works without Omarchy; Windows support remains experimental.
 
 ## Documentation
 
-The 0.5/0.6 workshop additions are development features, not part of the published
+The workshop additions and official-server guard are development features, not part of the published
 0.4 preview. See the [changelog](CHANGELOG.md) for limits and validation status.
 
 - [Installation and migration](docs/installation.md)
@@ -39,6 +39,7 @@ The 0.5/0.6 workshop additions are development features, not part of the publish
 - [Windows build and limitations](docs/windows.md)
 - [Portable Linux: AppImage and bundled archive](docs/portable-linux.md)
 - [Sandbox feature research and roadmap](docs/sandbox-research.md)
+- [Official-server allowlist, cleanup and limitations](docs/server-policy.md)
 - [Development, tests and private releases](docs/development.md)
 - [Visual audit](docs/ui-audit.md)
 - [Security and privacy](SECURITY.md)
@@ -100,12 +101,19 @@ may reject or override actions. Effects of the new tuning controls still need
 live verification after loading the bridge; mocks and automated tests are not
 a substitute for real-game testing.
 
+Development 0.7 requires a verified server identity before multiplayer changes:
+only the frozen regular-official roster is approved; official events and new or
+mismatched official servers are blocked. Verified non-official servers have no
+extra ABM restriction. [Policy details and important limitations](docs/server-policy.md).
+
 ## Local by design
 
-The bridge sends bounded JSON to `127.0.0.1:44444`. There is no cloud service,
+The bridge sends bounded JSON to `127.0.0.1:44444`. The receiver fetches BeamMP's
+public HTTPS server directory for official-server classification; it uploads no
+telemetry or connected-server identity. There is no ABM cloud service,
 account login, remote console, arbitrary Lua-execution endpoint or automatic
 updater. The local game installation and BeamMP-managed files are not edited.
-ABM installs three bridge files in your **game user folder** and backs up changed
+ABM installs four bridge files in your **game user folder** and backs up changed
 integration files. See [security boundaries](SECURITY.md).
 
 ## Preview status

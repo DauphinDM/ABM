@@ -14,7 +14,15 @@ ABM is a local convenience tool, not a sandbox against code running as your user
 - Datagram size (32 KiB), player/active-vehicle lists (128), catalog/config lists
   (2048), strings, requests, clients and output queues are bounded.
 - There are no cloud accounts, analytics, chat logging, packet interception or
-  automatic updates. Data stays in runtime storage, memory and user preferences.
+  automatic updates. The sole directory lookup fetches BeamMP's public HTTPS
+  server roster without uploading telemetry, player lists or current-server
+  identity. The directory host sees the requesting IP; no directory is cached
+  on disk. Other state stays in runtime storage, memory and user preferences.
+
+The [official-server guard](docs/server-policy.md) is cooperative, not tamper-proof.
+Its short leases and frozen roster reduce accidental use on official events;
+they cannot authenticate an unmodified client or detect an unchanged approved
+identity being repurposed. Do not treat it as a staff/competition guarantee.
 
 Other local processes may spoof UDP telemetry. User-only sockets and request
 validation do not provide cryptographic authentication of game data. Omarchy
