@@ -33,6 +33,8 @@ handling**, **Gearbox**, or **Fun & recovery**. Adjust **Engine power**,
 | Control | Range / behavior |
 | --- | --- |
 | Engine power | Slider 50–300%; numeric entry accepts any finite positive percentage, scaling supported engines' runtime torque curves; rejects derived overflow |
+| Engine strength | 0.1–100× combustion-engine torque tolerance and over-torque/over-rev damage budgets; bridge 0.6 required |
+| Engine indestructible | Block supported engine damage hooks and freeze thermal updates; not whole-vehicle godmode |
 | Gravity | −30 to 0 m/s²; affects all world objects |
 | Planet presets | Earth, Moon, Mars, Venus, Jupiter, Pluto, zero gravity; apply immediately |
 | Beam protection | Raises deformation/strength thresholds; disabling restores stock thresholds |
@@ -73,6 +75,26 @@ measurement. Higher torque can cause overheating or mechanical failure.
 
 Beam protection is **not complete godmode**: tires, powertrain components and
 other systems can still fail. It cannot repair existing deformation.
+
+### Engine strength and protection (development 0.6)
+
+Choose **Car → Engine strength**. Move the slider and press **Apply engine
+strength**. The **Engine indestructible** toggle applies immediately. These
+values are requested settings, not live durability measurements.
+
+Strength scales the captured stock torque rating and damage budgets, not
+horsepower, the rev limiter, or the whole vehicle. Stock negative torque-limit
+sentinels remain unlimited. Only the verified combustion-engine API is supported;
+electric/custom motors report unsupported instead of silently pretending.
+
+Protection blocks the supported engine lock-up/break/deformation/flooding hooks,
+disables over-torque/over-rev failures, and **freezes thermal simulation**. It
+does not repair existing damage, refill fuel, stop unrelated controllers, or
+protect tires, mounts, turbochargers and the rest of the drivetrain. It is an
+engine-only sandbox mode, not a guarantee of an indestructible car. Turning it
+off restores normal hooks at the selected strength. **Restore stock engine**
+sets 1× with protection off; a vehicle reset also restores these engine edits.
+Effects still need real-game validation.
 
 ### Restoring normal physics
 

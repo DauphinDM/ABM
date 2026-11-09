@@ -51,7 +51,7 @@ jsonDecode=function(bytes) return commands[bytes] end
 m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.5.0')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.6.0')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
@@ -118,7 +118,14 @@ core_modmanager={getMods=function() return mods end,activateMod=function(name) a
 assert(request('enableBeamMP').ok and mods.multiplayerbeammp.active)
 assert(not request('runLua',{code='1'}).ok)
 -- Execute vehicle scripts and their result callbacks; queued != successful.
-local engine={torqueCurve={[1000]=200,[2000]=300},idleTorque=50}
+local damageCalls, thermalCalls=0,0
+local function damageHook() damageCalls=damageCalls+1 end
+local function thermalHook() thermalCalls=thermalCalls+1 end
+local engine={torqueCurve={[1000]=200,[2000]=300},idleTorque=50,
+  maxTorqueRating=500,maxOverTorqueDamage=1000,maxOverRevDamage=1500,maxPhysicalAV=900,canFlood=true,
+  lockUp=damageHook,onBreak=damageHook,applyDeformGroupDamage=damageHook,
+  checkHydroLocking=damageHook,scaleOutputTorque=damageHook,thermals={updateGFX=thermalHook}}
+local combustion={mainEngine=engine}
 local limits, friction, brakes={}, {}, 1
 local hydro={inputSource='steering_input',inputFactor=2}
 local gearbox={maxGearIndex=2,minGearIndex=-1,gearRatios={[-1]=-3,[0]=0,[1]=3,[2]=2},setGearIndex=function(self,i) self.gearIndex=i end}
@@ -127,7 +134,7 @@ for _,field in ipairs({'gearWhineCoefsOutput','gearWhineCoefsInput','synchroWear
   gearbox[field]={[-1]=1,[0]=1,[1]=1,[2]=1}
 end
 vmEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngine=engine} end,
-  getDevicesByType=function() return {gearbox} end,calculateTreeInertia=function() end},
+  getDevicesByType=function(kind) return kind=='combustionEngine' and combustion or {gearbox} end,calculateTreeInertia=function() end},
   wheels={wheels={[0]={},[1]={isTireDeflated=true}},scaleBrakeTorque=function(value) brakes=value end},
   hydros={hydros={hydro}},controller={getController=function() return nil end},
   v={data={beams={{cid=4,beamDeform=100,beamStrength=200}},wheels={[0]={treadNodes={5}},[1]={treadNodes={6}}},
@@ -156,6 +163,22 @@ assert(engine.torqueCurve[1000]==200 and limits.deform==100 and limits.strength=
 vehicleCommands={}
 m.onUpdate(4) -- next snapshot tick re-applies the cheat to the same vehicle
 assert(vehicleCommands[1] and vehicleCommands[1]:find('abmTuning',1,true))
+assert(not request('engine',{engineStrength=0,engineIndestructible=false}).ok)
+assert(not request('engine',{engineStrength=1,engineIndestructible='yes'}).ok)
+assert(request('engine',{engineStrength=2,engineIndestructible=false}).ok)
+assert(engine.maxTorqueRating==1000 and engine.maxOverTorqueDamage==2000 and engine.maxOverRevDamage==3000)
+assert(request('engine',{engineStrength=2,engineIndestructible=false}).ok and engine.maxTorqueRating==1000)
+assert(request('engine',{engineStrength=3,engineIndestructible=true}).ok)
+assert(engine.maxTorqueRating==-1 and engine.maxPhysicalAV==1e30 and engine.canFlood==false)
+engine:lockUp(); engine:onBreak(); engine:applyDeformGroupDamage(); engine:checkHydroLocking(); engine:scaleOutputTorque()
+engine.thermals.updateGFX(.1); assert(damageCalls==0 and thermalCalls==0)
+assert(request('engine',{engineStrength=2,engineIndestructible=false}).ok)
+assert(engine.maxTorqueRating==1000 and engine.maxPhysicalAV==900 and engine.canFlood==true)
+assert(engine.lockUp==damageHook and engine.thermals.updateGFX==thermalHook)
+engine:lockUp(); engine.thermals.updateGFX(.1); assert(damageCalls==1 and thermalCalls==1)
+combustion.unsupported={maxTorqueRating=100}
+assert(not request('engine',{engineStrength=3,engineIndestructible=true}).ok and engine.maxTorqueRating==1000)
+combustion.unsupported=nil
 local handling={tireGrip=2,slidingGrip=3,brakePower=4,steeringResponse=1.5}
 assert(request('handling',handling).ok and brakes==4 and hydro.inputFactor==3)
 assert(request('handling',handling).ok and hydro.inputFactor==3)
@@ -176,8 +199,10 @@ assert(request('gears',{ratios={3,2,1}}).ok and gearbox.maxGearIndex==3 and gear
 assert(not request('gears',{ratios={0}}).ok)
 vmEnv.extensions.abmTuning.onReset()
 assert(gearbox.maxGearIndex==2 and gearbox.gearRatios[3]==nil and hydro.inputFactor==2)
+assert(engine.maxTorqueRating==500 and engine.maxOverRevDamage==1500 and engine.lockUp==damageHook)
 MPVehicleGE.isOwn=function() return false end
 assert(not request('handling',handling).ok and not request('dealer').ok)
+assert(not request('engine',{engineStrength=2,engineIndestructible=true}).ok)
 MPVehicleGE.isOwn=function() return true end
 -- Car actions: repair requires a stopped vehicle, the rest just fire.
 speed=25

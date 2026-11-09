@@ -21,6 +21,11 @@ inline bool handling(const QJsonObject &data) {
     }
     return true;
 }
+inline bool engine(const QJsonObject &data) {
+    const auto strength = data.value("engineStrength");
+    return strength.isDouble() && std::isfinite(strength.toDouble()) && strength.toDouble() >= .1
+        && strength.toDouble() <= 100 && data.value("engineIndestructible").isBool();
+}
 inline bool gears(const QJsonValue &value) {
     if (!value.isArray() || value.toArray().isEmpty()) return false;
     if (QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact).size() > 24000) return false;

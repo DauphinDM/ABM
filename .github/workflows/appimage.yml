@@ -1,0 +1,73 @@
+name: Portable Linux
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build and desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libarchive-dev libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1 libegl1 patchelf desktop-file-utils curl
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: gcc_64
+          cache: true
+      - name: Build bundled AppImage and archive
+        env:
+          QMAKE: qmake
+        run: bash bin/build-appimage
+      - name: Smoke test the AppImage without FUSE
+        run: |
+          mkdir -p "$RUNNER_TEMP/abm-home"
+          export HOME="$RUNNER_TEMP/abm-home" BEAMSIDE_CONFIG_DIR="$RUNNER_TEMP/abm-home/config" BEAMSIDE_RUNTIME_DIR="$RUNNER_TEMP/abm-home/runtime"
+          export APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_FORCE_STDERR_LOGGING=1
+          dist/ABM-*-x86_64.AppImage preferences --json
+          dist/ABM-*-x86_64.AppImage open --demo --dev-open engine --screenshot "$RUNNER_TEMP/engine.png"
+          test -s "$RUNNER_TEMP/engine.png"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ABM-Linux-x86_64
+          path: |
+            dist/ABM-*-x86_64.AppImage
+            dist/ABM-*-x86_64.tar.gz
+            dist/SHA256SUMS-linux
+          if-no-files-found: error
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:22.04', 'debian:12', 'fedora:43', 'archlinux:base']
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ABM-Linux-x86_64
+          path: portable
+      - name: Start bundled Qt without system Qt
+        run: |
+          tar -xzf portable/ABM-*-x86_64.tar.gz -C portable
+          docker run --rm -v "$PWD/portable:/portable:ro" '${{ matrix.image }}' sh -ec '
+            # Desktop graphics libraries remain host-provided; do not install Qt.
+            if command -v apt-get >/dev/null; then
+              apt-get update
+              apt-get install -y --no-install-recommends libgl1 libegl1 libfontconfig1 libfreetype6 libglib2.0-0 libx11-6 libxkbcommon0 libdbus-1-3
+            elif command -v dnf >/dev/null; then
+              dnf install -y libglvnd-glx libglvnd-egl fontconfig freetype glib2 libX11 libxkbcommon dbus-libs
+            else
+              pacman -Syu --noconfirm libglvnd fontconfig freetype2 glib2 libx11 libxkbcommon dbus
+            fi
+            export HOME=/tmp/abm-home BEAMSIDE_CONFIG_DIR=/tmp/abm-home/config BEAMSIDE_RUNTIME_DIR=/tmp/abm-home/runtime
+            export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_FORCE_STDERR_LOGGING=1
+            mkdir -p "$HOME"
+            /portable/ABM.AppDir/AppRun preferences --json
+            /portable/ABM.AppDir/AppRun open --demo --dev-open engine --screenshot /tmp/engine.png
+            test -s /tmp/engine.png
+          '

@@ -21,7 +21,7 @@ QT_QUICK_BACKEND=software build/abm open --demo --tab garage --pick etk800 --scr
 
 Capture targets: `drive`, `car`, `garage`, `session`, `help`, `diagnostics`,
 `paths`, `owned`, `trip`, `spawn`, `replace`, `switch`, `garage-menu`,
-`settings-menu`, `filters`, `handling`, `gears`, and `fun`. These hooks require
+`settings-menu`, `filters`, `handling`, `gears`, `fun`, and `engine`. These hooks require
 demo screenshot mode.
 
 Generated tuning Lua is executed in tests to verify non-compounding torque
@@ -41,3 +41,14 @@ controls, which rejected customized backgrounds in the first Windows CI run.
 Local evidence: `/tmp/opencode/abm-05-audit/` (not part of the repository).
 The full test pass preceded these final review fixes; there was no second
 review/test loop. In-game physics effects remain unverified.
+
+## Development 0.6 pass
+
+Captured and reviewed the new Engine strength section at the default 440×700
+window: slider, immediate protection toggle, apply/restore controls and explicit
+thermal/coverage warnings fit without clipping. Zero QML warnings. Evidence:
+`/tmp/opencode/abm-06-audit/engine-flat.png` (local, not committed).
+
+The single local suite passed 26 Qt tests plus Lua, plugin, CLI and standalone
+lifecycle tests. VM mocks cover idempotent strength, protection on/off, original
+hook restoration, multi-engine preflight and reset. This is not gameplay proof.

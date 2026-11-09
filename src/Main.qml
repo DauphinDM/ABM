@@ -23,9 +23,10 @@ ApplicationWindow {
     readonly property var telemetry: game.telemetry || ({})
     readonly property bool live: backend.connected
     readonly property var launcher: backend.launcher
-    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
-    readonly property bool tuningReady: controls && ["0.4.0", "0.5.0"].indexOf(game.bridgeVersion) >= 0
-    readonly property bool sandboxReady: controls && game.bridgeVersion === "0.5.0" && !backend.busy
+    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
+    readonly property bool tuningReady: controls && ["0.4.0", "0.5.0", "0.6.0"].indexOf(game.bridgeVersion) >= 0
+    readonly property bool sandboxReady: controls && ["0.5.0", "0.6.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool engineReady: controls && game.bridgeVersion === "0.6.0" && !backend.busy
     readonly property var tuning: backend.tuning
     readonly property bool canDriveAction: controls && !backend.busy && !demoMode && (!telemetry.speed || telemetry.speed <= 1) && !!game.map
     property var selectedModel: ({})
@@ -51,7 +52,7 @@ ApplicationWindow {
     onDevOpenChanged: {
         const targets = {drive:0, car:1, garage:2, session:3}
         if (targets[devOpen] !== undefined) win.page = targets[devOpen]
-        else if (["handling", "gears", "fun"].indexOf(devOpen) >= 0) { win.page = 1; carSection.currentIndex = {handling:1,gears:2,fun:3}[devOpen] }
+        else if (["handling", "gears", "fun", "engine"].indexOf(devOpen) >= 0) { win.page = 1; carSection.currentIndex = {handling:1,gears:2,fun:3,engine:4}[devOpen] }
         else if (devOpen === "owned") ownedDialog.open()
         else if (devOpen === "trip") tripDialog.open()
         else if (devOpen === "diagnostics") diagnostics.open()
@@ -237,8 +238,8 @@ ApplicationWindow {
                             MetricCard { Layout.fillWidth: true; label: qsTr("GEAR"); value: win.telemetry.gear === undefined ? "—" : win.telemetry.gear === 0 ? "N" : win.telemetry.gear < 0 ? "R" : win.number(win.telemetry.gear); unit: qsTr("RPM %1").arg(win.telemetry.rpm === undefined ? "—" : win.number(win.smoothRpm)) }
                         }
                         ComboBox { id: carSection; Layout.fillWidth: true; visible: win.controls; font.pixelSize: 11
-                            model: [qsTr("Power & world"), qsTr("Grip & handling"), qsTr("Gearbox"), qsTr("Fun & recovery")] }
-                        PlainLabel { visible: win.controls && !win.sandboxReady && !backend.busy && carSection.currentIndex > 0; Layout.fillWidth: true; text: qsTr("New controls need bridge 0.5. Install the bridge, then restart BeamNG when ready."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
+                            model: [qsTr("Power & world"), qsTr("Grip & handling"), qsTr("Gearbox"), qsTr("Fun & recovery"), qsTr("Engine strength")] }
+                        PlainLabel { visible: win.controls && !backend.busy && (carSection.currentIndex === 4 ? !win.engineReady : carSection.currentIndex > 0 && !win.sandboxReady); Layout.fillWidth: true; text: carSection.currentIndex === 4 ? qsTr("Engine controls need bridge 0.6. Install the bridge, then restart BeamNG when ready.") : qsTr("New controls need bridge 0.5. Install the bridge, then restart BeamNG when ready."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
                         ColumnLayout { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; spacing: 2
                             RowLayout { Layout.fillWidth: true
                                 PlainLabel { Layout.fillWidth: true; text: qsTr("Engine power"); font.pixelSize: 11; color: textMain }
@@ -337,6 +338,31 @@ ApplicationWindow {
                             Button { text: qsTr("Fire"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("ignite") }
                             Button { text: qsTr("Extinguish"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("extinguish") }
                             Button { text: qsTr("Deflate tires"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("deflate") }
+                        }
+                        ColumnLayout { visible: win.controls && carSection.currentIndex === 4; Layout.fillWidth: true; spacing: gap
+                            RowLayout { Layout.fillWidth: true
+                                PlainLabel { Layout.fillWidth: true; text: qsTr("Engine strength"); font.pixelSize: 12; color: accent }
+                                PlainLabel { text: strengthSlider.value.toFixed(1) + "×"; font.pixelSize: 13; color: textMain }
+                            }
+                            Slider { id: strengthSlider; objectName: "strengthSlider"; Layout.fillWidth: true; implicitHeight: 24
+                                from: 0.1; to: 100; value: 1; stepSize: 0.1; enabled: win.engineReady && !engineToggle.checked
+                                background: Rectangle { y: (strengthSlider.height - 5) / 2; height: 5; width: strengthSlider.availableWidth; color: "#26282f"
+                                    Rectangle { width: parent.width * strengthSlider.position; height: parent.height; color: accent } }
+                                handle: Rectangle { width: 14; height: 14; color: strengthSlider.pressed || strengthSlider.hovered ? accent : textMain; border.width: 1; border.color: "#0e0f13"
+                                    x: strengthSlider.visualPosition * (strengthSlider.availableWidth - width); y: (strengthSlider.height - height) / 2 }
+                            }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("0.1–100× stock torque tolerance and over-torque/over-rev damage budgets. 1× restores stock strength. Does not increase power or the rev limiter."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            Button { id: engineToggle; objectName: "engineToggle"; Layout.fillWidth: true; checkable: true; enabled: win.engineReady
+                                text: checked ? qsTr("Indestructible engine: ON") : qsTr("Indestructible engine: OFF")
+                                font.pixelSize: 11; implicitHeight: 32
+                                onClicked: backend.applyEngine({engineStrength:strengthSlider.value, engineIndestructible:checked})
+                            }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("Supported combustion engines only. Protection blocks engine damage/lock-up and hydrolocking; thermal simulation freezes while ON. Does not repair existing damage or protect tires, mounts, turbos or the rest of the drivetrain."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            Button { text: qsTr("Apply engine strength"); Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11; enabled: win.engineReady
+                                onClicked: backend.applyEngine({engineStrength:strengthSlider.value, engineIndestructible:engineToggle.checked}) }
+                            Button { text: qsTr("Restore stock engine limits"); Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: win.engineReady
+                                onClicked: { strengthSlider.value = 1; engineToggle.checked = false; backend.applyEngine({engineStrength:1, engineIndestructible:false}) } }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("OFF restores normal damage hooks at the selected strength. Vehicle reset restores stock engine limits. These controls show requested settings, not measured engine state."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
                         PlainLabel { visible: win.controls; Layout.fillWidth: true; text: qsTr("Sandbox changes affect your selected vehicle, not saved configs. Last requested values are not live readback. Multiplayer servers may overrule changes."); font.pixelSize: 9; color: textDim; wrapMode: Text.Wrap }
                         RowLayout { visible: win.controls && carSection.currentIndex === 0 && win.tuning.enginePower !== undefined; Layout.fillWidth: true; spacing: gap

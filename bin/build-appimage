@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Build on Ubuntu 22.04 with Qt 6.8.3, not Arch, for the portable release.
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+[[ $(uname -m) == x86_64 ]] || { echo 'This AppImage recipe targets x86_64.' >&2; exit 1; }
+export QMAKE=${QMAKE:-qmake6}
+command -v "$QMAKE" >/dev/null
+mkdir -p "$root/build" "$root/dist" "$root/build/appimage-tools"
+stage=$(mktemp -d "$root/build/appimage.XXXXXX")
+appdir="$stage/ABM.AppDir"
+tools="$root/build/appimage-tools"
+export PATH="$tools:$PATH"
+download() {
+    local name=$1 url=$2 sha=$3
+    if [[ ! -f "$tools/$name" ]]; then
+        curl --fail --location --retry 3 "$url" -o "$tools/$name"
+    fi
+    echo "$sha  $tools/$name" | sha256sum --check -
+    chmod +x "$tools/$name"
+}
+# Fail closed if upstream replaces a continuous tool; update hashes explicitly.
+download linuxdeploy-x86_64.AppImage \
+    https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
+    df908b19f1ed1cdafa79508d415aa12d6c56ce4d56d4149aa8c09286718706e5
+download linuxdeploy-plugin-qt-x86_64.AppImage \
+    https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage \
+    cfc1055b2b9dbc08412b579f20990b7b41a17b61beaa5847dc9477c96c9e9617
+mkdir -p "$stage/build" "$appdir/usr/bin" "$appdir/usr/share/applications" \
+    "$appdir/usr/share/icons/hicolor/scalable/apps" "$appdir/usr/share/doc/abm"
+cd "$stage/build"
+"$QMAKE" "$root/abm.pro" CONFIG+=release CONFIG-=debug
+make -j"${JOBS:-2}"
+install -m755 abm "$appdir/usr/bin/abm"
+install -m644 "$root/pkgbuild/abm.desktop" "$appdir/usr/share/applications/abm.desktop"
+install -m644 "$root/pkgbuild/abm.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/abm.svg"
+install -m644 "$root/LICENSE" "$root/docs/portable-linux.md" "$root/docs/THIRD-PARTY.md" "$appdir/usr/share/doc/abm/"
+install -m644 /usr/share/common-licenses/LGPL-3 /usr/share/common-licenses/GPL-3 "$appdir/usr/share/doc/abm/"
+# Include Ubuntu dependency copyright notices, not just ABM's MIT license.
+for copyright in /usr/share/doc/*/copyright; do
+    package=$(basename "$(dirname "$copyright")")
+    mkdir -p "$appdir/usr/share/doc/abm/dependencies/$package"
+    cp -L "$copyright" "$appdir/usr/share/doc/abm/dependencies/$package/copyright"
+done
+export QML_SOURCES_PATHS="$root/src"
+export EXTRA_QT_MODULES=svg
+export EXTRA_PLATFORM_PLUGINS='libqwayland-egl.so;libqwayland-generic.so;libqoffscreen.so'
+export APPIMAGE_EXTRACT_AND_RUN=1
+version=$(sed -n 's/^pkgver=//p' "$root/pkgbuild/PKGBUILD")
+export VERSION="$version" OUTPUT="$root/dist/ABM-$version-x86_64.AppImage"
+cd "$stage"
+"$tools/linuxdeploy-x86_64.AppImage" --appdir "$appdir" --plugin qt --output appimage
+# A plain archive uses the same bundled runtime without requiring FUSE.
+tar -C "$stage" -czf "$root/dist/ABM-$version-x86_64.tar.gz" ABM.AppDir
+cd "$root/dist"
+sha256sum "ABM-$version-x86_64.AppImage" "ABM-$version-x86_64.tar.gz" > SHA256SUMS-linux
+echo "Portable builds: $root/dist/ABM-$version-x86_64.{AppImage,tar.gz}"

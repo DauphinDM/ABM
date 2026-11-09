@@ -1,6 +1,10 @@
 -- ABM vehicle tuning: fixed actions only, with preflight before mutation.
 local M = {}
 local gearBase
+local engineBases = {}
+local strengthFields = {'maxTorqueRating', 'maxOverTorqueDamage', 'maxOverRevDamage'}
+local protectionMethods = {'lockUp', 'onBreak', 'applyDeformGroupDamage', 'checkHydroLocking', 'scaleOutputTorque'}
+local function protected() end
 local gearFields = {'gearRatios', 'gearWhineCoefsOutput', 'gearWhineCoefsInput', 'synchroWear',
   'previouslyReportedSynchroWear', 'shiftAllowedNonClutchAVDifference', 'shiftRequiredClutchInput',
   'shiftMaxSynchroAVCapability', 'shiftMaxSynchroRate', 'synchroWearCoef'}
@@ -12,6 +16,56 @@ local function copy(t)
   return out
 end
 local function between(n, low, high) return finite(n) and n >= low and n <= high end
+
+local function restoreEngine(device, base)
+  for _, field in ipairs(strengthFields) do device[field] = base.fields[field] end
+  device.maxPhysicalAV, device.canFlood = base.maxPhysicalAV, base.canFlood
+  for _, method in ipairs(protectionMethods) do device[method] = base.methods[method] end
+  if base.thermals then base.thermals.updateGFX = base.thermalUpdate end
+end
+
+local function engineStrength(settings)
+  local factor, immune = settings.engineStrength, settings.engineIndestructible
+  if not between(factor, 0.1, 100) or type(immune) ~= 'boolean' then error('Engine strength must be 0.1–100x, with protection on or off.') end
+  local devices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('combustionEngine') or {}
+  if not next(devices) then error('Requires a supported combustion engine; electric/custom motors are not supported.') end
+  -- Reject partial support before touching any engine in a multi-engine vehicle.
+  for _, device in pairs(devices) do
+    for _, field in ipairs(strengthFields) do
+      if not finite(device[field]) then error('Unsupported engine durability field: '..field) end
+    end
+    if not finite(device.maxPhysicalAV) or not device.thermals or type(device.thermals.updateGFX) ~= 'function' then error('Unsupported engine thermal/RPM API.') end
+    for _, method in ipairs(protectionMethods) do
+      if type(device[method]) ~= 'function' then error('Unsupported engine damage hook: '..method) end
+    end
+    local base = engineBases[device]
+    for _, field in ipairs(strengthFields) do
+      if not finite((base and base.fields[field] or device[field]) * factor) then error('Engine strength would overflow.') end
+    end
+  end
+  for _, device in pairs(devices) do
+    local base = engineBases[device]
+    if not base then
+      base = {fields={}, methods={}, maxPhysicalAV=device.maxPhysicalAV, canFlood=device.canFlood,
+        thermals=device.thermals, thermalUpdate=device.thermals.updateGFX}
+      for _, field in ipairs(strengthFields) do base.fields[field] = device[field] end
+      for _, method in ipairs(protectionMethods) do base.methods[method] = device[method] end
+      engineBases[device] = base
+    end
+    restoreEngine(device, base)
+    for _, field in ipairs(strengthFields) do
+      -- A negative torque rating means the stock engine has no torque limit.
+      device[field] = base.fields[field] > 0 and base.fields[field] * factor or base.fields[field]
+    end
+    if immune then
+      device.maxTorqueRating, device.maxPhysicalAV, device.canFlood = -1, 1e30, false
+      for _, method in ipairs(protectionMethods) do device[method] = protected end
+      base.thermals.updateGFX = protected
+    end
+  end
+  return immune and 'Engine protection ON. Thermal simulation is frozen; existing damage is not repaired.'
+    or 'Engine strength applied; normal damage hooks restored. Existing damage is not repaired.'
+end
 
 local function tuning(settings)
   local factor, immune = settings.enginePower, settings.damageImmunity
@@ -133,6 +187,7 @@ end
 
 local function execute(action, settings)
   if action == 'tuning' then return tuning(settings)
+  elseif action == 'engine' then return engineStrength(settings)
   elseif action == 'handling' then return apply(settings)
   elseif action == 'gears' then return gears(settings.ratios)
   elseif action == 'stability' then return stability()
@@ -142,6 +197,8 @@ end
 
 M.execute = execute
 M.onReset = function()
+  for device, base in pairs(engineBases) do restoreEngine(device, base) end
+  engineBases = {}
   -- Vehicle extensions reset before powertrain/controllers. Restore dimensions
   -- first so their stock-ratio reset never indexes an expanded gearbox.
   if gearBase then

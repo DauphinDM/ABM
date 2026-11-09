@@ -262,7 +262,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
     local response = {kind='result',requestId=id,ok=ok,message=message}
     if name == 'spawn' or name == 'replace' or name == 'switch' or name == 'enableBeamMP'
       or name == 'tuning' or name == 'repair' or name == 'ignite' or name == 'extinguish' or name == 'deflate'
-      or name == 'handling' or name == 'gears' or name == 'stability' or name == 'dealer' then
+      or name == 'handling' or name == 'gears' or name == 'stability' or name == 'dealer' or name == 'engine' then
       completed[id] = response; completedOrder[#completedOrder+1] = id
       if #completedOrder > 128 then completed[table.remove(completedOrder,1)] = nil end
     end
@@ -288,10 +288,10 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
     return
   end
   if name ~= 'spawn' and name ~= 'replace' and name ~= 'switch' and name ~= 'tuning'
-    and not ({repair=true, ignite=true, extinguish=true, deflate=true, handling=true, gears=true, stability=true, dealer=true})[name] then
+    and not ({repair=true, ignite=true, extinguish=true, deflate=true, handling=true, gears=true, stability=true, dealer=true, engine=true})[name] then
     result(false,'Unsupported action'); return
   end
-  if ({tuning=true,handling=true,gears=true,stability=true,dealer=true})[name] then
+  if ({tuning=true,handling=true,gears=true,stability=true,dealer=true,engine=true})[name] then
     vehicleAction(command, result)
     return
   end
@@ -340,7 +340,7 @@ local function snapshot()
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
     version = short(beamng_versionb), beammpLoaded = mp ~= nil,
-    bridgeVersion = '0.5.0', controlsAvailable = true, sampleHz = 20,
+    bridgeVersion = '0.6.0', controlsAvailable = true, sampleHz = 20,
     gameFolder=FS and FS.getGamePath and FS:getGamePath(),
     userFolder=FS and FS.getUserPath and FS:getUserPath(),
     multiplayer = multiplayer, joining = call(mp, 'isGoingMPSession') == true,
@@ -411,7 +411,7 @@ local function onExtensionLoaded()
   if not udp then log('E', 'beamdeck', 'Cannot create telemetry socket'); return end
   udp:settimeout(0)
   udp:setpeername('127.0.0.1',44444)
-  log('I', 'abm', 'ABM 0.5: telemetry, garage, and sandbox controls on localhost:44444')
+  log('I', 'abm', 'ABM 0.6: telemetry, garage, and sandbox controls on localhost:44444')
 end
 
 local function onUpdate(dtReal)

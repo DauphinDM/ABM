@@ -6,7 +6,7 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest release: 0.4.0 · Development: 0.5.0.** The repository and its releases
+**Latest release: 0.4.0 · Development: 0.6.0.** The repository and its releases
 are private. This is an independent project, not affiliated with BeamNG or BeamMP.
 
 ## What it does
@@ -14,7 +14,7 @@ are private. This is an independent project, not affiliated with BeamNG or BeamM
 | Page | Features |
 | --- | --- |
 | **Drive** | Speed/RPM gauge, gear, fuel, speed history, coolant, boost, warnings |
-| **Car** | Power slider + uncapped numeric entry, gravity, beam protection, grip/brakes/steering, manual gearbox ratios, ESC modes, bouncing-car easter egg, repair/fire/tires (new controls require 0.5) |
+| **Car** | Power slider + uncapped numeric entry, engine-strength slider/protection toggle, gravity, beam protection, grip/brakes/steering, manual gearbox ratios, ESC modes, bouncing-car easter egg, repair/fire/tires (engine durability requires bridge 0.6) |
 | **Garage** | Search real installed models and configurations, preview photos, custom configs, favorites, spawn/replace confirmations |
 | **Session** | Trip time/distance, top/average speed, FPS history, searchable multiplayer players, owned vehicles |
 
@@ -28,7 +28,7 @@ app works without Omarchy; Windows support remains experimental.
 
 ## Documentation
 
-The 0.5 workshop additions are development features, not part of the published
+The 0.5/0.6 workshop additions are development features, not part of the published
 0.4 preview. See the [changelog](CHANGELOG.md) for limits and validation status.
 
 - [Installation and migration](docs/installation.md)
@@ -37,6 +37,8 @@ The 0.5 workshop additions are development features, not part of the published
 - [Architecture and compatibility](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Windows build and limitations](docs/windows.md)
+- [Portable Linux: AppImage and bundled archive](docs/portable-linux.md)
+- [Sandbox feature research and roadmap](docs/sandbox-research.md)
 - [Development, tests and private releases](docs/development.md)
 - [Visual audit](docs/ui-audit.md)
 - [Security and privacy](SECURITY.md)
@@ -103,7 +105,7 @@ a substitute for real-game testing.
 The bridge sends bounded JSON to `127.0.0.1:44444`. There is no cloud service,
 account login, remote console, arbitrary Lua-execution endpoint or automatic
 updater. The local game installation and BeamMP-managed files are not edited.
-ABM installs two bridge files in your **game user folder** and backs up changed
+ABM installs three bridge files in your **game user folder** and backs up changed
 integration files. See [security boundaries](SECURITY.md).
 
 ## Preview status

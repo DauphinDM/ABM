@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.5.0 — Unreleased
+## 0.6.0 — Unreleased
+
+- Add a 0.1–100× combustion-engine strength slider and immediate protection
+  toggle. Scale stock torque tolerance and over-torque/over-rev damage budgets
+  without changing power or the rev limiter. Restore hooks and stock fields
+  on reset; reject unsupported engines before changing any engine.
+- Engine protection blocks the verified damage hooks, flooding and over-rev/
+  over-torque failures, and freezes thermal updates. It does not repair damage
+  or protect the whole drivetrain; real-game validation remains outstanding.
+- Add a pinned-tool AppImage/bundled-archive recipe and Ubuntu/Debian/Fedora/Arch
+  startup matrix. Experimental until CI passes; not a promise of all Linux.
+- Document researched sandbox expansions and their game API/ownership limits.
+- Require bridge 0.6 for engine durability; retain older action compatibility.
+
+## 0.5.0 — Development snapshot
 
 - Split the Car workshop into Power & world, Grip & handling, Gearbox, and Fun.
 - Keep the power slider and add positive numeric percentages without a fixed cap.

@@ -58,6 +58,7 @@ public:
     Q_INVOKABLE void requestVehicle(const QString &action, const QString &model);
     Q_INVOKABLE void applyTuning(QVariantMap tuning);
     Q_INVOKABLE void applyHandling(QVariantMap settings);
+    Q_INVOKABLE void applyEngine(QVariantMap settings);
     Q_INVOKABLE void applyGears(const QString &ratios);
     Q_INVOKABLE void carAction(const QString &name);
     Q_INVOKABLE void switchVehicle(int id);

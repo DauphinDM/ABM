@@ -5,7 +5,7 @@
 | Platform | Installation | Status |
 | --- | --- | --- |
 | Arch / Omarchy, x86_64 | Private release package or `bin/install` | Primary development target |
-| Other Linux desktops | Build and run `build/abm open` | Standalone mode; no Omarchy widget |
+| Other Linux desktops | [AppImage/bundled archive](portable-linux.md) or source build | Portable CI recipe experimental; standalone mode, no Omarchy widget |
 | Windows x64 | Qt/MSVC build or authorized CI artifact | Experimental; see [Windows guide](windows.md) |
 | Linux aarch64 | PKGBUILD declares architecture | No prebuilt asset or hardware validation |
 
@@ -72,12 +72,15 @@ extensions.unload("beamdeck"); extensions.load("beamdeck")
 ```text
 <user folder>/lua/ge/extensions/beamdeck.lua
 <user folder>/scripts/beamdeck/modScript.lua
+<user folder>/lua/vehicle/extensions/abmTuning.lua
 ```
 
 The user folder defaults to `~/.local/share/BeamNG/BeamNG.drive/current` on
 Linux. Do not assume it matches a cloud profile or a relocated installation.
-Garage actions accept bridge 0.3/0.4/0.5; original Car actions need 0.4 or 0.5.
-The development workshop's handling/gearbox/bounce and uncapped power need 0.5.
+Garage actions accept bridge 0.3–0.6; original Car actions need 0.4 or newer.
+Handling/gearbox/bounce and uncapped power need 0.5 or newer; engine durability
+needs 0.6. Restart the game after upgrading all three files: reloading GE Lua
+alone does not replace a vehicle extension already loaded in its separate VM.
 
 ## Migrating a previous development installation
 
@@ -100,7 +103,7 @@ sudo pacman -R abm
 ```
 
 Unload the bridge in GE Lua with `extensions.unload("beamdeck")`. To stop
-future loading, remove only the two ABM-owned bridge files listed above after
+future loading, remove only the three ABM-owned bridge files listed above after
 checking ownership/backups. Do not delete your BeamNG user folder or BeamMP
 managed files. Preferences and user plugin copies remain until you remove them
 explicitly.

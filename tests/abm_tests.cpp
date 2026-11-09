@@ -109,6 +109,10 @@ private slots:
         QJsonArray ratios; for (int i=0;i<200;++i) ratios.append(.5);
         QVERIFY(Protocol::gears(ratios)); QVERIFY(!Protocol::gears(QJsonArray{0}));
         QVERIFY(!Protocol::gears(QJsonArray{"1"})); QVERIFY(!Protocol::gears(QJsonArray{}));
+        QVERIFY(Protocol::engine({{"engineStrength",.1},{"engineIndestructible",true}}));
+        QVERIFY(Protocol::engine({{"engineStrength",100.0},{"engineIndestructible",false}}));
+        QVERIFY(!Protocol::engine({{"engineStrength",100.1},{"engineIndestructible",false}}));
+        QVERIFY(!Protocol::engine({{"engineStrength",1.0},{"engineIndestructible","yes"}}));
     }
     void tuningRoundTripAndBusyRequest() {
         Fixture f; QVERIFY(f.start());
@@ -138,6 +142,24 @@ private slots:
         QTRY_COMPARE(backend.state().value("telemetry").toMap().value("speed").toDouble(),20.0);
         backend.applyGears("3,2,1"); QTRY_VERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
         backend.applyGears("3, nope"); QVERIFY(!backend.busy()); QVERIFY(backend.actionMessage().contains("numeric"));
+    }
+    void engineCommandsRequireNewBridge() {
+        Fixture f; QVERIFY(f.start());
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("bridgeVersion","0.5.0"); f.send(state);
+        Backend backend(f.path); QTRY_VERIFY(backend.connected()); QTest::qWait(100);
+        backend.applyEngine({{"engineStrength",2.0},{"engineIndestructible",true}});
+        QTRY_VERIFY(!backend.busy()); QVERIFY(backend.actionMessage().contains("0.6")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("bridgeVersion","0.6.0"); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.6.0"));
+        backend.applyEngine({{"engineStrength",2.0},{"engineIndestructible",true},{"code","ignored"}});
+        QTRY_VERIFY(f.game.hasPendingDatagrams()); const auto command=f.command();
+        QCOMPARE(command.value("action").toString(),QString("engine"));
+        QCOMPARE(command.value("engineStrength").toDouble(),2.0);
+        QVERIFY(command.value("engineIndestructible").toBool()); QVERIFY(!command.contains("code"));
+        f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true},{"message","Engine protection ON"}});
+        QTRY_VERIFY(!backend.busy()); QCOMPARE(backend.actionMessage(),QString("Engine protection ON"));
+        backend.applyEngine({{"engineStrength",0.0},{"engineIndestructible",true}});
+        QVERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
     }
     void preferencesStayInTestDirectory() {
         QTemporaryDir dir; Backend first(dir.filePath("state.json"));
@@ -253,7 +275,8 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.5.0")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.6.0")); file.close();
+        QVERIFY(QFileInfo::exists(dir.filePath("lua/vehicle/extensions/abmTuning.lua")));
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());
         QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(),QByteArray("User-owned unrelated extension"));
     }
