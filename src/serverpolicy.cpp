@@ -12,8 +12,7 @@ QString endpoint(const QString &ip, int port) {
     return !address.isNull() && port > 0 && port <= 65535 ? address.toString() + ':' + QString::number(port) : QString();
 }
 struct Roster {
-    QHash<QString, QString> approved;
-    QSet<QString> endpoints, names;
+    QSet<QString> approved, names;
     Roster() {
         QFile file(":/bridge/official-servers.json");
         if (!file.open(QIODevice::ReadOnly)) return;
@@ -25,16 +24,15 @@ struct Roster {
             for (const auto &entry : g.value().toArray()) {
                 const auto row = entry.toArray();
                 if (row.size() != 2) continue;
-                const auto key = endpoint(g.key(), row[0].toInt());
                 const auto name = prefix + row[1].toString();
-                if (key.isEmpty()) continue;
-                approved.insert(key, name); endpoints.insert(key); names.insert(name);
+                // Snapshot addresses are historical metadata, not allow criteria.
+                approved.insert(name); names.insert(name);
             }
         }
         for (const auto &entry : root.value("excluded").toArray()) {
             const auto row = entry.toArray();
             if (row.size() != 3) continue;
-            endpoints.insert(endpoint(row[0].toString(), row[1].toInt())); names.insert(row[2].toString());
+            names.insert(row[2].toString());
         }
     }
 };
@@ -52,7 +50,7 @@ QJsonObject ServerPolicy::evaluate(const QJsonObject &server, const QJsonArray &
     if (!server.value("serverPort").isDouble() || server.value("serverPort").toDouble() != port
         || key.isEmpty() || name.isEmpty() || name.size() > 512 || roster.approved.isEmpty()) return out;
     QJsonObject found;
-    bool official = roster.endpoints.contains(key) || roster.names.contains(name);
+    bool official = roster.names.contains(name);
     for (const auto &entry : directory) {
         const auto row = entry.toObject();
         if (row.value("official").toBool() && row.value("sname").toString() == name) official = true;
@@ -63,7 +61,7 @@ QJsonObject ServerPolicy::evaluate(const QJsonObject &server, const QJsonArray &
     }
     if (found.isEmpty() || !found.value("official").isBool() || found.value("sname").toString() != name) return out;
     official |= found.value("official").toBool();
-    const bool allowed = !official || roster.approved.value(key) == name;
+    const bool allowed = !official || roster.approved.contains(name);
     out = {{"verified", true}, {"allowed", allowed}, {"official", official},
         {"reason", allowed ? (official ? tr("Approved regular official server.") : tr("Non-official server: no ABM official-server restriction."))
                            : tr("Official event/new or mismatched server: gameplay changes are blocked.")}};

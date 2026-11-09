@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.7.0 — Unreleased
+## 0.7.1 — Unreleased
+
+- Approve frozen regular official server names independently of IP/port, so
+  host rotations are supported. Both receiver and game bridge use exact raw
+  names; old addresses do not restrict verified non-official replacements.
+- Keep event/new official names blocked and unknown classification locked.
+  Current-connection leases still require fresh verification after a rotation.
+- Require bridge 0.7.1 for multiplayer. Name reuse/impersonation, including an
+  event adopting an approved name, cannot be distinguished by this policy.
+
+## 0.7.0 — Development snapshot
 
 - Freeze 108 regular official BeamMP identities (IP, port and exact raw name),
   excluding the four MOZA qualifying servers. New/mismatched official servers

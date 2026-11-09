@@ -215,9 +215,9 @@ private slots:
         row.insert("sname",name+" event"); server.insert("serverRaw",row.value("sname"));
         QVERIFY(!decide().value("allowed").toBool());
         server.insert("serverRaw",name); row.insert("sname",name); row.insert("port",30815); server.insert("serverPort",30815);
-        QVERIFY(!decide().value("allowed").toBool());
+        QVERIFY(decide().value("allowed").toBool()); // Rotated port, approved name.
         row.insert("ip","203.0.113.7"); server.insert("serverIp","203.0.113.7");
-        QVERIFY(!decide().value("allowed").toBool());
+        QVERIFY(decide().value("allowed").toBool()); // Rotated host, approved name.
         row.insert("sname","New official event"); server.insert("serverRaw","New official event");
         QVERIFY(!decide().value("allowed").toBool());
         row.insert("official",false); QVERIFY(decide().value("allowed").toBool());
@@ -228,6 +228,18 @@ private slots:
         server={{"serverIp",row.value("ip")},{"serverPort",row.value("port")},{"serverRaw",row.value("sname")}};
         QVERIFY(!decide().value("allowed").toBool());
         row.insert("official",false); QVERIFY(!decide().value("allowed").toBool());
+        row.insert("ip","203.0.113.8"); server.insert("serverIp",row.value("ip"));
+        row.insert("port",31000); server.insert("serverPort",31000);
+        QVERIFY(!decide().value("allowed").toBool()); // Excluded event name follows rotations too.
+        // A former official address does not constrain a different community server.
+        row.insert("ip","15.204.242.33"); server.insert("serverIp",row.value("ip"));
+        row.insert("port",30816); server.insert("serverPort",30816);
+        row.insert("sname","Community on a reused address"); server.insert("serverRaw",row.value("sname"));
+        QVERIFY(decide().value("allowed").toBool());
+        row.insert("sname",name.toLower()); server.insert("serverRaw",row.value("sname")); row.insert("official",true);
+        QVERIFY(!decide().value("allowed").toBool()); // Exact, case-sensitive matching.
+        row.insert("sname",name+" "); server.insert("serverRaw",row.value("sname"));
+        QVERIFY(!decide().value("allowed").toBool());
         QFile roster(":/bridge/official-servers.json"); QVERIFY(roster.open(QIODevice::ReadOnly));
         const auto data=QJsonDocument::fromJson(roster.readAll()).object(); int count=0;
         const auto groups=data.value("groups").toObject(); for (const auto &group:groups) count+=group.toArray().size();
@@ -242,6 +254,10 @@ private slots:
         QVERIFY(backend.actionMessage().contains("0.7")); QVERIFY(!f.game.hasPendingDatagrams());
         state.insert("bridgeVersion","0.7.0"); f.send(state);
         QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.7.0"));
+        backend.applyTuning({{"enginePower",2.0},{"gravity",-9.81},{"damageImmunity",false}}); QTRY_VERIFY(!backend.busy());
+        QVERIFY(backend.actionMessage().contains("0.7.1")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("bridgeVersion","0.7.1"); f.send(state);
+        QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.7.1"));
         QVERIFY(!backend.state().value("sandboxAllowed").toBool());
         backend.applyTuning({{"enginePower",2.0},{"gravity",-9.81},{"damageImmunity",false}}); QTRY_VERIFY(!backend.busy());
         QVERIFY(backend.actionMessage().contains("unverified",Qt::CaseInsensitive));
@@ -355,7 +371,7 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.7.0")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.7.1")); file.close();
         QVERIFY(QFileInfo::exists(dir.filePath("lua/vehicle/extensions/abmTuning.lua")));
         QVERIFY(QFileInfo::exists(dir.filePath("lua/ge/extensions/abm-official-servers.json")));
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());

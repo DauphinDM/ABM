@@ -6,7 +6,7 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest release: 0.4.0 · Development: 0.7.0.** The repository and its releases
+**Latest release: 0.4.0 · Development: 0.7.1.** The repository and its releases
 are private. This is an independent project, not affiliated with BeamNG or BeamMP.
 
 ## What it does

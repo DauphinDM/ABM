@@ -1,14 +1,16 @@
-# Official-server protection (development 0.7)
+# Official-server protection (development 0.7.1)
 
-ABM freezes the **108 regular official servers observed on 9 November 2026**.
+ABM freezes the **108 regular official server names observed on 9 November 2026**.
 The four official BeamMP × MOZA qualifying servers are explicitly excluded.
 The snapshot lives in `game/lua/ge/extensions/abm-official-servers.json`; it is
-not silently expanded when the directory changes.
+not silently expanded when the directory changes. Matching is **exact raw name
+only**, including case, spacing and any formatting codes. IP addresses and ports
+in the snapshot are historical capture metadata, not allowlist criteria.
 
 | Connected server | Gameplay changes |
 | --- | --- |
-| Official, exact approved IP **and port and raw name** | Allowed |
-| Official event, new official, changed IP/port/name | Blocked |
+| Official, exact approved raw name, at any IP/port | Allowed |
+| Official event, new official, changed/unapproved name | Blocked |
 | Verified non-official | No additional ABM official-server restriction |
 | Joining, missing identity, missing/stale directory, failed HTTPS request | Locked until verified |
 
@@ -21,7 +23,11 @@ the normal requesting IP address. There is no persistent directory cache.
 Both the local command gateway and the game bridge enforce the policy. The
 bridge binds a short permission lease (at most three seconds) to the current
 session, exact endpoint and raw name, and independently checks its bundled
-frozen roster. Missing files or old bridges do not unlock multiplayer actions.
+frozen **name** roster. Endpoint matching associates the live directory record
+and lease with the connected server; it does not compare against historical
+addresses. After a host/port rotation, a fresh classification of the same
+approved name is allowed. Old leases cannot authorize another connection.
+Missing files or pre-0.7.1 bridges do not unlock multiplayer actions.
 There is no UI override or automatic roster enrollment. Install **all four
 bridge files** and restart BeamNG when convenient; reloading GE Lua alone cannot
 replace an already loaded vehicle extension or make older changes safe.
@@ -49,9 +55,11 @@ before relying on protection after upgrading from an older ABM bridge.
   A modified app, forged local UDP traffic or another tool can bypass it.
 - Official classification depends on the live BeamMP directory. A newly
   official server incorrectly marked non-official there cannot be reliably
-  identified unless its endpoint/name is already known to the frozen roster.
-- Repurposing an approved server **without changing its IP, port or raw name**
-  is indistinguishable from the approved server. This policy cannot detect it.
+  identified unless its name is already known to the frozen roster. A former
+  official address reused by a verified non-official server is not restricted.
+- Repurposing or impersonating an approved server **without changing its raw
+  name**, even at another address, is indistinguishable under this name-only
+  policy. ABM cannot detect that an approved regular name is now used for an event.
 - Non-official does not mean tuning is permitted. Server rules still apply.
 - Automated mocks cover policy decisions and cleanup. Live transition/reset
   behavior still needs in-game verification. This is not a promise against

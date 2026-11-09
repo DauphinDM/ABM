@@ -82,10 +82,11 @@ their original dimensions before the game's own powertrain reset runs.
 ## Files and persistence
 
 Development 0.7 adds `ServerPolicy` and a bundled, frozen official-server roster.
-The receiver classifies exact raw IP/port/name against a short-lived HTTPS
-directory response, denies unverified multiplayer mutations, and sends session-
+Since 0.7.1, approval checks exact raw names only, permitting host/port rotations.
+The receiver associates the current endpoint/name with a short-lived HTTPS
+directory response for official classification, denies unverified multiplayer mutations, and sends session-
 bound leases valid for at most three seconds. The game bridge independently
-checks the same frozen roster, identity and expiry, gates direct commands and
+checks the same frozen name roster, current connection identity and expiry, gates direct commands and
 reapply, and initiates owned-vehicle restoration/reset on permission changes.
 Cleanup errors keep commands locked. Read [server-policy.md](server-policy.md)
 for expiration, network privacy, reset side effects and non-anticheat limits.

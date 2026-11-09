@@ -1,10 +1,10 @@
 # ABM user guide
 
-## Official-server guard (development 0.7)
+## Official-server guard (development 0.7.1)
 
-Multiplayer gameplay changes require bridge 0.7 and verified server permission.
-The frozen 108 regular official identities are allowed only by exact IP, port
-and raw name. Official events/new or mismatched official servers are blocked;
+Multiplayer gameplay changes require bridge 0.7.1 and verified server permission.
+The frozen 108 regular official names are allowed by exact raw name only;
+rotating their IP/port does not remove approval. Official event/new or unapproved names are blocked;
 verified non-official servers have no extra ABM restriction. Unknown status
 locks changes. A banner explains the decision. Telemetry/browsing and Stop
 bouncing remain available. Permission loss stops reapply and requests cleanup,

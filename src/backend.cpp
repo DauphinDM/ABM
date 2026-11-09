@@ -283,7 +283,7 @@ void Backend::setDemo(bool blocked) {
     m_pending.clear(); m_pendingAction.clear();
     m_error.clear();
     m_state = QJsonDocument::fromJson(R"({"connected":true,"multiplayer":true,"beammpLoaded":true,"server":"Coastal cruising · EU","map":"west_coast_usa","vehicle":"etk800","fps":89,"vehicleCount":14,"sessionSeconds":1452,"distance":18420,"topSpeed":62.5,"playerCount":3,"mpVehicleCount":5,"ping":32,"telemetry":{"speed":28.6,"rpm":3240,"gear":4,"fuel":0.72,"throttle":0.42,"brake":0,"coolant":88,"oil":96},"players":[{"name":"CoastDriver","local":true,"ping":32,"vehicles":1},{"name":"Apex","ping":48,"vehicles":2},{"name":"Tourer","ping":61,"vehicles":2}]})").object().toVariantMap();
-    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.7.0");
+    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.7.1");
     m_state.insert("sandboxAllowed", !blocked);
     m_state.insert("policyReason", blocked ? tr("Official event/new or mismatched server: gameplay changes are blocked.") : tr("Non-official server: no ABM official-server restriction."));
     if (blocked) m_state.insert("server", "Official event · demo");

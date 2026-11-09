@@ -55,7 +55,7 @@ jsonDecode=function(bytes) return commands[bytes] end
 m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.7.0')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.7.1')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
@@ -265,7 +265,7 @@ assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
 shiftPoints[3]=point3
 vmEnv.extensions.abmTuning.version='0.6.1'
 assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
-vmEnv.extensions.abmTuning.version='0.7.0'
+vmEnv.extensions.abmTuning.version='0.7.1'
 assert(not request('gears',{ratios={0}}).ok)
 vmEnv.extensions.abmTuning.onReset()
 shape={[5]={x=-1,y=-2,z=0},[6]={x=3,y=2,z=1}}; rest=math.sqrt(33)
@@ -319,9 +319,16 @@ assert(not request('dealer').ok and not bounced) -- Even an erroneous allow leas
 currentServer={ip='203.0.113.11',port=30814,name='New official event'}
 m.onUpdate(.06); lease(true,true); assert(not request('dealer').ok)
 currentServer.name='Official BeamMP Server | Regular test'
-m.onUpdate(.06); lease(false,true); assert(not request('dealer').ok) -- Official name, wrong IP.
+m.onUpdate(.06); lease(true,true); assert(request('dealer').ok) -- Approved name rotates to another host.
+currentServer.port=30999
+m.onUpdate(.06); lease(true,true); assert(request('dealer').ok) -- Port rotation is allowed after fresh classification.
 currentServer={ip='15.204.242.33',port=30814,name='Renamed regular server'}
-m.onUpdate(.06); lease(false,true); assert(not request('dealer').ok) -- Known official endpoint, wrong name.
+m.onUpdate(.06); lease(true,true); assert(not request('dealer').ok) -- Official, unapproved name.
+lease(false,true); assert(request('dealer').ok) -- Reused address with a verified non-official name.
+currentServer.name='official beammp server | regular test'
+m.onUpdate(.06); lease(true,true); assert(not request('dealer').ok) -- No fuzzy/case-fold matching.
+currentServer={ip='203.0.113.99',port=30999,name='Official BeamMP x Moza - Qualifying Server [US-East]'}
+m.onUpdate(.06); lease(true,true); assert(not request('dealer').ok) -- Event name stays blocked after rotation.
 currentServer={ip='203.0.113.12',port=30814,name='Community server'}
 m.onUpdate(.06); lease(false,true); assert(request('dealer').ok)
 MPCoreNetwork.isGoingMPSession=function() return true end

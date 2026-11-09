@@ -9,7 +9,7 @@ local models, allowedModels = nil, {}
 local catalogQueue, extensionLoaded = {}
 local completed, completedOrder = {}, {}
 local pending = {}
-local policyLease, approvedServers, officialEndpoints, officialNames = nil, {}, {}, {}
+local policyLease, approvedServers, officialNames = nil, {}, {}
 local dirtyVehicles, cleanupPending = {}, {}
 local gravityBase, previousIdentity, cleanupTime = nil, nil, -10
 local gravityCleanup = false
@@ -116,24 +116,24 @@ local function acceptPolicy(data)
   if not server or data.serverIp ~= server.ip or tonumber(data.serverPort) ~= server.port or data.serverName ~= server.name then return end
   local valid = next(approvedServers) ~= nil and data.verified == true and type(data.official) == 'boolean'
     and type(data.ttl) == 'number' and data.ttl > 0 and data.ttl <= 3
-  local official = data.official == true or officialEndpoints[server.key] or officialNames[server.name]
-  local allowed = valid and data.allowed == true and (not official or approvedServers[server.key] == server.name)
+  local official = data.official == true or officialNames[server.name]
+  local allowed = valid and data.allowed == true and (not official or approvedServers[server.name])
   policyLease = {key=server.key,name=server.name,allowed=allowed == true,expires=clock+(valid and data.ttl or 0),
     reason=allowed and (official and 'Approved regular official server.' or 'Non-official server: no ABM official-server restriction.')
       or 'Official event/new, mismatched or unverified server: gameplay changes are blocked.'}
 end
 
 local function loadRoster()
-  approvedServers, officialEndpoints, officialNames = {}, {}, {}
+  approvedServers, officialNames = {}, {}
   local ok, root = pcall(function() return jsonReadFile('/lua/ge/extensions/abm-official-servers.json') end)
   if not ok or type(root) ~= 'table' or root.schema ~= 1 or type(root.prefix) ~= 'string' then return end
-  for ip, rows in pairs(root.groups or {}) do
+  for _, rows in pairs(root.groups or {}) do
     for _, row in ipairs(rows) do
-      local key, name = ip..':'..row[1],root.prefix..row[2]
-      approvedServers[key], officialEndpoints[key], officialNames[name] = name, true, true
+      local name = root.prefix..row[2]
+      approvedServers[name], officialNames[name] = true, true
     end
   end
-  for _, row in ipairs(root.excluded or {}) do officialEndpoints[row[1]..':'..row[2]], officialNames[row[3]] = true, true end
+  for _, row in ipairs(root.excluded or {}) do officialNames[row[3]] = true end
 end
 
 local function buildMetadata()
@@ -334,7 +334,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
 local ok, message = pcall(function()
   extensions.load('abmTuning')
   if not extensions.abmTuning then error('Install the updated ABM vehicle bridge.') end
-   if extensions.abmTuning.version ~= '0.7.0' then error('Restart BeamNG to load the ABM server-protected vehicle bridge 0.7.') end
+  if extensions.abmTuning.version ~= '0.7.1' then error('Restart BeamNG to load the ABM server-protected vehicle bridge 0.7.1.') end
   return extensions.abmTuning.execute(%q, %s)
 end)
 obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveControl(' ..
@@ -471,7 +471,7 @@ local function snapshot()
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
     version = short(beamng_versionb), beammpLoaded = mp ~= nil,
-    bridgeVersion = '0.7.0', controlsAvailable = true, sampleHz = 20,
+    bridgeVersion = '0.7.1', controlsAvailable = true, sampleHz = 20,
     gameFolder=FS and FS.getGamePath and FS:getGamePath(),
     userFolder=FS and FS.getUserPath and FS:getUserPath(),
     multiplayer = multiplayer, joining = call(mp, 'isGoingMPSession') == true,

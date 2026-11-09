@@ -23,13 +23,13 @@ ApplicationWindow {
     readonly property var telemetry: game.telemetry || ({})
     readonly property bool live: backend.connected
     readonly property var launcher: backend.launcher
-    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
+    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
     readonly property bool sandboxAllowed: game.joining !== true && game.policyCleanup !== true && (game.multiplayer !== true || game.sandboxAllowed === true)
-    readonly property bool tuningReady: controls && sandboxAllowed && ["0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0
-    readonly property bool sandboxReady: controls && sandboxAllowed && ["0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool engineReady: controls && sandboxAllowed && ["0.6.0", "0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool dimensionsReady: controls && sandboxAllowed && ["0.6.1", "0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool gearsReady: controls && sandboxAllowed && ["0.6.2", "0.7.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool tuningReady: controls && sandboxAllowed && ["0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0
+    readonly property bool sandboxReady: controls && sandboxAllowed && ["0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool engineReady: controls && sandboxAllowed && ["0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool dimensionsReady: controls && sandboxAllowed && ["0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool gearsReady: controls && sandboxAllowed && ["0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
     readonly property var tuning: backend.tuning
     readonly property bool canDriveAction: controls && sandboxAllowed && !backend.busy && !demoMode && (!telemetry.speed || telemetry.speed <= 1) && !!game.map
     property var selectedModel: ({})
@@ -344,7 +344,7 @@ ApplicationWindow {
                         }
                         GridLayout { visible: win.controls && carSection.currentIndex === 3; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: gap
                             Button { text: qsTr("Why This Dealer?"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.sandboxReady; onClicked: backend.carAction("dealer") }
-                            Button { text: qsTr("Stop bouncing"); objectName: "dealerStopButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.controls && ["0.6.1", "0.6.2", "0.7.0"].indexOf(win.game.bridgeVersion) >= 0 && !backend.busy; onClicked: backend.carAction("dealerStop") }
+                            Button { text: qsTr("Stop bouncing"); objectName: "dealerStopButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.controls && ["0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(win.game.bridgeVersion) >= 0 && !backend.busy; onClicked: backend.carAction("dealerStop") }
                             PlainLabel { Layout.columnSpan: 2; Layout.fillWidth: true; text: qsTr("The real easter egg: why(\"this dealer\") starts; why(\"stop\") ends it without a reset. Stop needs bridge 0.6.1. Only game builds that expose this API."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             Button { text: qsTr("Repair"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("repair") }
                             Button { text: qsTr("Fire"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("ignite") }
@@ -397,7 +397,7 @@ ApplicationWindow {
                             PlainLabel { Layout.fillWidth: true; text: qsTr("0.5–2× each axis. Stop and repair broken beams first. Your own car only in BeamMP (bridge 0.6.2): resized geometry is NOT synchronized to other players. Follow server rules. Suspension, wheels and props may fight resizing; mass/tire parameters stay unchanged. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             CheckBox { id: dimensionConsent; text: qsTr("I accept unstable physics and vehicle damage"); font.pixelSize: 10; Layout.fillWidth: true }
                             Button { text: qsTr("Apply physical dimensions"); objectName: "dimensionsApplyButton"; Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11
-                                enabled: win.dimensionsReady && (win.game.multiplayer !== true || ["0.6.2", "0.7.0"].indexOf(win.game.bridgeVersion) >= 0) && win.telemetry.speed !== undefined && win.telemetry.speed <= 1 && dimensionConsent.checked
+                                enabled: win.dimensionsReady && (win.game.multiplayer !== true || ["0.6.2", "0.7.0", "0.7.1"].indexOf(win.game.bridgeVersion) >= 0) && win.telemetry.speed !== undefined && win.telemetry.speed <= 1 && dimensionConsent.checked
                                 onClicked: backend.applyDimensions({width:dimensionSliders.itemAt(0).factor,length:dimensionSliders.itemAt(1).factor,height:dimensionSliders.itemAt(2).factor}) }
                             PlainLabel { visible: !win.dimensionsReady; Layout.fillWidth: true; text: qsTr("Multiplayer changes require bridge 0.7 and server permission. Restart BeamNG after installing the bridge."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }

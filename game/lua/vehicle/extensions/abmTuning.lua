@@ -1,5 +1,5 @@
 -- ABM vehicle tuning: fixed actions only, with preflight before mutation.
-local M = {version='0.7.0'}
+local M = {version='0.7.1'}
 local gearBase
 local dimensionBase
 local engineBases = {}

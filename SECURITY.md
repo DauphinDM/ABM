@@ -21,8 +21,9 @@ ABM is a local convenience tool, not a sandbox against code running as your user
 
 The [official-server guard](docs/server-policy.md) is cooperative, not tamper-proof.
 Its short leases and frozen roster reduce accidental use on official events;
-they cannot authenticate an unmodified client or detect an unchanged approved
-identity being repurposed. Do not treat it as a staff/competition guarantee.
+they cannot authenticate an unmodified client or detect an approved raw server
+name being reused for an event or impersonated at another address. Approval is
+name-only, not address-bound. Do not treat it as a staff/competition guarantee.
 
 Other local processes may spoof UDP telemetry. User-only sockets and request
 validation do not provide cryptographic authentication of game data. Omarchy
