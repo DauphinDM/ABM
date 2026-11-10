@@ -14,6 +14,64 @@ local dirtyVehicles, cleanupPending = {}, {}
 local gravityBase, previousIdentity, cleanupTime = nil, nil, -10
 local gravityCleanup = false
 local previousAllowed = true
+local pingCapture
+local PING_CAPTURE = '__abmPingCapture'
+
+-- BeamMP delivers the local latency through UI.setPing and remote latency
+-- through UI.setPlayerPing; MPVehicleGE player.ping is not populated (-1).
+-- Wrap only those public functions, preserve arguments/results, and restore
+-- them only when our wrapper is still installed.
+local function installPingCapture()
+  local ui = extensions and extensions.UI
+  if type(ui) ~= 'table' then return rawget(_G, PING_CAPTURE) end
+  local state = rawget(_G, PING_CAPTURE)
+  if not state and type(ui.setPing) == 'function' then
+    state = {localPing=nil, localPingTime=-10, remotePings={}, remotePingTimes={}}
+    state.originalSetPing = ui.setPing
+    local original = state.originalSetPing
+    state.wrapperSetPing = function(value)
+      local result = original(value)
+      local n = tonumber(value)
+      if n and n >= 0 and n <= 60000 then state.localPing, state.localPingTime = n, clock end
+      return result
+    end
+    ui.setPing = state.wrapperSetPing
+    if type(ui.setPlayerPing) == 'function' then
+      state.originalSetPlayerPing = ui.setPlayerPing
+      local originalPlayer = state.originalSetPlayerPing
+      state.wrapperSetPlayerPing = function(name, value)
+        local result = originalPlayer(name, value)
+        local n = tonumber(value)
+        if type(name) == 'string' and #name > 0 and #name <= 64 and n and n >= 0 and n <= 60000 then
+          state.remotePings[name], state.remotePingTimes[name] = n, clock
+        end
+        return result
+      end
+      ui.setPlayerPing = state.wrapperSetPlayerPing
+    end
+    rawset(_G, PING_CAPTURE, state)
+  end
+  return state
+end
+
+local function uninstallPingCapture()
+  local state = rawget(_G, PING_CAPTURE)
+  local ui = extensions and extensions.UI
+  if not state or type(ui) ~= 'table' then return end
+  if state.wrapperSetPing and ui.setPing == state.wrapperSetPing then ui.setPing = state.originalSetPing end
+  if state.wrapperSetPlayerPing and ui.setPlayerPing == state.wrapperSetPlayerPing then ui.setPlayerPing = state.originalSetPlayerPing end
+  rawset(_G, PING_CAPTURE, nil)
+end
+
+local function freshPing(state, name, localPlayer)
+  if type(state) ~= 'table' then return nil end
+  local value, at
+  if localPlayer then value, at = state.localPing, state.localPingTime
+  else value, at = state.remotePings[name], state.remotePingTimes[name] end
+  if type(value) == 'number' and value >= 0 and value <= 60000 and type(at) == 'number' and clock - at <= 5 then
+    return value, math.max(0, math.floor((clock - at) * 1000))
+  end
+end
 
 local function call(module, method, ...)
   if module and type(module[method]) == 'function' then
@@ -357,7 +415,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
 local ok, message = pcall(function()
   extensions.load('abmTuning')
   if not extensions.abmTuning then error('Install the updated ABM vehicle bridge.') end
-  if extensions.abmTuning.version ~= '0.10.0' then error('Restart BeamNG to load the ABM vehicle bridge 0.10.0.') end
+  if extensions.abmTuning.version ~= '0.11.0' then error('Restart BeamNG to load the ABM vehicle bridge 0.11.0.') end
   local envelope = %s
   if envelope.contract == 1 then
     return extensions.abmTuning.executeTarget(%q, %s, envelope.generation,envelope.expiresAt,envelope.revision,envelope.client)
@@ -498,7 +556,7 @@ local function snapshot()
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
     version = short(beamng_versionb), beammpLoaded = mp ~= nil,
-    bridgeVersion = '0.10.0', controlsAvailable = true, sampleHz = 20,
+    bridgeVersion = '0.11.0', controlsAvailable = true, sampleHz = 20,
     gameFolder=FS and FS.getGamePath and FS:getGamePath(),
     userFolder=FS and FS.getUserPath and FS:getUserPath(),
     multiplayer = multiplayer, joining = call(mp, 'isGoingMPSession') == true,
@@ -557,6 +615,7 @@ local function snapshot()
     data.serverIp = type(server) == 'table' and short(server.ip,64) or nil
     data.serverPort = type(server) == 'table' and tonumber(server.port) or nil
     data.players = {}
+    pingCapture = installPingCapture() or pingCapture
     local players = call(vehicles, 'getPlayers')
     data.playerCount = type(players) == 'table' and count(players) or nil
     local mpVehicles = call(vehicles, 'getVehicles')
@@ -564,11 +623,23 @@ local function snapshot()
     if type(players) == 'table' then
       for _, p in pairs(players) do
         if type(p) == 'table' and #data.players < 128 then
-          local ping = tonumber(p.ping)
-          if ping and ping < 0 then ping = nil end
+          local rawName = short(p.name, 64)
+          local playerID = tonumber(p.playerID)
+          if not (playerID and playerID >= 0 and playerID <= 9007199254740991 and playerID == math.floor(playerID)) then
+            playerID = nil
+          end
+          local ping, pingAge = freshPing(pingCapture, rawName, p.isLocal == true)
+          local source = ping and (p.isLocal == true and 'local' or 'remote') or nil
+          if not ping then
+            local serverPing = tonumber(p.ping)
+            if serverPing and serverPing >= 0 and serverPing <= 60000 then ping, source = serverPing, 'server' end
+          end
           data.players[#data.players + 1] = {
-            name = short(p.name, 64), ['local'] = p.isLocal == true,
-            ping = ping, vehicles = p.vehicles and count(p.vehicles.IDs) or nil
+            name = rawName, rawName = rawName, ['local'] = p.isLocal == true,
+            guest = playerID == nil, sessionPlayerId = playerID,
+            role = short(p.role and p.role.name, 32),
+            ping = ping, pingSource = source or 'unavailable', pingAgeMs = pingAge,
+            vehicles = p.vehicles and count(p.vehicles.IDs) or nil
           }
           if p.isLocal then data.ping = ping end
         end
@@ -591,7 +662,8 @@ local function onExtensionLoaded()
   if not udp then log('E', 'beamdeck', 'Cannot create telemetry socket'); return end
   udp:settimeout(0)
   udp:setpeername('127.0.0.1',44444)
-  log('I', 'abm', 'ABM 0.10: target-bound workshop and guarded reset restoration on localhost:44444')
+  pingCapture = installPingCapture()
+  log('I', 'abm', 'ABM 0.11: target-bound workshop, truthful latency and guarded reset restoration on localhost:44444')
 end
 
 local function onUpdate(dtReal)
@@ -672,6 +744,14 @@ M.onClientStartMission = function()
   completed, completedOrder = {}, {}
   pending = {}
   tuning = {}
+  local capture = rawget(_G, PING_CAPTURE)
+  if capture then
+    capture.localPing, capture.localPingTime = nil, -10
+    capture.remotePings, capture.remotePingTimes = {}, {}
+  end
 end
-M.onExtensionUnloaded = function() if udp then udp:close(); udp = nil end end
+M.onExtensionUnloaded = function()
+  uninstallPingCapture()
+  if udp then udp:close(); udp = nil end
+end
 return M

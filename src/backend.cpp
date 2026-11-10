@@ -12,7 +12,11 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QUuid>
+#include <QCryptographicHash>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <cmath>
+#include <limits>
 
 Backend::Backend(const QString &path, QObject *parent) : QObject(parent), m_path(path.isEmpty() ? Telemetry::defaultPath() : path) {
     m_clientId=QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -23,8 +27,11 @@ Backend::Backend(const QString &path, QObject *parent) : QObject(parent), m_path
     const auto directory = path.isEmpty() ? qEnvironmentVariable("BEAMSIDE_CONFIG_DIR", QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)) : QFileInfo(path).absolutePath();
     m_settings = std::make_unique<QSettings>(directory + "/preferences.ini", QSettings::IniFormat);
     m_integration = std::make_unique<Integration>(directory + "/integration.ini", path.isEmpty());
+    m_presets = std::make_unique<PresetStore>(directory + "/presets");
+    m_profiles = std::make_unique<PlayerProfiles>();
     m_metric = m_settings->value("metric", true).toBool();
     m_favorites = m_settings->value("favorites").toStringList().mid(0, 256);
+    m_convoyNotes = m_settings->value("convoy/notes").toString().left(2048);
     // Cheat-menu sliders keep their last applied values between launches.
     if (m_settings->contains("tuning/power"))
         m_tuning = {{"enginePower", m_settings->value("tuning/power").toDouble()},
@@ -33,7 +40,7 @@ Backend::Backend(const QString &path, QObject *parent) : QObject(parent), m_path
     connect(&m_socket, &QLocalSocket::readyRead, this, &Backend::readStream);
     connect(&m_socket, &QLocalSocket::connected, this, [this] { m_buffer.clear(); });
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
-        cancelLivePower();
+        cancelLivePower(); cancelPresetApply();
         m_pending.clear(); m_pendingAction.clear(); m_buffer.clear(); emit actionChanged();
     });
     m_timer.setInterval(250);
@@ -62,7 +69,7 @@ void Backend::accept(const QJsonObject &data) {
     const auto previousTarget=workshopTarget();
     m_error.clear(); m_state = data.toVariantMap();
     if (previousTarget!=workshopTarget() || !data.value("sandboxAllowed").toBool() || !data.value("connected").toBool()) {
-        cancelLivePower();
+        cancelLivePower(); cancelPresetApply();
         if (!m_pendingTarget.isEmpty()) { m_pending.clear(); m_pendingAction.clear(); m_pendingTarget={}; emit actionChanged(); }
     }
     if (m_integration->gameFolder().isEmpty() && QFileInfo::exists(data.value("gameFolder").toString() + "/content/vehicles"))
@@ -73,6 +80,7 @@ void Backend::accept(const QJsonObject &data) {
     if (gameSeen != m_gameSeen) { m_gameSeen = gameSeen; emit gameSeenChanged(); }
     const auto players = data.value("players").toArray().toVariantList();
     if (players != m_players) { m_players = players; emit playersChanged(); }
+    m_profiles->setPlayers(m_state.value("sessionId").toString(), m_players);
     const auto vehicles = data.value("activeVehicles").toArray().toVariantList();
     if (vehicles != m_activeVehicles) { m_activeVehicles = vehicles; emit activeVehiclesChanged(); }
     if (data.value("connected").toBool() && (!m_historyAge.isValid() || m_historyAge.elapsed() >= 100)) {
@@ -126,6 +134,14 @@ void Backend::readStream() {
             }
             if (action == "fullReset" && accepted) {
                 m_tuning.insert("enginePower",1); m_tuning.insert("damageImmunity",false); storeTuning();
+            }
+            if (m_presetRunning) {
+                if (accepted) { m_presetDone.append(action); sendNextPresetStep(); }
+                else {
+                    m_presetFailed.append(action);
+                    m_presetMessage = tr("Preset step failed: %1. Later steps were not applied.").arg(m_actionMessage);
+                    finishPreset();
+                }
             }
             emit actionChanged();
         }
@@ -188,7 +204,7 @@ void Backend::storeTuning() {
 }
 QJsonObject Backend::workshopTarget() const {
     const auto workshop=m_state.value("workshop").toMap();
-    if (!QStringList{"0.9.0","0.10.0"}.contains(m_state.value("bridgeVersion").toString()) || workshop.value("contract").toInt()!=1 || workshop.value("generation").toString().isEmpty()) return {};
+    if (!Protocol::workshopBridge(m_state.value("bridgeVersion").toString()) || workshop.value("contract").toInt()!=1 || workshop.value("generation").toString().isEmpty()) return {};
     return {{"targetSession",m_state.value("sessionId").toString()},{"targetVehicle",QJsonValue::fromVariant(m_state.value("vehicleId"))},{"generation",workshop.value("generation").toString()}};
 }
 void Backend::cancelLivePower() {
@@ -289,7 +305,7 @@ void Backend::send(const QString &action, const QJsonObject &parameters) {
     m_pending = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_pendingAction = action;
     auto message = parameters; message.insert("action", action); message.insert("requestId", m_pending);
-    if (QStringList{"power","fullReset","tuning","handling","gears","engine","dimensions","stability","rpm","clutch","persistence"}.contains(action) && QStringList{"0.9.0","0.10.0"}.contains(m_state.value("bridgeVersion").toString())) {
+    if (QStringList{"power","fullReset","tuning","handling","gears","engine","dimensions","stability","rpm","clutch","persistence"}.contains(action) && Protocol::workshopBridge(m_state.value("bridgeVersion").toString())) {
         m_pendingTarget=workshopTarget();
         for (auto it=m_pendingTarget.begin();it!=m_pendingTarget.end();++it) message.insert(it.key(),it.value());
         message.insert("contract",1); message.insert("client",m_clientId); message.insert("revision",++m_intentRevision);
@@ -344,6 +360,194 @@ bool Backend::startBeamMP() {
     return m_integration->startBeamMP();
 }
 bool Backend::launchAuto() { m_integration->refreshProcesses(); return m_integration->gameRunning() ? startBeamMP() : startGame(); }
+QJsonObject Backend::presetConfiguration() const {
+    const auto workshop = m_state.value("workshop").toMap();
+    QStringList parts{m_state.value("vehicle").toString()};
+    if (!workshop.value("gearbox").toString().isEmpty()) parts << workshop.value("gearbox").toString();
+    for (const auto &value : workshop.value("engines").toList()) {
+        const auto name = value.toMap().value("name").toString();
+        if (!name.isEmpty()) parts << name;
+    }
+    parts.sort(Qt::CaseInsensitive);
+    return {{"model", m_state.value("vehicle").toString()},
+            {"identity", QString::fromLatin1(QCryptographicHash::hash(parts.join('|').toUtf8(), QCryptographicHash::Sha256).toHex())},
+            {"label", m_state.value("vehicleName").toString().left(160)},
+            {"completeness", "workshop-overrides"}};
+}
+QJsonObject Backend::presetSettings() const {
+    const auto workshop = m_state.value("workshop").toMap();
+    QJsonObject settings;
+    const auto power = workshop.value("enginePower");
+    if (Protocol::enginePower(QJsonValue::fromVariant(power)))
+        settings.insert("power", QJsonObject{{"enginePower", power.toDouble()}});
+    const auto clutch = workshop.value("clutchProtected");
+    if (clutch.isValid() && clutch.metaType().id() == QMetaType::Bool)
+        settings.insert("clutch", QJsonObject{{"clutchIndestructible", clutch.toBool()}});
+    const auto engines = workshop.value("engines").toList();
+    if (engines.size() == 1) {
+        const auto rpm = engines.first().toMap().value("maxRPM");
+        if (Protocol::rpm(QJsonValue::fromVariant(rpm)))
+            settings.insert("rpm", QJsonObject{{"maxRPM", rpm.toDouble()}});
+    }
+    QJsonArray ratios;
+    for (const auto &value : workshop.value("gears").toList()) {
+        const auto gear = value.toMap();
+        const auto index = gear.value("index");
+        const auto ratioValue = gear.value("ratio");
+        const double ratio = ratioValue.toDouble();
+        if (index.isValid() && index.toInt() > 0 && ratioValue.isValid() && std::isfinite(ratio) && ratio >= .01 && ratio <= 100)
+            ratios.append(ratio);
+    }
+    if (Protocol::gears(ratios)) settings.insert("gears", QJsonObject{{"ratios", ratios}});
+    return settings;
+}
+bool Backend::saveCurrentPreset(const QString &name) {
+    const auto configuration = presetConfiguration();
+    const auto settings = presetSettings();
+    if (workshopTarget().isEmpty() || !connected() || !m_state.value("vehicleOwned").toBool()
+        || !Protocol::model(configuration.value("model").toString())) {
+        m_presetMessage = tr("Select a supported own vehicle before saving a preset.");
+        emit presetChanged(); return false;
+    }
+    if (settings.isEmpty()) {
+        m_presetMessage = tr("No accepted ABM values are readable yet. Apply a setting and wait for readback before saving.");
+        emit presetChanged(); return false;
+    }
+    const auto id = m_presets->save(name, configuration, settings);
+    m_presetMessage = id.isEmpty() ? m_presets->message() : tr("Preset saved: accepted ABM overrides only, not a full native vehicle clone.");
+    emit presetChanged();
+    return !id.isEmpty();
+}
+void Backend::applyPreset(const QString &id) {
+    if (m_presetRunning || busy()) { m_presetMessage = tr("Wait for the current game request before loading a preset."); emit presetChanged(); return; }
+    if (m_demo) { m_presetMessage = tr("Demo mode: presets can be browsed but not applied."); emit presetChanged(); return; }
+    if (m_state.value("bridgeVersion").toString() != "0.11.0") {
+        m_presetMessage = tr("Loading presets needs bridge 0.11.0. Older bridges stay read-only."); emit presetChanged(); return;
+    }
+    const auto preset = m_presets->get(id);
+    if (preset.isEmpty()) { m_presetMessage = tr("Preset is missing, invalid or was written by a newer version."); emit presetChanged(); return; }
+    const auto target = workshopTarget();
+    const auto telemetry = m_state.value("telemetry").toMap();
+    const auto speed = telemetry.value("speed");
+    if (target.isEmpty() || !m_state.value("sandboxAllowed").toBool() || !m_state.value("vehicleOwned").toBool()
+        || m_state.value("policyCleanup").toBool() || m_state.value("workshop").toMap().value("restoring").toBool()
+        || !speed.isValid() || speed.toDouble() > 1) {
+        m_presetMessage = tr("Preset loading needs a stopped, owned vehicle with server permission and no restoration in progress.");
+        emit presetChanged(); return;
+    }
+    const auto settings = preset.value("settings").toObject();
+    const auto capabilities = m_state.value("capabilities").toMap();
+    QVector<PresetStep> steps; QStringList skipped;
+    auto add = [&](const QString &key, const QString &action, const QJsonObject &parameters, const bool supported) {
+        if (!settings.contains(key)) return;
+        if (supported) steps.append({action, key, parameters}); else skipped.append(key);
+    };
+    add("power", "tuning", QJsonObject{{"enginePower", settings.value("power").toObject().value("enginePower")}}, capabilities.value("power").toBool());
+    add("rpm", "rpm", QJsonObject{{"maxRPM", settings.value("rpm").toObject().value("maxRPM")}}, capabilities.value("rpm").toBool());
+    add("clutch", "clutch", QJsonObject{{"clutchIndestructible", settings.value("clutch").toObject().value("clutchIndestructible")}}, capabilities.value("clutch").toBool());
+    add("gears", "gears", QJsonObject{{"ratios", settings.value("gears").toObject().value("ratios")}}, capabilities.value("gears").toBool());
+    add("handling", "handling", settings.value("handling").toObject(),
+        capabilities.value("grip").toBool() && capabilities.value("brakes").toBool() && capabilities.value("steering").toBool());
+    add("engine", "engine", settings.value("engine").toObject(), capabilities.value("engine").toBool());
+    add("dimensions", "dimensions", settings.value("dimensions").toObject(), capabilities.value("dimensions").toBool());
+    add("beam", "tuning", QJsonObject{{"damageImmunity", settings.value("beam").toObject().value("damageImmunity")}}, capabilities.value("deformation").toBool());
+    if (steps.isEmpty()) {
+        m_presetMessage = tr("This preset has no steps supported by the current vehicle. Nothing was changed.");
+        emit presetChanged(); return;
+    }
+    m_presetSteps = steps; m_presetId = id; m_presetIndex = 0; m_presetRunning = true;
+    m_presetDone.clear(); m_presetFailed.clear(); m_presetSkipped = skipped;
+    m_presetProgress = QString("0/%1").arg(steps.size());
+    m_presetMessage = tr("Applying preset one verified step at a time. Cancelling stops unsent steps; it cannot undo acknowledged steps.");
+    emit presetChanged();
+    sendNextPresetStep();
+}
+void Backend::sendNextPresetStep() {
+    if (!m_presetRunning) return;
+    if (m_presetIndex >= m_presetSteps.size()) { finishPreset(); return; }
+    if (workshopTarget().isEmpty() || !m_state.value("sandboxAllowed").toBool()
+        || m_state.value("workshop").toMap().value("restoring").toBool()) {
+        m_presetFailed.append(m_presetSteps.at(m_presetIndex).key);
+        m_presetMessage = tr("Vehicle or policy target changed; remaining preset steps were not sent.");
+        finishPreset(); return;
+    }
+    const auto step = m_presetSteps.at(m_presetIndex++);
+    m_presetProgress = QString("%1/%2").arg(m_presetIndex).arg(m_presetSteps.size());
+    emit presetChanged();
+    send(step.action, step.parameters);
+    if (!busy()) { m_presetFailed.append(step.key); finishPreset(); }
+}
+void Backend::finishPreset(bool cancelled) {
+    const QVector<PresetStep> steps = m_presetSteps;
+    const QStringList done = m_presetDone, failed = m_presetFailed, skipped = m_presetSkipped;
+    m_presetRunning = false;
+    m_presetSteps.clear(); m_presetIndex = 0; m_presetId.clear();
+    m_presetProgress.clear();
+    QStringList parts;
+    if (!done.isEmpty()) parts << tr("applied %1").arg(done.join(", "));
+    if (!failed.isEmpty()) parts << tr("failed %1").arg(failed.join(", "));
+    if (!skipped.isEmpty()) parts << tr("skipped unsupported %1").arg(skipped.join(", "));
+    if (cancelled) parts.prepend(tr("cancelled"));
+    m_presetMessage = parts.isEmpty() ? tr("Preset finished without changes.")
+        : tr("Preset %1. Acknowledged steps are not atomic and cannot be rolled back by ABM.").arg(parts.join(" · "));
+    Q_UNUSED(steps);
+    emit presetChanged();
+}
+void Backend::cancelPresetApply() {
+    if (!m_presetRunning) { clearPreset(); return; }
+    finishPreset(true);
+}
+void Backend::clearPreset() {
+    if (m_presetSteps.isEmpty() && m_presetId.isEmpty() && m_presetMessage.isEmpty()) return;
+    m_presetSteps.clear(); m_presetIndex = 0; m_presetId.clear();
+    m_presetMessage.clear(); m_presetProgress.clear();
+    m_presetDone.clear(); m_presetFailed.clear(); m_presetSkipped.clear();
+    emit presetChanged();
+}
+QVariantMap Backend::randomTune(const QString &seed) const {
+    const auto value = seed.isEmpty() ? QString::number(QDateTime::currentMSecsSinceEpoch()) : seed.left(64);
+    const auto bytes = QCryptographicHash::hash(value.toUtf8(), QCryptographicHash::Sha256);
+    auto unit = [&](int index) {
+        const auto b = reinterpret_cast<const uchar *>(bytes.constData()) + (index * 4) % 32;
+        const quint32 n = (quint32(b[0]) << 24) | (quint32(b[1]) << 16) | (quint32(b[2]) << 8) | quint32(b[3]);
+        return double(n) / double(std::numeric_limits<quint32>::max());
+    };
+    auto between = [&](int index, double low, double high) { return std::round((low + (high - low) * unit(index)) * 100.0) / 100.0; };
+    return {{"seed", value}, {"enginePower", between(0, .8, 1.5)}, {"tireGrip", between(1, .6, 1.4)},
+            {"slidingGrip", between(2, .6, 1.4)}, {"brakePower", between(3, .7, 1.5)},
+            {"steeringResponse", between(4, .8, 1.2)}};
+}
+QString Backend::supportBundle() const {
+    QJsonObject data;
+    data.insert("app", "ABM"); data.insert("version", "0.11.0");
+    data.insert("bridge", m_state.value("bridgeVersion").toString());
+    data.insert("connected", connected());
+    data.insert("multiplayer", m_state.value("multiplayer").toBool());
+    data.insert("sandboxAllowed", m_state.value("sandboxAllowed").toBool());
+    data.insert("policyReason", m_state.value("policyReason").toString().left(256));
+    data.insert("players", int(m_players.size()));
+    data.insert("presets", int(m_presets->entries().size()));
+    data.insert("presetError", m_presets->message().left(200));
+    data.insert("error", m_error.left(200));
+    return QString::fromUtf8(QJsonDocument(data).toJson(QJsonDocument::Indented));
+}
+bool Backend::copyServerAddress() {
+    const auto ip = m_state.value("serverIp").toString();
+    const auto port = m_state.value("serverPort").toInt();
+    if (!connected() || !m_state.value("multiplayer").toBool() || ip.isEmpty() || ip.size() > 64 || port < 1 || port > 65535) {
+        m_actionMessage = tr("No verified server address in the current session."); emit actionChanged(); return false;
+    }
+    auto *clipboard = QGuiApplication::clipboard();
+    if (!clipboard) { m_actionMessage = tr("Clipboard is unavailable."); emit actionChanged(); return false; }
+    clipboard->setText(ip + ':' + QString::number(port));
+    m_actionMessage = tr("Copied server address only. No password, chat or invented invite link."); emit actionChanged();
+    return true;
+}
+void Backend::setConvoyNotes(const QString &notes) {
+    const auto bounded = notes.left(2048);
+    if (m_convoyNotes == bounded) return;
+    m_convoyNotes = bounded; m_settings->setValue("convoy/notes", bounded); m_settings->sync(); emit preferencesChanged();
+}
 void Backend::setDemo(bool blocked) {
     m_demo = true;
     m_socket.abort();
@@ -351,10 +555,10 @@ void Backend::setDemo(bool blocked) {
     m_state.clear(); m_history.clear(); m_catalog.clear(); m_players.clear(); m_activeVehicles.clear();
     m_pending.clear(); m_pendingAction.clear();
     m_error.clear();
-    m_state = QJsonDocument::fromJson(R"({"connected":true,"multiplayer":true,"beammpLoaded":true,"server":"Coastal cruising · EU","map":"west_coast_usa","vehicle":"etk800","fps":89,"vehicleCount":14,"sessionSeconds":1452,"distance":18420,"topSpeed":62.5,"playerCount":3,"mpVehicleCount":5,"ping":32,"telemetry":{"speed":28.6,"rpm":3240,"gear":4,"fuel":0.72,"throttle":0.42,"brake":0,"coolant":88,"oil":96},"players":[{"name":"CoastDriver","local":true,"ping":32,"vehicles":1},{"name":"Apex","ping":48,"vehicles":2},{"name":"Tourer","ping":61,"vehicles":2}]})").object().toVariantMap();
-    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.10.0");
+    m_state = QJsonDocument::fromJson(R"({"connected":true,"multiplayer":true,"beammpLoaded":true,"server":"Coastal cruising · EU","map":"west_coast_usa","vehicle":"etk800","fps":89,"vehicleCount":14,"sessionSeconds":1452,"distance":18420,"topSpeed":62.5,"serverIp":"203.0.113.7","serverPort":30814,"playerCount":3,"mpVehicleCount":5,"ping":32,"telemetry":{"speed":28.6,"rpm":3240,"gear":4,"fuel":0.72,"throttle":0.42,"brake":0,"coolant":88,"oil":96},"players":[{"name":"CoastDriver","rawName":"CoastDriver","sessionPlayerId":1,"local":true,"ping":32,"pingSource":"local","pingAgeMs":400,"vehicles":1,"role":"USER"},{"name":"Apex","rawName":"Apex","sessionPlayerId":2,"ping":48,"pingSource":"remote","pingAgeMs":700,"vehicles":2,"role":"USER"},{"name":"Tourer","rawName":"Tourer","sessionPlayerId":3,"vehicles":2,"guest":true,"role":"USER"}]})").object().toVariantMap();
+    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.11.0");
     m_state.insert("workshop",QVariantMap{{"contract",1},{"generation","demo-instance:0"},{"enginePower",1},
-        {"persistence",true},{"restoring",false},{"restoreStatus","saved"},{"clutchProtected",false},
+        {"persistence",true},{"restoring",false},{"restoreStatus","saved"},{"clutchProtected",false},{"gearbox","6-speed manual"},
         {"engines",QVariantList{QVariantMap{{"name","mainEngine"},{"maxRPM",7200},{"revLimiterRPM",7200},{"physicalRPM",7560},{"rpmCeiling",8000},{"idleRPM",800}}}},
         {"gears",QVariantList{QVariantMap{{"index",-1},{"ratio",-3.2}},QVariantMap{{"index",0},{"ratio",0}},QVariantMap{{"index",1},{"ratio",3.5}},QVariantMap{{"index",2},{"ratio",2.1}},QVariantMap{{"index",3},{"ratio",1.4}},QVariantMap{{"index",4},{"ratio",1.0}},QVariantMap{{"index",5},{"ratio",.8}}}}});
     m_state.insert("sandboxAllowed", !blocked);
@@ -401,6 +605,7 @@ void Backend::setDemo(bool blocked) {
         m_history.append(QVariantMap{{"speed", 20 + 8 * std::sin(i * .06)}, {"rpm", 3000 + 900 * std::sin(i * .06)}, {"fps", 85 + 5 * std::sin(i * .13)}, {"ping", 32 + 4 * std::sin(i * .09)}});
     emit historyChanged(); emit catalogChanged(); emit configsChanged();
     m_players = m_state.value("players").toList(); emit playersChanged();
+    m_profiles->setPlayers(m_state.value("sessionId").toString(), m_players);
     m_activeVehicles = {QVariantMap{{"id",42},{"name","ETK 800 Series"},{"model","etk800"},{"owned",true}}};
     emit activeVehiclesChanged();
     emit changed();

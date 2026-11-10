@@ -82,7 +82,17 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
         for (const auto &value : incomingWorkshop.value("engines").toArray()) {
             if (engines.size() >= 8) break;
             const auto item=value.toObject(); QJsonObject clean{{"name",bounded(item.value("name"),80)}};
-            for (const auto key : {"maxRPM","revLimiterRPM","physicalRPM","rpmCeiling","idleRPM"}) number(clean,item,key,0,1e32);
+            for (const auto key : {"maxRPM","revLimiterRPM","physicalRPM","rpmCeiling","idleRPM","maxTorqueRPM","maxPowerRPM"}) number(clean,item,key,0,30000);
+            for (const auto key : {"maxTorque","maxPower"}) number(clean,item,key,0,1e9);
+            QJsonArray curve;
+            for (const auto &point : item.value("torqueCurve").toArray()) {
+                if (curve.size() >= 64) break;
+                const auto p=point.toObject(); const auto rpm=p.value("rpm"), torque=p.value("torque");
+                if (rpm.isDouble() && std::isfinite(rpm.toDouble()) && rpm.toDouble()>=0 && rpm.toDouble()<=30000
+                    && torque.isDouble() && std::isfinite(torque.toDouble()) && std::abs(torque.toDouble())<=1e7)
+                    curve.append(QJsonObject{{"rpm",rpm},{"torque",torque}});
+            }
+            if (!curve.isEmpty()) clean.insert("torqueCurve",curve);
             engines.append(clean);
         }
         for (const auto &value : incomingWorkshop.value("gears").toArray()) {
@@ -92,6 +102,17 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
                 gears.append(QJsonObject{{"index",index},{"ratio",ratio}});
         }
         workshop.insert("engines",engines); workshop.insert("gears",gears);
+        QJsonArray clutches;
+        for (const auto &value : incomingWorkshop.value("clutches").toArray()) {
+            if (clutches.size() >= 4) break;
+            const auto item=value.toObject(); const auto name=bounded(item.value("name"),80);
+            if (name.isEmpty()) continue;
+            QJsonObject clean{{"name",name}};
+            number(clean,item,"temperature",-100,2000);
+            number(clean,item,"efficiency",0,1);
+            clutches.append(clean);
+        }
+        workshop.insert("clutches",clutches);
         workshop.insert("gearbox",bounded(incomingWorkshop.value("gearbox"),80));
         for (const auto key : {"persistence","restoring","clutchProtected"})
             if (incomingWorkshop.value(key).isBool()) workshop.insert(key,incomingWorkshop.value(key));
@@ -139,9 +160,23 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
         for (int i = 0; i < qMin(128, int(list.size())); ++i) {
             if (!list[i].isObject()) continue;
             const auto p = list[i].toObject();
-            QJsonObject player{{"name", cleanName(bounded(p.value("name"), 64))}, {"local", p.value("local").toBool()}};
+            const auto raw = bounded(p.value("rawName").toString().isEmpty() ? p.value("name").toString() : p.value("rawName").toString(), 64);
+            const bool identified = Protocol::playerId(p.value("sessionPlayerId"));
+            QJsonObject player{{"name", cleanName(raw)}, {"rawName", raw}, {"local", p.value("local").toBool()},
+                               {"guest", p.value("guest").toBool() || !identified}, {"role", bounded(p.value("role"), 32)}};
+            if (identified) player.insert("sessionPlayerId", p.value("sessionPlayerId"));
             number(player, p, "ping", 0, 60000);
+            number(player, p, "pingAgeMs", 0, 3600000);
             number(player, p, "vehicles", 0, 1000);
+            const auto source = bounded(p.value("pingSource"), 16);
+            player.insert("pingSource", QStringList{"local", "remote", "server", "unavailable"}.contains(source) ? source : QString("unavailable"));
+            // Stable per-session key. Never derived from a ping or a permanently
+            // persisted account identifier.
+            QString key;
+            if (player.value("sessionPlayerId").isDouble()) key = "id:" + QString::number(qint64(player.value("sessionPlayerId").toDouble()));
+            else if (!raw.isEmpty()) key = "name:" + QString::fromLatin1(QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex().left(24));
+            if (!Protocol::rowKey(key)) continue;
+            player.insert("rowKey", key);
             players.append(player);
         }
         out.insert("players", players);
@@ -358,12 +393,12 @@ QJsonObject Telemetry::state() const {
 QJsonObject Telemetry::policy() const {
     if (m_data.value("joining").toBool()) return {{"allowed", false}, {"reason", tr("Joining BeamMP: gameplay changes are locked.")}};
     if (!m_data.value("multiplayer").toBool()) return {{"allowed", true}, {"reason", tr("Single player: no server restriction.")}};
-    if (!QStringList{"0.7.1","0.9.0","0.10.0"}.contains(m_data.value("bridgeVersion").toString()))
+    if (!Protocol::workshopBridge(m_data.value("bridgeVersion").toString()) && m_data.value("bridgeVersion").toString() != "0.7.1")
         return {{"allowed", false}, {"reason", tr("Multiplayer changes need bridge 0.7.1. Install it and restart BeamNG.")}};
     return m_policy.decision(m_data);
 }
 void Telemetry::updatePolicy() {
-    if (!m_lastPacket.isValid() || m_lastPacket.elapsed() >= 3000 || !QStringList{"0.7.1","0.9.0","0.10.0"}.contains(m_data.value("bridgeVersion").toString())
+    if (!m_lastPacket.isValid() || m_lastPacket.elapsed() >= 3000 || (!Protocol::workshopBridge(m_data.value("bridgeVersion").toString()) && m_data.value("bridgeVersion").toString() != "0.7.1")
         || !m_data.value("multiplayer").toBool()) return;
     m_policy.refresh();
     if (m_policySent.isValid() && m_policySent.elapsed() < 1000) return;
@@ -399,8 +434,8 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     }
     const bool driveAction = QStringList{"spawn", "replace", "switch"}.contains(action);
     const auto bridgeVersion = m_data.value("bridgeVersion").toString();
-    const bool workshopBridge = QStringList{"0.9.0","0.10.0"}.contains(bridgeVersion);
-    if (QStringList{"rpm","clutch","persistence"}.contains(action) && bridgeVersion!="0.10.0") { reply(false,tr("RPM, clutch protection and reset persistence need bridge 0.10.0. Restart BeamNG after installing it.")); return; }
+    const bool workshopBridge = Protocol::workshopBridge(bridgeVersion);
+    if (QStringList{"rpm","clutch","persistence"}.contains(action) && bridgeVersion!="0.10.0" && bridgeVersion!="0.11.0") { reply(false,tr("RPM, clutch protection and reset persistence need bridge 0.10.0. Restart BeamNG after installing it.")); return; }
     if ((action == "power" || action == "fullReset") && !workshopBridge) { reply(false,tr("Live power and full reset need bridge 0.9.0. Install it and restart BeamNG.")); return; }
     const bool mutates = !QStringList{"catalog", "configs", "enableBeamMP", "dealerStop"}.contains(action);
     if (mutates && (!policy().value("allowed").toBool() || m_data.value("policyCleanup").toBool()
@@ -422,7 +457,7 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     if (QStringList{"tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) && !workshopBridge && bridgeVersion != "0.4.0" && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2" && bridgeVersion != "0.7.0" && bridgeVersion != "0.7.1") {
         reply(false, tr("Restart BeamNG to load the updated Car controls.")); return;
     }
-    if (!m_data.value("controlsAvailable").toBool() || !QStringList{"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0","0.10.0"}.contains(bridgeVersion)) {
+    if (!m_data.value("controlsAvailable").toBool() || !Protocol::controlsBridge(bridgeVersion)) {
         reply(false, tr("Reload the ABM game extension to enable car controls.")); return;
     }
     if (action == "catalog" && !m_catalogRequest.isEmpty()) { reply(false, tr("A catalog request is already running.")); return; }

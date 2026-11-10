@@ -3,6 +3,9 @@
   <file>Garage.js</file>
         <file>GarageFilter.qml</file>
         <file>GearEditor.qml</file>
+  <file>PlayerRow.qml</file>
+  <file>PresetPanel.qml</file>
+  <file>CurveChart.qml</file>
   <file>PlainLabel.qml</file>
   <file>MetricCard.qml</file>
   <file>DriveGauge.qml</file>

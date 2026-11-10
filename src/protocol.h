@@ -61,6 +61,24 @@ inline bool identity(const QString &value) {
     const auto slash = value.indexOf('/');
     return slash < 0 ? model(value) : model(value.left(slash)) && config(value.mid(slash + 1));
 }
+inline bool playerId(const QJsonValue &value) {
+    const auto n = value.toDouble();
+    return value.isDouble() && std::isfinite(n) && n >= 0 && n <= 9007199254740991.0 && n == std::floor(n);
+}
+inline bool playerPing(const QJsonValue &value) {
+    const auto n = value.toDouble();
+    return value.isDouble() && std::isfinite(n) && n >= 0 && n <= 60000;
+}
+inline bool rowKey(const QString &value) {
+    return !value.isEmpty() && value.size() <= 96 && QRegularExpression("^[A-Za-z0-9_.:-]+$").match(value).hasMatch();
+}
+// Fixed bridge revisions. Older revisions stay readable where they remain safe.
+inline bool workshopBridge(const QString &value) {
+    return QStringList{"0.9.0", "0.10.0", "0.11.0"}.contains(value);
+}
+inline bool controlsBridge(const QString &value) {
+    return QStringList{"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1", "0.9.0", "0.10.0", "0.11.0"}.contains(value);
+}
 inline QJsonObject preview(const QJsonValue &value, const QString &modelKey) {
     const auto input = value.toObject();
     const auto path = input.value("path").toString();

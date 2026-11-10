@@ -1,5 +1,7 @@
 # ABM user guide
 
+> Development 0.11 adds session-only BeamMP latency provenance, player identity/profile actions, bounded ABM presets, supported torque and clutch readback, a seeded tune preview, server-address copy, convoy notes and a redacted support bundle. Install bridge **0.11.0** and vehicle bridge **0.11.0**; older bridges stay read-only for these controls. Presets store accepted ABM overrides, not native `.pc` files, and applying them is verified step-by-step without atomic rollback. Native preset save/load remains unverified until tested with a disposable car.
+>
 > Development 0.10 adds [RPM limits, clutch protection and same-vehicle reset persistence](reset-persistence.md). Install bridge 0.10.0 for these controls. Ordinary reset keeps accepted supported recipes when enabled; Full reset clears them. The detailed limits in that guide take precedence over older reset descriptions below.
 
 > **Development 0.9:** [Workshop foundation](workshop-foundation.md) replaces the old power Apply step with live power, adds actual per-gear readback/editing and a bottom-of-Car full reset. Bridge 0.9.0 and a game restart are required. Older versioned descriptions below remain historical where they describe the previous ratio text box. Editable maximum RPM, clutch protection and reset-persistent recipes are not implemented yet.

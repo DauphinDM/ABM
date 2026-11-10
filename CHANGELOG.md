@@ -1,4 +1,13 @@
 # Changelog
+## 0.11.0 — Latency, players and presets
+
+- Capture BeamMP's own local/remote ping updates without editing BeamMP files; show provenance and freshness, never treat `-1` as latency.
+- Add stable session player rows with guest/session identity, role and vehicle counts, search/sort, public forum profile links, separate session-ID copying, account-ID lookup with cancellation guards, server address copying, convoy notes and honest multiplayer policy text.
+- Add bounded ABM-owned presets that store accepted workshop overrides only. Validation, atomic writes, history, tags/notes, import/export, explicit apply preflight, stopped-own-vehicle requirements, partial-result reporting and cancellation are included. Presets are not full native `.pc` clones.
+- Add supported torque-curve and clutch readback, gear spread, seeded preview-first tune drafts, preview fallback labels and a redacted support bundle.
+- Require game bridge and vehicle bridge 0.11.0 for new controls. Older bridges stay read-only where supported.
+- Native BeamNG save/load pairing, real latency comparison and physics effects remain unverified because the simulator/Lua bridge could not be connected during development.
+
 ## 0.10.0 — Reset-recipe development
 
 - Edit supported combustion-engine permanent RPM limits with actual idle/ceiling readback. Preserve physical damage thresholds and temporary ESC/launch limiters; do not synthesize torque curves.

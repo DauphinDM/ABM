@@ -1,5 +1,5 @@
 -- ABM vehicle tuning: fixed actions only, with preflight before mutation.
-local M = {version='0.10.0'}
+local M = {version='0.11.0'}
 local instance = tostring(obj:getID())..':'..tostring({})..':'..tostring(os.time())
 local generation = 0
 local revisions = {}
@@ -491,7 +491,36 @@ M.readback = function()
     if finite(device.revLimiterRPM) then item.revLimiterRPM=device.revLimiterRPM end
     if finite(device.revLimiterRPM) and pcall(rpmDevices) then item.rpmCeiling=rpmCeiling(device); item.idleRPM=device.idleRPM end
     if finite(device.maxPhysicalAV) then item.physicalRPM=device.maxPhysicalAV*30/math.pi end
+    -- Curves are read-only diagnostic data: supported torque, not a dyno claim.
+    local torqueOk, torqueData = pcall(device.getTorqueData, device)
+    if torqueOk and type(torqueData) == 'table' then
+      for _, field in ipairs({'maxTorque','maxPower','maxTorqueRPM','maxPowerRPM'}) do
+        if finite(torqueData[field]) then item[field]=torqueData[field] end
+      end
+      local curves = torqueData.curves
+      local final = type(curves) == 'table' and (curves[torqueData.finalCurveName or 1] or curves[1])
+      local points = type(final) == 'table' and final.torque
+      if type(points) == 'table' then
+        local curve = {}
+        for rpm, torque in pairs(points) do
+          if finite(rpm) and finite(torque) and rpm >= 0 and rpm <= 30000 and #curve < 64 then
+            curve[#curve+1] = {rpm=rpm, torque=torque}
+          end
+        end
+        table.sort(curve, function(a,b) return a.rpm < b.rpm end)
+        if #curve > 0 then item.torqueCurve = curve end
+      end
+    end
     out.engines[#out.engines+1]=item
+  end
+  out.clutches = {}
+  local clutchDevices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('frictionClutch') or {}
+  for name, device in pairs(clutchDevices) do
+    if #out.clutches >= 4 then break end
+    local item = {name=tostring(name):sub(1,80)}
+    if finite(device.temperature) then item.temperature=device.temperature end
+    if finite(device.thermalEfficiency) then item.efficiency=device.thermalEfficiency end
+    out.clutches[#out.clutches+1]=item
   end
   local devices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('manualGearbox') or {}
   local gearbox, count=nil,0

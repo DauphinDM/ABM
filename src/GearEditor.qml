@@ -77,6 +77,12 @@ ColumnLayout {
             PlainLabel { Layout.preferredWidth: 75; text: editor.retainedRPM(modelData.index); color: editor.muted; font.pixelSize: 10 }
         }
     }
+    readonly property real spread: {
+        var values = forward.map(Number).filter(function(n) { return isFinite(n) && n > 0 })
+        return values.length > 1 ? values[0] / values[values.length - 1] : NaN
+    }
     PlainLabel { Layout.fillWidth: true; text: editor.dirty ? qsTr("Edited draft · actual data keeps updating without replacing edits.") : qsTr("Actual ratios from selected vehicle · reverse/neutral are read-only."); color: editor.muted; font.pixelSize: 10; wrapMode: Text.Wrap }
+    PlainLabel { Layout.fillWidth: true; visible: isFinite(editor.spread); color: editor.muted; font.pixelSize: 9; wrapMode: Text.Wrap
+        text: qsTr("%1 forward gears · overall ratio spread %2×. Target road speed is not estimated because final drive and verified tire radius are unavailable.").arg(editor.forward.length).arg(editor.spread.toFixed(2)) }
     PlainLabel { Layout.fillWidth: true; text: qsTr("*RPM immediately after upshift at the reported limiter; theoretical, no clutch slip or controller delay."); color: editor.muted; font.pixelSize: 9; wrapMode: Text.Wrap }
 }

@@ -49,13 +49,21 @@ jsonReadFile=function() return {schema=1,prefix='Official BeamMP Server | ',
   groups={['15.204.242.33']={{30814,'Regular test'}}},
   excluded={{'15.204.242.33',30816,'Official BeamMP x Moza - Qualifying Server [US-East]'}}} end
 getPlayerVehicle=function() return vehicle end
+local pingCalls={}
+extensions={UI={setPing=function(value) pingCalls['local']=value; return 'ping-result' end,
+  setPlayerPing=function(name,value) pingCalls[name]=value; return 'player-result' end},
+  load=function() end,
+  abmTuning={version='0.11.0',capabilities=function() return {} end,readback=function() return {} end,
+    executeTarget=function() return true end,execute=function() return true end}}
 local last
 jsonEncode=function(data) last=data; objects[#objects+1]=data; return 'encoded' end
 jsonDecode=function(bytes) return commands[bytes] end
 m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
+assert(extensions.UI.setPing(31)=='ping-result')
+assert(extensions.UI.setPlayerPing('Other',52)=='player-result')
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.10.0')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.11.0')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
@@ -66,8 +74,9 @@ MPVehicleGE={getPlayers=function() return {
   {name='Other',ping=45,vehicles={IDs={b=true,c=true}}}} end,
   getVehicles=function() return {a=true,b=true,c=true} end}
 m.onUpdate(.06)
-assert(last.multiplayer and last.playerCount==2 and last.mpVehicleCount==3 and last.ping==nil)
-assert(last.players[2].ping==45)
+assert(last.multiplayer and last.playerCount==2 and last.mpVehicleCount==3 and last.ping==31)
+assert(last.players[1].pingSource=='local' and last.players[1].guest)
+assert(last.players[2].ping==52 and last.players[2].pingSource=='remote')
 MPCoreNetwork.isMPSession=function() return false end
 local serial=0
 local autoPolicy=true
@@ -284,7 +293,7 @@ assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
 shiftPoints[3]=point3
 vmEnv.extensions.abmTuning.version='0.6.1'
 assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
-vmEnv.extensions.abmTuning.version='0.10.0'
+vmEnv.extensions.abmTuning.version='0.11.0'
 assert(not request('gears',{ratios={0}}).ok)
 vmEnv.extensions.abmTuning.execute('persistence',{enabled=false})
 vmEnv.extensions.abmTuning.onReset()

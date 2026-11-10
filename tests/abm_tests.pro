@@ -3,8 +3,8 @@ CONFIG += c++17 testcase
 TARGET = abm_tests
 TEMPLATE = app
 INCLUDEPATH += ../src
-HEADERS += ../src/telemetry.h ../src/backend.h ../src/theme.h ../src/translator.h ../src/integration.h ../src/previews.h ../src/serverpolicy.h
-SOURCES += abm_tests.cpp ../src/telemetry.cpp ../src/backend.cpp ../src/theme.cpp ../src/translator.cpp ../src/integration.cpp ../src/previews.cpp ../src/serverpolicy.cpp
+HEADERS += ../src/telemetry.h ../src/backend.h ../src/theme.h ../src/translator.h ../src/integration.h ../src/previews.h ../src/serverpolicy.h ../src/playerprofiles.h ../src/presetstore.h
+SOURCES += abm_tests.cpp ../src/telemetry.cpp ../src/backend.cpp ../src/theme.cpp ../src/translator.cpp ../src/integration.cpp ../src/previews.cpp ../src/serverpolicy.cpp ../src/playerprofiles.cpp ../src/presetstore.cpp
 unix: LIBS += -larchive
 win32 {
     INCLUDEPATH += $$(VCPKG_ROOT)/installed/x64-windows/include

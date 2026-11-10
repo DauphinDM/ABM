@@ -20,6 +20,8 @@
 #include "telemetry.h"
 #include "theme.h"
 #include "translator.h"
+#include "playerprofiles.h"
+#include "presetstore.h"
 
 namespace {
 QByteArray packet(const QString &session = "test") {
@@ -261,6 +263,69 @@ private slots:
         backend.setResetPersistence(false); QTRY_VERIFY(f.game.hasPendingDatagrams()); command=f.command();
         QCOMPARE(command.value("action").toString(),QString("persistence")); QCOMPARE(command.value("enabled"),QJsonValue(false));
     }
+    void playerProfilesUseFixedPublicOrigins() {
+        const auto url=PlayerProfiles::profileUrl("Test Driver");
+        QCOMPARE(url.scheme(),QString("https")); QCOMPARE(url.host(),QString("forum.beammp.com"));
+        QCOMPARE(url.path(QUrl::FullyEncoded),QString("/u/Test%20Driver/summary"));
+        QVERIFY(!PlayerProfiles::profileUrl("bad/name").isValid());
+        QVERIFY(!PlayerProfiles::profileUrl("bad\\name").isValid());
+        QVERIFY(!PlayerProfiles::profileUrl(QString(65,'a')).isValid());
+        const QByteArray body=R"({"user":{"id":42,"username":"Test Driver"}})";
+        QCOMPARE(PlayerProfiles::accountId(body,"Test Driver"),QString("42"));
+        QVERIFY(PlayerProfiles::accountId(body,"Other").isEmpty());
+        QVERIFY(PlayerProfiles::accountId(R"({"user":{"id":-1,"username":"Test Driver"}})","Test Driver").isEmpty());
+        QVERIFY(PlayerProfiles::accountId(QByteArray(300000,'x'),"Test Driver").isEmpty());
+    }
+    void playerTelemetryKeepsStableIdentityAndProvenance() {
+        auto input=QJsonDocument::fromJson(packet()).object();
+        input.insert("players",QJsonArray{
+            QJsonObject{{"rawName","Local"},{"sessionPlayerId",7},{"ping",24},{"pingSource","local"},{"pingAgeMs",1200},{"vehicles",1},{"guest",false},{"role","USER"}},
+            QJsonObject{{"rawName","Guest"},{"ping",-1},{"pingSource","invented"},{"role","ADMIN"}},
+            QJsonObject{{"rawName",QString(100,'x')},{"sessionPlayerId",-4},{"ping",90000},{"vehicles",2000}}
+        });
+        const auto out=Telemetry::sanitize(QJsonDocument(input).toJson(QJsonDocument::Compact));
+        const auto players=out.value("players").toArray();
+        QCOMPARE(players.size(),3);
+        const auto one=players[0].toObject();
+        QCOMPARE(one.value("rowKey").toString(),QString("id:7"));
+        QCOMPARE(one.value("pingSource").toString(),QString("local"));
+        QCOMPARE(one.value("role").toString(),QString("USER"));
+        const auto two=players[1].toObject();
+        QVERIFY(two.value("rowKey").toString().startsWith("name:"));
+        QVERIFY(!two.contains("ping"));
+        QCOMPARE(two.value("pingSource").toString(),QString("unavailable"));
+        QVERIFY(two.value("guest").toBool());
+        const auto three=players[2].toObject();
+        QCOMPARE(three.value("name").toString().size(),64);
+        QVERIFY(!three.contains("sessionPlayerId"));
+        QVERIFY(!three.contains("ping"));
+        QVERIFY(!three.contains("vehicles"));
+    }
+    void presetStoreValidatesAndPreservesFiles() {
+        QTemporaryDir dir; PresetStore store(dir.filePath("presets"));
+        const QJsonObject config{{"model","etk800"},{"identity","abc123"},{"label","Test car"},{"completeness","workshop-overrides"}};
+        const QJsonObject settings{{"power",QJsonObject{{"enginePower",1.2}}},
+            {"gears",QJsonObject{{"ratios",QJsonArray{2.5,1.8,1.2,.9}}}}};
+        QVERIFY(!PresetStore::validSettings(QJsonObject{{"runLua",QJsonObject{{"code","x"}}}}));
+        const auto id=store.save("Track",config,settings);
+        QVERIFY(!id.isEmpty());
+        const auto stored=store.get(id); QCOMPARE(stored.value("name").toString(),QString("Track"));
+        QCOMPARE(stored.value("requirements").toString(),QString("ABM-0.11-runtime-1"));
+        QVERIFY(store.renamePreset(id,"Renamed")); QCOMPARE(store.get(id).value("name").toString(),QString("Renamed"));
+        QVERIFY(store.annotate(id,"track,test","notes"));
+        const auto exported=store.exportJson(id); QVERIFY(exported.contains("Renamed"));
+        QVERIFY(!store.remove(id,false)); QVERIFY(store.remove(id,true)); QVERIFY(store.get(id).isEmpty());
+        QVERIFY(store.importJson(exported)); QCOMPARE(store.entries().size(),1);
+        QJsonObject bad=stored; bad.insert("unknown",true); QString reason;
+        QVERIFY(!PresetStore::validate(bad,&reason)); QVERIFY(!reason.isEmpty());
+    }
+    void randomTuneIsDeterministicAndBounded() {
+        Backend backend(QDir::temp().filePath("abm-random-test/state.json"));
+        const auto a=backend.randomTune("fixed"), b=backend.randomTune("fixed"), c=backend.randomTune("other");
+        QCOMPARE(a,b); QVERIFY(a!=c);
+        QVERIFY(a.value("enginePower").toDouble()>=.8 && a.value("enginePower").toDouble()<=1.5);
+        QVERIFY(a.value("steeringResponse").toDouble()>=.8 && a.value("steeringResponse").toDouble()<=1.2);
+    }
     void preferencesStayInTestDirectory() {
         QTemporaryDir dir; Backend first(dir.filePath("state.json"));
         first.setMetric(false); first.toggleFavorite("etk800"); first.toggleFavorite("etk800/Racely (M)"); first.toggleFavorite("../bad");
@@ -435,7 +500,7 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.10.0")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.11.0")); file.close();
         QVERIFY(QFileInfo::exists(dir.filePath("lua/vehicle/extensions/abmTuning.lua")));
         QVERIFY(QFileInfo::exists(dir.filePath("lua/ge/extensions/abm-official-servers.json")));
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());
@@ -501,7 +566,7 @@ private slots:
         rpm->setProperty("text","6000"); QTRY_VERIFY(rpmApply->isEnabled());
         rpm->setProperty("text","9000"); QTRY_VERIFY(!rpmApply->isEnabled());
         QVERIFY(window->findChild<QQuickItem *>("clutchToggle")->isEnabled());
-        auto *section=window->findChild<QQuickItem *>("carSection"); QVERIFY(section); QCOMPARE(section->property("count").toInt(),4);
+        auto *section=window->findChild<QQuickItem *>("carSection"); QVERIFY(section); QCOMPARE(section->property("count").toInt(),5);
         auto *engineToggle=window->findChild<QQuickItem *>("engineToggle"); auto *strength=window->findChild<QQuickItem *>("strengthSlider");
         QVERIFY(engineToggle && strength); QVERIFY(strength->isEnabled()); engineToggle->setProperty("checked",true); QTRY_VERIFY(!strength->isEnabled());
         section->setProperty("currentIndex",1);

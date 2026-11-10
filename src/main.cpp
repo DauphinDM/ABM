@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("abm");
     app.setApplicationDisplayName("ABM");
-    app.setApplicationVersion("0.10.0");
+    app.setApplicationVersion("0.11.0");
     app.setDesktopFileName("abm");
     app.setWindowIcon(QIcon::fromTheme("abm"));
     if (help) {
