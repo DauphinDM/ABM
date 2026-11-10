@@ -15,6 +15,11 @@
 #include <cmath>
 
 Backend::Backend(const QString &path, QObject *parent) : QObject(parent), m_path(path.isEmpty() ? Telemetry::defaultPath() : path) {
+    m_clientId=QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_powerTimer.setInterval(50);
+    connect(&m_powerTimer,&QTimer::timeout,this,&Backend::flushLivePower);
+    m_tuningSaveTimer.setSingleShot(true); m_tuningSaveTimer.setInterval(1500);
+    connect(&m_tuningSaveTimer,&QTimer::timeout,this,&Backend::storeTuning);
     const auto directory = path.isEmpty() ? qEnvironmentVariable("BEAMSIDE_CONFIG_DIR", QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)) : QFileInfo(path).absolutePath();
     m_settings = std::make_unique<QSettings>(directory + "/preferences.ini", QSettings::IniFormat);
     m_integration = std::make_unique<Integration>(directory + "/integration.ini", path.isEmpty());
@@ -28,6 +33,7 @@ Backend::Backend(const QString &path, QObject *parent) : QObject(parent), m_path
     connect(&m_socket, &QLocalSocket::readyRead, this, &Backend::readStream);
     connect(&m_socket, &QLocalSocket::connected, this, [this] { m_buffer.clear(); });
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
+        cancelLivePower();
         m_pending.clear(); m_pendingAction.clear(); m_buffer.clear(); emit actionChanged();
     });
     m_timer.setInterval(250);
@@ -53,7 +59,12 @@ void Backend::accept(const QJsonObject &data) {
         m_configsModel.clear(); m_pending.clear(); m_pendingAction.clear(); emit actionChanged();
         emit catalogChanged(); emit configsChanged(); emit historyChanged();
     }
+    const auto previousTarget=workshopTarget();
     m_error.clear(); m_state = data.toVariantMap();
+    if (previousTarget!=workshopTarget() || !data.value("sandboxAllowed").toBool() || !data.value("connected").toBool()) {
+        cancelLivePower();
+        if (!m_pendingTarget.isEmpty()) { m_pending.clear(); m_pendingAction.clear(); m_pendingTarget={}; emit actionChanged(); }
+    }
     if (m_integration->gameFolder().isEmpty() && QFileInfo::exists(data.value("gameFolder").toString() + "/content/vehicles"))
         m_integration->setGameFolder(data.value("gameFolder").toString());
     if (m_integration->userFolder().isEmpty() && QFileInfo::exists(data.value("userFolder").toString() + "/beamng.log"))
@@ -99,15 +110,24 @@ void Backend::readStream() {
             emit configsChanged(); emit actionChanged();
         } else if (data.value("kind") == "result" && data.value("requestId").toString() == m_pending) {
             const auto action = m_pendingAction;
-            m_pending.clear(); m_pendingAction.clear(); m_actionMessage = data.value("message").toString().left(256); emit actionChanged();
+            const bool accepted=data.value("ok").toBool() && (m_pendingTarget.isEmpty() || m_pendingTarget==workshopTarget());
+            m_pending.clear(); m_pendingAction.clear(); m_pendingTarget={}; m_actionMessage = data.value("message").toString().left(256);
             if (action == "enableBeamMP") {
                 if (data.value("ok").toBool()) m_integration->startBeamMP();
                 else m_integration->setMessage(m_actionMessage);
             }
-            if (action == "tuning" && data.value("ok").toBool()) {
+            if (action == "tuning" && accepted) {
                 m_tuning = QJsonObject{m_nextTuning}.toVariantMap(); m_nextTuning = {};
                 storeTuning();
             }
+            if (action == "power") {
+                if (accepted) { m_tuning.insert("enginePower",m_pendingPower); emit tuningChanged(); m_tuningSaveTimer.start(); }
+                else cancelLivePower();
+            }
+            if (action == "fullReset" && accepted) {
+                m_tuning.insert("enginePower",1); m_tuning.insert("damageImmunity",false); storeTuning();
+            }
+            emit actionChanged();
         }
     }
 }
@@ -152,7 +172,7 @@ void Backend::refresh() {
     emit changed();
 }
 void Backend::toggleMonitoring() {
-    if (m_timer.isActive()) m_timer.stop();
+    if (m_timer.isActive()) { cancelLivePower(); m_timer.stop(); }
     else { m_timer.start(); refresh(); }
     emit changed();
 }
@@ -165,6 +185,38 @@ void Backend::storeTuning() {
     m_settings->setValue("tuning/gravity", m_tuning.value("gravity").toDouble());
     m_settings->setValue("tuning/damageImmunity", m_tuning.value("damageImmunity").toBool());
     m_settings->sync(); emit tuningChanged();
+}
+QJsonObject Backend::workshopTarget() const {
+    const auto workshop=m_state.value("workshop").toMap();
+    if (m_state.value("bridgeVersion").toString()!="0.9.0" || workshop.value("contract").toInt()!=1 || workshop.value("generation").toString().isEmpty()) return {};
+    return {{"targetSession",m_state.value("sessionId").toString()},{"targetVehicle",QJsonValue::fromVariant(m_state.value("vehicleId"))},{"generation",workshop.value("generation").toString()}};
+}
+void Backend::cancelLivePower() {
+    m_queuedPower={}; m_powerTarget={}; m_powerTimer.stop(); m_tuningSaveTimer.stop();
+}
+void Backend::setLivePower(double multiplier) {
+    const auto target=workshopTarget();
+    if (!Protocol::enginePower(multiplier) || target.isEmpty() || !connected() || !m_state.value("sandboxAllowed").toBool()
+        || m_state.value("policyCleanup").toBool() || !m_state.value("vehicleOwned").toBool() || !m_state.value("capabilities").toMap().value("power").toBool()) {
+        cancelLivePower(); m_actionMessage=tr("Live power unavailable: select a supported own vehicle with bridge 0.9.0 and server permission."); emit actionChanged(); return;
+    }
+    m_queuedPower={{"enginePower",multiplier}}; m_powerTarget=target; m_powerQueuedAt=QDateTime::currentMSecsSinceEpoch();
+    m_powerTimer.start(); flushLivePower();
+}
+void Backend::flushLivePower() {
+    const auto now=QDateTime::currentMSecsSinceEpoch();
+    if (m_queuedPower.isEmpty()) { m_powerTimer.stop(); return; }
+    if (now-m_powerQueuedAt>3000 || workshopTarget()!=m_powerTarget || !connected() || !m_state.value("sandboxAllowed").toBool() || m_state.value("policyCleanup").toBool()) { cancelLivePower(); return; }
+    if (busy() || now-m_powerSentAt<250) return;
+    const auto parameters=m_queuedPower; m_queuedPower={}; m_pendingPower=parameters.value("enginePower").toDouble(); m_powerSentAt=now;
+    send("power",parameters);
+}
+void Backend::fullReset() {
+    cancelLivePower();
+    if (m_pendingAction=="power") { m_pending.clear(); m_pendingAction.clear(); m_pendingTarget={}; }
+    const auto speed=m_state.value("telemetry").toMap().value("speed");
+    if (workshopTarget().isEmpty() || !speed.isValid() || speed.toDouble()>1) { m_actionMessage=tr("Stop a supported vehicle before full reset."); emit actionChanged(); return; }
+    send("fullReset");
 }
 void Backend::applyTuning(QVariantMap tuning) {
     if (busy()) return;
@@ -229,11 +281,17 @@ void Backend::send(const QString &action, const QJsonObject &parameters) {
     m_pending = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_pendingAction = action;
     auto message = parameters; message.insert("action", action); message.insert("requestId", m_pending);
+    if (QStringList{"power","fullReset","tuning","handling","gears","engine","dimensions","stability"}.contains(action) && m_state.value("bridgeVersion").toString()=="0.9.0") {
+        m_pendingTarget=workshopTarget();
+        for (auto it=m_pendingTarget.begin();it!=m_pendingTarget.end();++it) message.insert(it.key(),it.value());
+        message.insert("contract",1); message.insert("client",m_clientId); message.insert("revision",++m_intentRevision);
+        message.insert("expiresAt",QDateTime::currentSecsSinceEpoch()+4);
+    } else m_pendingTarget={};
     m_socket.write(QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n');
     m_actionMessage = tr("Waiting for the game…"); emit actionChanged();
     const auto pending = m_pending;
     QTimer::singleShot(16000, this, [this, pending] {
-        if (m_pending == pending) { m_pending.clear(); m_pendingAction.clear(); m_actionMessage = tr("Game request timed out."); emit actionChanged(); }
+        if (m_pending == pending) { cancelLivePower(); m_pendingTarget={}; m_pending.clear(); m_pendingAction.clear(); m_actionMessage = tr("Game request timed out."); emit actionChanged(); }
     });
 }
 void Backend::requestCatalog() { send("catalog"); }
@@ -286,7 +344,10 @@ void Backend::setDemo(bool blocked) {
     m_pending.clear(); m_pendingAction.clear();
     m_error.clear();
     m_state = QJsonDocument::fromJson(R"({"connected":true,"multiplayer":true,"beammpLoaded":true,"server":"Coastal cruising · EU","map":"west_coast_usa","vehicle":"etk800","fps":89,"vehicleCount":14,"sessionSeconds":1452,"distance":18420,"topSpeed":62.5,"playerCount":3,"mpVehicleCount":5,"ping":32,"telemetry":{"speed":28.6,"rpm":3240,"gear":4,"fuel":0.72,"throttle":0.42,"brake":0,"coolant":88,"oil":96},"players":[{"name":"CoastDriver","local":true,"ping":32,"vehicles":1},{"name":"Apex","ping":48,"vehicles":2},{"name":"Tourer","ping":61,"vehicles":2}]})").object().toVariantMap();
-    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.7.1");
+    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.9.0");
+    m_state.insert("workshop",QVariantMap{{"contract",1},{"generation","demo-instance:0"},{"enginePower",1},
+        {"engines",QVariantList{QVariantMap{{"name","mainEngine"},{"maxRPM",7200},{"revLimiterRPM",7200},{"physicalRPM",7560}}}},
+        {"gears",QVariantList{QVariantMap{{"index",-1},{"ratio",-3.2}},QVariantMap{{"index",0},{"ratio",0}},QVariantMap{{"index",1},{"ratio",3.5}},QVariantMap{{"index",2},{"ratio",2.1}},QVariantMap{{"index",3},{"ratio",1.4}},QVariantMap{{"index",4},{"ratio",1.0}},QVariantMap{{"index",5},{"ratio",.8}}}}});
     m_state.insert("sandboxAllowed", !blocked);
     m_state.insert("policyReason", blocked ? tr("Official event/new or mismatched server: gameplay changes are blocked.") : tr("Non-official server: no ABM official-server restriction."));
     if (blocked) m_state.insert("server", "Official event · demo");

@@ -55,7 +55,7 @@ jsonDecode=function(bytes) return commands[bytes] end
 m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.7.1')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.9.0')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
@@ -170,6 +170,7 @@ vmEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngi
     setBeamStrength=function(_,cid,value) limits.strength=value end,
     setNodeFrictionSlidingCoefs=function(_,cid,a,b) friction[cid]={a,b} end,
     requestReset=function() policyResets=policyResets+1 end,
+    getVelocity=function() return {length=function() return speed end} end,
     getID=function() return 42 end,queueGameEngineLua=function(_,script)
       local f=assert(loadstring(script)); setfenv(f,setmetatable({extensions={beamdeck=m}}, {__index=_G})); f()
     end}, extensions={load=function() end}}, {__index=_G})
@@ -277,7 +278,7 @@ assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
 shiftPoints[3]=point3
 vmEnv.extensions.abmTuning.version='0.6.1'
 assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
-vmEnv.extensions.abmTuning.version='0.7.1'
+vmEnv.extensions.abmTuning.version='0.9.0'
 assert(not request('gears',{ratios={0}}).ok)
 vmEnv.extensions.abmTuning.onReset()
 shape={[5]={x=-1,y=-2,z=0},[6]={x=3,y=2,z=1}}; rest=math.sqrt(33)
@@ -359,6 +360,26 @@ m.onUpdate(6); lease(false,true)
 assert(not request('dealer').ok and last.policyCleanup) -- Failure never silently unlocks.
 vmEnv.obj.requestReset=resetFunction
 m.onUpdate(6); lease(false,true); assert(request('dealer').ok)
+MPCoreNetwork.isMPSession=function() return false end
+m.onUpdate(.06)
+local module=vmEnv.extensions.abmTuning
+local originalToken=module.target()
+local report=module.readback()
+assert(report.contract==1 and report.generation==originalToken and report.gears[1].index==-1 and report.gears[2].index==0)
+module.executeTarget('power',{enginePower=2},originalToken,os.time()+4,1,'test-client')
+assert(engine.torqueCurve[1000]==400 and module.readback().enginePower==2)
+assert(not pcall(module.executeTarget,'power',{enginePower=3},originalToken,os.time()+4,1,'test-client'))
+assert(not pcall(module.executeTarget,'power',{enginePower=3},originalToken,os.time()-1,2,'test-client'))
+module.onReset()
+assert(module.target()~=originalToken and not pcall(module.executeTarget,'power',{enginePower=3},originalToken,os.time()+4,3,'test-client'))
+m.receiveVehicle(42,{workshop=module.readback()})
+local envelope={contract=1,targetVehicle=42,generation=module.target(),expiresAt=os.time()+4,revision=1,client='gateway-test',enginePower=1.5}
+assert(request('power',envelope).ok and engine.torqueCurve[1000]==300)
+envelope={contract=1,targetVehicle=42,generation=module.target(),expiresAt=os.time()-1,revision=2,client='gateway-test',enginePower=3}
+assert(not request('power',envelope).ok and engine.torqueCurve[1000]==300)
+speed=0; m.receiveVehicle(42,{workshop=module.readback()})
+envelope={contract=1,targetVehicle=42,generation=module.target(),expiresAt=os.time()+4,revision=3,client='gateway-test'}
+assert(request('fullReset',envelope).ok and engine.torqueCurve[1000]==200 and module.target()~=report.generation)
 local collected
 local env={electrics={values={rpm=3200,abs=true,running=true,turboBoost=14.504}},
   powertrain={getDevice=function() return {maxRPM=7200} end},sensors={gx2=9.81,gy2=0},

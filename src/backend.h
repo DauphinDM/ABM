@@ -57,6 +57,9 @@ public:
     Q_INVOKABLE void requestConfigs(const QString &model);
     Q_INVOKABLE void requestVehicle(const QString &action, const QString &model);
     Q_INVOKABLE void applyTuning(QVariantMap tuning);
+    Q_INVOKABLE void setLivePower(double multiplier);
+    Q_INVOKABLE void cancelPowerEdits() { cancelLivePower(); }
+    Q_INVOKABLE void fullReset();
     Q_INVOKABLE void applyHandling(QVariantMap settings);
     Q_INVOKABLE void applyEngine(QVariantMap settings);
     Q_INVOKABLE void applyDimensions(QVariantMap settings);
@@ -89,6 +92,9 @@ private:
     void storeTuning();
     void readStream();
     void reconnect();
+    QJsonObject workshopTarget() const;
+    void cancelLivePower();
+    void flushLivePower();
     QVariantList decorate(const QJsonArray &items, const QString &model = {});
     QString m_path, m_error;
     QVariantMap m_state;
@@ -102,6 +108,12 @@ private:
     QString m_configsModel, m_requestedModel;
     QVariantMap m_tuning;
     QJsonObject m_nextTuning;
+    QTimer m_powerTimer, m_tuningSaveTimer;
+    QJsonObject m_queuedPower, m_powerTarget, m_pendingTarget;
+    QString m_clientId;
+    qint64 m_powerQueuedAt = 0, m_powerSentAt = 0;
+    int m_intentRevision = 0;
+    double m_pendingPower = 1;
     Previews *m_previews = nullptr;
     std::unique_ptr<Integration> m_integration;
     bool m_demo = false, m_metric = true, m_gameSeen = false;

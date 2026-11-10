@@ -207,6 +207,41 @@ private slots:
         QTRY_COMPARE(backend.state().value("telemetry").toMap().value("speed").toDouble(),5.0);
         backend.applyDimensions({{"width",1.0},{"length",1.0},{"height",1.0}}); QTRY_VERIFY(!backend.busy()); QVERIFY(!f.game.hasPendingDatagrams());
     }
+    void livePowerCoalescesAndCancelsOnVehicleReset() {
+        Fixture f; QVERIFY(f.start()); Backend backend(f.path); QTRY_VERIFY(backend.connected());
+        auto state=QJsonDocument::fromJson(packet()).object();
+        state.insert("multiplayer",false); state.insert("bridgeVersion","0.9.0"); state.insert("vehicleId",42); state.insert("vehicleOwned",true);
+        state.insert("capabilities",QJsonObject{{"power",true}});
+        state.insert("workshop",QJsonObject{{"contract",1},{"generation","car:0"},{"gears",QJsonArray{QJsonObject{{"index",-1},{"ratio",-3.2}},QJsonObject{{"index",1},{"ratio",3.5}}}}});
+        f.send(state); QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.9.0"));
+        backend.setLivePower(1.2); QTRY_VERIFY(f.game.hasPendingDatagrams()); const auto first=f.command();
+        QCOMPARE(first.value("action").toString(),QString("power")); QCOMPARE(first.value("targetVehicle").toInt(),42);
+        QCOMPARE(first.value("generation").toString(),QString("car:0")); QVERIFY(!first.contains("gravity")); QVERIFY(!first.contains("damageImmunity"));
+        backend.setLivePower(2); backend.setLivePower(3); QVERIFY(!f.game.hasPendingDatagrams());
+        f.send({{"kind","result"},{"requestId",first.value("requestId")},{"ok",true}});
+        QTRY_VERIFY(f.game.hasPendingDatagrams()); const auto latest=f.command();
+        QCOMPARE(latest.value("enginePower").toDouble(),3.0); QVERIFY(latest.value("revision").toInt()>first.value("revision").toInt());
+        backend.setLivePower(4);
+        state.insert("workshop",QJsonObject{{"contract",1},{"generation","car:1"}}); f.send(state);
+        QTRY_COMPARE(backend.state().value("workshop").toMap().value("generation").toString(),QString("car:1")); QTRY_VERIFY(!backend.busy());
+        f.send({{"kind","result"},{"requestId",latest.value("requestId")},{"ok",true}});
+        QTest::qWait(350); QVERIFY(!f.game.hasPendingDatagrams());
+        backend.setLivePower(2); QTRY_VERIFY(f.game.hasPendingDatagrams()); const auto discarded=f.command();
+        backend.fullReset(); QTRY_VERIFY(f.game.hasPendingDatagrams()); const auto reset=f.command();
+        QCOMPARE(reset.value("action").toString(),QString("fullReset"));
+        f.send({{"kind","result"},{"requestId",discarded.value("requestId")},{"ok",true}}); QVERIFY(backend.busy());
+        f.send({{"kind","result"},{"requestId",reset.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
+    }
+    void workshopReadbackIsBoundedAndLiteral() {
+        auto input=QJsonDocument::fromJson(packet()).object();
+        input.insert("workshop",QJsonObject{{"contract",1},{"generation","instance:0"},{"run","bad"},{"enginePower",2},
+            {"engines",QJsonArray{QJsonObject{{"name","<b>engine</b>"},{"maxRPM",7200},{"code","bad"}}}},
+            {"gears",QJsonArray{QJsonObject{{"index",-1},{"ratio",-3}},QJsonObject{{"index",0},{"ratio",0}},QJsonObject{{"index",1.5},{"ratio",4}}}}});
+        const auto workshop=Telemetry::sanitize(QJsonDocument(input).toJson()).value("workshop").toObject();
+        QVERIFY(!workshop.contains("run")); QCOMPARE(workshop.value("gears").toArray().size(),2);
+        QCOMPARE(workshop.value("engines").toArray()[0].toObject().value("name").toString(),QString("<b>engine</b>"));
+        QVERIFY(!workshop.value("engines").toArray()[0].toObject().contains("code"));
+    }
     void preferencesStayInTestDirectory() {
         QTemporaryDir dir; Backend first(dir.filePath("state.json"));
         first.setMetric(false); first.toggleFavorite("etk800"); first.toggleFavorite("etk800/Racely (M)"); first.toggleFavorite("../bad");
@@ -381,7 +416,7 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.7.1")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.9.0")); file.close();
         QVERIFY(QFileInfo::exists(dir.filePath("lua/vehicle/extensions/abmTuning.lua")));
         QVERIFY(QFileInfo::exists(dir.filePath("lua/ge/extensions/abm-official-servers.json")));
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());
@@ -449,6 +484,9 @@ private slots:
         auto *ratios=window->findChild<QQuickItem *>("ratiosInput"); auto *add=window->findChild<QQuickItem *>("addGearButton");
         auto *apply=window->findChild<QQuickItem *>("gearsApplyButton"); QVERIFY(ratios && add && apply);
         QVERIFY(add->isEnabled()); QVERIFY(!apply->isEnabled()); // Demo is moving.
+        QCOMPARE(ratios->property("text").toString(),QString("3.5, 2.1, 1.4, 1, 0.8"));
+        QVERIFY(QMetaObject::invokeMethod(ratios,"addGear"));
+        QVERIFY(ratios->property("text").toString().endsWith("0.5714")); // Median of the last three valid retention factors.
         ratios->setProperty("text","bad, ratios"); QTRY_VERIFY(!add->isEnabled()); QVERIFY(!apply->isEnabled());
         section->setProperty("currentIndex",2); auto *repair=window->findChild<QQuickItem *>("repairButton"); QVERIFY(repair && !repair->isEnabled());
         backend.setDemo(true); QTRY_VERIFY(!engineToggle->isEnabled());

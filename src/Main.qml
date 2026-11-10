@@ -24,13 +24,17 @@ ApplicationWindow {
     readonly property var telemetry: game.telemetry || ({})
     readonly property bool live: backend.connected
     readonly property var launcher: backend.launcher
-    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
+    readonly property bool controls: live && ["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0"].indexOf(game.bridgeVersion) >= 0 && game.controlsAvailable === true
     readonly property bool sandboxAllowed: game.joining !== true && game.policyCleanup !== true && (game.multiplayer !== true || game.sandboxAllowed === true)
-    readonly property bool tuningReady: controls && sandboxAllowed && ["0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0
-    readonly property bool sandboxReady: controls && sandboxAllowed && ["0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool engineReady: controls && sandboxAllowed && ["0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool dimensionsReady: controls && sandboxAllowed && ["0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
-    readonly property bool gearsReady: controls && sandboxAllowed && ["0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool tuningReady: controls && sandboxAllowed && ["0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0"].indexOf(game.bridgeVersion) >= 0
+    readonly property bool sandboxReady: controls && sandboxAllowed && ["0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool engineReady: controls && sandboxAllowed && ["0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool dimensionsReady: controls && sandboxAllowed && ["0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property bool gearsReady: controls && sandboxAllowed && ["0.6.2", "0.7.0", "0.7.1","0.9.0"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
+    readonly property var workshop: game.workshop || ({})
+    readonly property string workshopIdentity: (game.sessionId || "")+":"+(game.vehicleId || "")+":"+(workshop.generation || "")
+    onWorkshopIdentityChanged: if (powerInput) powerInput.text=String((workshop.enginePower===undefined ? 1 : workshop.enginePower)*100)
+    readonly property bool livePowerReady: controls && sandboxAllowed && ownVehicle && supports("power") && game.bridgeVersion==="0.9.0" && !!workshop.generation
     readonly property var tuning: backend.tuning
     readonly property bool ownVehicle: !!game.vehicle && game.vehicleOwned !== false
     readonly property bool stopped: typeof telemetry.speed === "number" && isFinite(telemetry.speed) && telemetry.speed <= 1
@@ -110,6 +114,7 @@ ApplicationWindow {
             gravity:tuning.gravity !== undefined ? tuning.gravity : -9.81,
             damageImmunity:supports("deformation") && damageToggle.checked})
     }
+    function submitLivePower() { if (livePowerReady && powerInput.validPower) backend.setLivePower(powerInput.multiplier) }
     function applyGravityDraft(gravity) {
         backend.applyTuning({enginePower:supports("power") && tuning.enginePower !== undefined ? tuning.enginePower : 1,
             gravity:gravity, damageImmunity:supports("deformation") && tuning.damageImmunity === true})
@@ -288,8 +293,12 @@ ApplicationWindow {
                             RowLayout { Layout.fillWidth: true
                                 PlainLabel { Layout.fillWidth: true; text: qsTr("Engine power"); font.pixelSize: 11; color: textMain }
                                 TextField { id: powerInput; objectName: "powerInput"; Layout.preferredWidth: 112; implicitHeight: 30; font.pixelSize: 11; color: textMain
-                                    text: String((win.tuning.enginePower !== undefined ? win.tuning.enginePower : 1) * 100)
-                                    selectByMouse: true; enabled: win.tuningReady && !backend.busy && win.supports("power")
+                                    text: String((win.workshop.enginePower !== undefined ? win.workshop.enginePower : 1) * 100)
+                                    selectByMouse: true; enabled: win.livePowerReady
+                                    property string editingTarget: ""
+                                    onActiveFocusChanged: if (activeFocus) editingTarget=win.workshopIdentity
+                                    onEditingFinished: if (editingTarget===win.workshopIdentity) win.submitLivePower()
+                                    onTextEdited: if (!validPower) backend.cancelPowerEdits()
                                     property real multiplier: text.trim() === "" ? NaN : Number(text) / 100
                                     property bool validPower: isFinite(multiplier) && multiplier > 0
                                     background: Rectangle { color: surface; border.width: 1; border.color: powerInput.validPower ? "#474952" : "#df6b61" }
@@ -300,14 +309,18 @@ ApplicationWindow {
                                 id: powerSlider; Layout.fillWidth: true; implicitHeight: 24
                                 from: 0.5; to: 3; stepSize: 0.05
                                 value: Math.max(from, Math.min(to, powerInput.multiplier || 1))
-                                onMoved: powerInput.text = String(Math.round(value * 100))
+                                onMoved: { powerInput.text = String(Math.round(value * 100)); win.submitLivePower() }
                                 enabled: powerInput.enabled
                                 background: Rectangle { y: (powerSlider.height - 5) / 2; height: 5; width: powerSlider.availableWidth; color: "#26282f"
                                     Rectangle { width: parent.width * powerSlider.position; height: parent.height; color: accent } }
                                 handle: Rectangle { width: 14; height: 14; color: powerSlider.pressed || powerSlider.hovered ? accent : textMain; border.width: 1; border.color: "#0e0f13"
                                     x: powerSlider.visualPosition * (powerSlider.availableWidth - width); y: (powerSlider.height - height) / 2 }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: win.supports("power") ? qsTr("50–300% slider · type any positive percentage. 100% = stock torque. Overflow is rejected.") : qsTr("Power adjustment unavailable for this engine."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: win.livePowerReady ? qsTr("Live power · drag or finish typing to apply. Latest value wins, at most 4 requests/s. No beam/gravity changes. Overflow rejected.") : !win.sandboxAllowed ? qsTr("Gameplay locked by server policy. Live power edits are canceled.") : qsTr("Live power needs a supported engine and bridge 0.9.0. Restart BeamNG after installing."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: win.workshop.enginePower===undefined ? qsTr("Accepted power: unknown until ABM applies a value.") : qsTr("Vehicle readback: %1% accepted torque scale").arg(win.number(win.workshop.enginePower*100)); font.pixelSize: 10; color: accent; wrapMode: Text.Wrap }
+                            Repeater { model: win.workshop.engines || []
+                                PlainLabel { required property var modelData; Layout.fillWidth: true; text: qsTr("%1 · max %2 RPM · limiter %3 RPM").arg(modelData.name).arg(win.number(modelData.maxRPM)).arg(win.number(modelData.revLimiterRPM)); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            }
                         }
                         ColumnLayout { visible: win.controls && carSection.currentIndex === 2; Layout.fillWidth: true; spacing: 2
                             RowLayout { Layout.fillWidth: true
@@ -343,9 +356,9 @@ ApplicationWindow {
                             background: Rectangle { color: damageToggle.enabled && damageToggle.checked ? accent : surface; radius: 0 }
                         }
                         PlainLabel { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; text: qsTr("Beam protection changes deformation/strength limits, not engine or tire damage."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                        Button { text: qsTr("Apply power & beam limits"); visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11
-                             enabled: win.tuningReady && !backend.busy && win.ownVehicle && (!win.supports("power") || powerInput.validPower) && (win.supports("power") || win.supports("deformation"))
-                             onClicked: win.applyPowerDraft() }
+                        Button { text: qsTr("Apply beam limits"); visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11
+                              enabled: win.tuningReady && !backend.busy && win.ownVehicle && win.supports("deformation") && (win.game.bridgeVersion!=="0.9.0" || win.workshop.enginePower!==undefined)
+                              onClicked: backend.applyTuning({enginePower:win.workshop.enginePower===undefined ? 1 : win.workshop.enginePower,gravity:win.tuning.gravity===undefined ? -9.81 : win.tuning.gravity,damageImmunity:damageToggle.checked}) }
                          ColumnLayout { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: 4
                             PlainLabel { text: qsTr("Grip & handling"); font.pixelSize: 12; color: accent }
                              GridLayout { Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: 4
@@ -365,21 +378,23 @@ ApplicationWindow {
                              PlainLabel { Layout.fillWidth: true; text: qsTr("ESC uses the car's own mode cycle. Reset restores stock handling."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
                          ColumnLayout { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: 4
-                            PlainLabel { text: qsTr("Build your gearbox"); font.pixelSize: 12; color: accent }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("Forward ratios, in order. Add as many as fit the 24 KB command budget; no fixed gear-count cap. Each ratio: 0.01–100."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                             ScrollView { Layout.fillWidth: true; Layout.preferredHeight: 64; clip: true
-                                TextArea { id: ratiosInput; objectName: "ratiosInput"; text: "3.5, 2.1, 1.4, 1.0, 0.8, 0.65"; wrapMode: TextEdit.Wrap; selectByMouse: true; font.pixelSize: 12; color: textMain; enabled: win.gearsReady && win.supports("gears"); background: Rectangle { color: surface } }
-                            }
+                            PlainLabel { text: qsTr("Actual gearbox & edited ratios"); font.pixelSize: 12; color: accent }
+                            GearEditor { id: ratiosInput; objectName: "ratiosInput"; Layout.fillWidth: true; current: win.workshop.gears || []; generation: win.workshopIdentity; enabled: win.gearsReady && win.supports("gears") && !!win.workshop.generation && current.length>0; foreground: textMain; muted: textDim; surface: win.surface }
+                            PlainLabel { visible: !ratiosInput.current.length; Layout.fillWidth: true; text: qsTr("Actual manual ratios unavailable. Install bridge 0.9.0; unsupported or oversized readback is not replaced with sample ratios."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             RowLayout { Layout.fillWidth: true
-                                Button { text: qsTr("+ Gear"); objectName: "addGearButton"; font.pixelSize: 11; implicitHeight: 30; enabled: ratiosInput.enabled && win.validRatios && ratiosInput.text.length < 23980
-                                    onClicked: { var values = ratiosInput.text.trim().split(/[,;\s]+/); var last = Number(values[values.length-1]); if (isFinite(last) && last >= 0.01 && last <= 100) ratiosInput.text += ", " + Math.max(.01,last*.85).toFixed(4) } }
+                                Button { text: qsTr("+ Gear"); objectName: "addGearButton"; font.pixelSize: 11; implicitHeight: 30; enabled: ratiosInput.enabled && ratiosInput.canSuggest && win.validRatios && ratiosInput.text.length < 23980; onClicked: ratiosInput.addGear() }
                                 Button { text: qsTr("Apply ratios"); objectName: "gearsApplyButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: ratiosInput.enabled && win.validRatios && win.stopped; onClicked: backend.applyGears(ratiosInput.text) }
                             }
+                            RowLayout { Layout.fillWidth: true
+                                Button { text: qsTr("Read actual"); font.pixelSize: 10; enabled: ratiosInput.enabled; onClicked: ratiosInput.loadCurrent() }
+                                Button { text: qsTr("Remove last"); font.pixelSize: 10; enabled: ratiosInput.enabled && ratiosInput.forward.length>1; onClicked: ratiosInput.text=ratiosInput.forward.slice(0,-1).join(", ") }
+                            }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("+ Gear suggests the median of the last three valid ratio gaps—not a guaranteed optimum. Edit before applying. 24 KB command budget; ratios 0.01–100."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                              PlainLabel { Layout.fillWidth: true; text: qsTr("Stop first. Supported manual gearboxes only, not automatic/DCT/CVT. Rebuilds synchronizers and shift points in neutral. Extra gears inherit top-gear thresholds. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
                         GridLayout { visible: win.controls && carSection.currentIndex === 2; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: gap
                             Button { text: qsTr("Why This Dealer?"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 32; enabled: win.sandboxReady && win.supports("dealer"); onClicked: backend.carAction("dealer") }
-                            Button { text: qsTr("Stop bouncing"); objectName: "dealerStopButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 32; enabled: win.controls && win.supports("dealer") && ["0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(win.game.bridgeVersion) >= 0 && !backend.busy; onClicked: backend.carAction("dealerStop") }
+                            Button { text: qsTr("Stop bouncing"); objectName: "dealerStopButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 32; enabled: win.controls && win.supports("dealer") && ["0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0"].indexOf(win.game.bridgeVersion) >= 0 && !backend.busy; onClicked: backend.carAction("dealerStop") }
                             PlainLabel { Layout.columnSpan: 2; Layout.fillWidth: true; text: qsTr("The real easter egg: why(\"this dealer\") starts; why(\"stop\") ends it without a reset. Stop needs bridge 0.6.1. Only game builds that expose this API."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             Button { text: qsTr("Repair"); objectName: "repairButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("repair") && win.stopped; onClicked: backend.carAction("repair") }
                             Button { text: qsTr("Fire"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("ignite"); onClicked: backend.carAction("ignite") }
@@ -434,16 +449,19 @@ ApplicationWindow {
                             PlainLabel { Layout.fillWidth: true; text: qsTr("0.5–2× each axis. Stop and repair broken beams first. Your own car only in BeamMP (bridge 0.6.2): resized geometry is NOT synchronized to other players. Follow server rules. Suspension, wheels and props may fight resizing; mass/tire parameters stay unchanged. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             CheckBox { id: dimensionConsent; text: qsTr("I accept unstable physics and vehicle damage"); font.pixelSize: 10; Layout.fillWidth: true; enabled: win.dimensionsReady && win.supports("dimensions") && win.stopped }
                             Button { text: qsTr("Apply physical dimensions"); objectName: "dimensionsApplyButton"; Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11
-                                enabled: dimensionConsent.enabled && (win.game.multiplayer !== true || ["0.6.2", "0.7.0", "0.7.1"].indexOf(win.game.bridgeVersion) >= 0) && dimensionConsent.checked
+                                enabled: dimensionConsent.enabled && (win.game.multiplayer !== true || ["0.6.2", "0.7.0", "0.7.1","0.9.0"].indexOf(win.game.bridgeVersion) >= 0) && dimensionConsent.checked
                                 onClicked: backend.applyDimensions({width:dimensionSliders.itemAt(0).factor,length:dimensionSliders.itemAt(1).factor,height:dimensionSliders.itemAt(2).factor}) }
                             PlainLabel { visible: !win.dimensionsReady; Layout.fillWidth: true; text: qsTr("Multiplayer changes require bridge 0.7 and server permission. Restart BeamNG after installing the bridge."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
-                        PlainLabel { visible: win.controls; Layout.fillWidth: true; text: qsTr("Sandbox changes affect your selected vehicle, not saved configs. Last requested values are not live readback. Multiplayer servers may overrule changes."); font.pixelSize: 9; color: textDim; wrapMode: Text.Wrap }
+                        PlainLabel { visible: win.controls; Layout.fillWidth: true; text: qsTr("Engine/gear readback is labeled separately; other controls show drafts, not measured settings. Saved configs are unchanged. Servers or other mods may override changes."); font.pixelSize: 9; color: textDim; wrapMode: Text.Wrap }
                         RowLayout { visible: win.controls && carSection.currentIndex === 0 && win.tuning.enginePower !== undefined; Layout.fillWidth: true; spacing: gap
                             Button { text: qsTr("Engine 100%"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true
                                 enabled: win.tuningReady && !backend.busy && win.supports("power") && powerInput.multiplier !== 1
-                                 onClicked: { powerInput.text = "100"; win.applyPowerDraft() } }
+                                  onClicked: { powerInput.text = "100"; win.submitLivePower() } }
                         }
+                        Button { text: qsTr("Full reset · clear ABM vehicle tuning"); objectName: "fullResetButton"; Layout.fillWidth: true; implicitHeight: 34; font.pixelSize: 11
+                            enabled: win.controls && win.sandboxAllowed && win.ownVehicle && win.stopped && win.game.bridgeVersion==="0.9.0" && !!win.workshop.generation && (!backend.busy || backend.pendingAction==="power")
+                            onClicked: resetVehicleDialog.open() }
                     }
                 }
                 // GARAGE
@@ -583,6 +601,12 @@ ApplicationWindow {
                 Button { text:qsTr("Save & install bridge"); Layout.fillWidth:true; font.pixelSize: 11; padding: 6; implicitHeight: 32; enabled:!demoMode; onClicked: { win.launcher.userFolder=userPath.text; win.launcher.gameFolder=gamePath.text; win.launcher.launcherPath=mpPath.text; win.launcher.installBridge() } }
                 PlainLabel { text:win.launcher.message; Layout.fillWidth:true; color:accent; font.pixelSize: 10 }
             }
+        }
+        Dialog { id: resetVehicleDialog; anchors.centerIn: parent; width: Math.min(parent.width-20,420); modal: true
+            contentHeight: 180
+            title: qsTr("Clear ABM vehicle tuning?"); standardButtons: Dialog.Ok | Dialog.Cancel
+            contentItem: PlainLabel { text: qsTr("Cancels pending live power, restores ABM vehicle adapters, then requests a physics reset. Existing damage may be repaired. Loaded custom configs and saved preset files are not deleted. World gravity is not changed. Stop first; failed adapters are reported, not hidden."); wrapMode: Text.Wrap; font.pixelSize: 11; color: textMain }
+            onAccepted: if (win.stopped && win.sandboxAllowed) backend.fullReset()
         }
         Dialog { id: confirmDialog; anchors.centerIn:parent; width:Math.min(parent.width-20,420); modal:true
             title: win.pendingAction === "replace" ? qsTr("Replace current vehicle?") : win.pendingAction === "switch" ? qsTr("Switch vehicle?") : qsTr("Spawn configuration?")

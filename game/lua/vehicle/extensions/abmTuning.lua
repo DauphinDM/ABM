@@ -1,5 +1,9 @@
 -- ABM vehicle tuning: fixed actions only, with preflight before mutation.
-local M = {version='0.7.1'}
+local M = {version='0.9.0'}
+local instance = tostring(obj:getID())..':'..tostring({})..':'..tostring(os.time())
+local generation = 0
+local revisions = {}
+local acceptedPower = nil
 local gearBase
 local dimensionBase
 local engineBases = {}
@@ -68,6 +72,31 @@ local function engineStrength(settings)
     or 'Engine strength applied; normal damage hooks restored. Existing damage is not repaired.'
 end
 
+local function setPower(factor)
+  if not finite(factor) or factor <= 0 then error('Enter a finite positive power multiplier.') end
+  local engines = powertrain and powertrain.getDevicesByCategory and powertrain.getDevicesByCategory('engine') or {}
+  local supported = false
+  for _, device in pairs(engines) do
+    if type(device.torqueCurve) == 'table' and next(device.torqueCurve) then supported = true end
+    for _, value in pairs(device.beamdeckBase or device.torqueCurve or {}) do
+      if not finite(value * factor) then error('Power would overflow this engine torque curve.') end
+    end
+    local idle = device.beamdeckIdle or device.idleTorque
+    if idle and not finite(idle * factor) then error('Power would overflow idle torque.') end
+  end
+  if not supported then error('This vehicle has no supported engine torque curve.') end
+  for _, device in pairs(engines) do
+    if device.torqueCurve then
+      device.beamdeckBase = device.beamdeckBase or copy(device.torqueCurve)
+      device.beamdeckIdle = device.beamdeckIdle or device.idleTorque
+      for rpm, value in pairs(device.beamdeckBase) do device.torqueCurve[rpm] = value * factor end
+      if device.beamdeckIdle then device.idleTorque = device.beamdeckIdle * factor end
+    end
+  end
+  acceptedPower = factor
+  return 'Engine power applied. Beam limits and gravity were not changed.'
+end
+
 local function tuning(settings)
   local factor, immune = settings.enginePower, settings.damageImmunity
   if not finite(factor) or factor <= 0 or type(immune) ~= 'boolean' then error('Enter a finite positive power multiplier.') end
@@ -81,6 +110,7 @@ local function tuning(settings)
     local idle = device.beamdeckIdle or device.idleTorque
     if idle and not finite(idle * factor) then error('Power would overflow idle torque.') end
   end
+  acceptedPower = factor
   for _, device in pairs(engines) do
     if device.torqueCurve then
       device.beamdeckBase = device.beamdeckBase or copy(device.torqueCurve)
@@ -309,7 +339,15 @@ local function stability()
 end
 
 local function execute(action, settings)
-  if action == 'tuning' then return tuning(settings)
+  if action == 'power' then return setPower(settings.enginePower)
+  elseif action == 'fullReset' then
+    if not obj or type(obj.requestReset) ~= 'function' then error('Physics reset API unavailable.') end
+    if type(obj.getVelocity) ~= 'function' then error('Vehicle speed API unavailable; reset refused.') end
+    local speed=obj:getVelocity():length()
+    if not finite(speed) or speed>1 then error('Vehicle started moving; reset refused.') end
+    M.restoreForPolicy()
+    return 'ABM vehicle settings cleared; physics reset requested. World gravity was not changed.'
+  elseif action == 'tuning' then return tuning(settings)
   elseif action == 'engine' then return engineStrength(settings)
   elseif action == 'dimensions' then return dimensions(settings)
   elseif action == 'handling' then return apply(settings)
@@ -320,7 +358,44 @@ local function execute(action, settings)
 end
 
 M.execute = execute
+M.target = function() return instance..':'..generation end
+M.executeTarget = function(action, settings, target, expiresAt, revision, client)
+  if target ~= M.target() then error('Vehicle instance changed; select it again.') end
+  if not finite(expiresAt) or os.time() >= expiresAt then error('Vehicle request expired; it was not applied.') end
+  if type(client) ~= 'string' or #client > 80 or #client == 0 or not between(revision,1,2147483647) or revision % 1 ~= 0 then error('Invalid workshop intent.') end
+  if revisions[client] and revision <= revisions[client] then error('Superseded workshop intent.') end
+  local count=0; for _ in pairs(revisions) do count=count+1 end
+  if not revisions[client] and count >= 32 then error('Too many workshop clients; reset the vehicle.') end
+  revisions[client] = revision
+  return execute(action,settings)
+end
+M.readback = function()
+  local out = {contract=1,generation=M.target(),engines={},gears={}}
+  if acceptedPower then out.enginePower = acceptedPower end
+  for name, device in pairs(powertrain and powertrain.getDevicesByCategory and powertrain.getDevicesByCategory('engine') or {}) do
+    if #out.engines >= 8 then break end
+    local item = {name=tostring(name):sub(1,80)}
+    if finite(device.maxRPM) then item.maxRPM=device.maxRPM end
+    if finite(device.revLimiterRPM) then item.revLimiterRPM=device.revLimiterRPM end
+    if finite(device.maxPhysicalAV) then item.physicalRPM=device.maxPhysicalAV*30/math.pi end
+    out.engines[#out.engines+1]=item
+  end
+  local devices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('manualGearbox') or {}
+  local gearbox, count=nil,0
+  for _, device in pairs(devices) do gearbox,count=device,count+1 end
+  if count == 1 and type(gearbox.gearRatios)=='table' and between(gearbox.minGearIndex,-16,0) and between(gearbox.maxGearIndex,1,256) then
+    out.gearbox=tostring(gearbox.name or 'manualGearbox'):sub(1,80)
+    for index=gearbox.minGearIndex,gearbox.maxGearIndex do
+      local ratio=gearbox.gearRatios[index]
+      if finite(ratio) then out.gears[#out.gears+1]={index=index,ratio=ratio} end
+    end
+  end
+  return out
+end
 M.onReset = function()
+  generation = generation+1
+  revisions = {}
+  acceptedPower = nil
   dimensionBase = nil -- The physics reset restores stock node geometry.
   for device, base in pairs(engineBases) do restoreEngine(device, base) end
   engineBases = {}
@@ -393,6 +468,7 @@ M.restoreForPolicy = function()
   tuning({enginePower=1,damageImmunity=false})
   apply({tireGrip=1,slidingGrip=1,brakePower=1,steeringResponse=1})
   M.onReset()
+  acceptedPower = nil
   obj:requestReset(RESET_PHYSICS)
 end
 return M

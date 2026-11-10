@@ -55,6 +55,8 @@ local ok, caps = pcall(function()
   return extensions.abmTuning.capabilities()
 end)
 if ok and type(caps) == 'table' then d.capabilities = caps end
+local readOk, workshop = pcall(function() return extensions.abmTuning.readback() end)
+if readOk and type(workshop) == 'table' then d.workshop = workshop end
 obj:queueGameEngineLua("if extensions.beamdeck then extensions.beamdeck.receiveVehicle(" ..
   tostring(obj:getID()) .. "," .. serialize(d) .. ") end")
 ]]
@@ -286,6 +288,8 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
     if not entry or entry.vehicle ~= sourceVehicle then return end
     pending[id] = nil
     if not permission() then entry.result(false,'Server permission changed. Cleanup is required.'); return end
+    local selected = getPlayerVehicle and getPlayerVehicle(0)
+    if not selected or selected:getID() ~= sourceVehicle then entry.result(false,'Selected vehicle changed.'); return end
     entry.result(ok == true, short(message, 256) or 'Vehicle tuning finished.')
   end
 
@@ -296,6 +300,22 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
       result(false,'Select your own vehicle first.'); return
     end
     local name = command.action
+    if command.contract == 1 then
+      local workshop = vehicleData.workshop
+      if command.targetVehicle ~= vehicle:getID() or clock-vehicleSample >= 1.5
+        or type(workshop) ~= 'table' or command.generation ~= workshop.generation
+        or type(command.expiresAt) ~= 'number' or os.time() >= command.expiresAt then
+        result(false,'Workshop target changed or request expired.'); return
+      end
+      if call(MPCoreNetwork,'isMPSession') == true then
+        command.expiresAt = math.min(command.expiresAt,os.time()+math.floor(policyLease.expires-clock))
+      end
+    elseif name == 'power' or name == 'fullReset' then result(false,'Target-bound workshop contract required.'); return end
+    if name == 'fullReset' then
+      local speed=vehicle:getVelocity():length()
+      if speed ~= speed or speed > 1 then result(false,'Stop before clearing ABM vehicle settings.'); return end
+      tuning = {} -- Cancel restoration before the reset can reach the vehicle VM.
+    end
     if name == 'gears' and vehicle:getVelocity():length() > 1 then result(false,'Stop before changing gearbox ratios.'); return end
     if name == 'dimensions' then
       local speed = vehicle:getVelocity():length()
@@ -342,6 +362,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
           tuning.gravity = gravity
         end
       end
+      if ok and name == 'power' and tuning.appliedTo == selected then tuning.power=settings.enginePower end
       if ok and name == 'dimensions' and call(MPCoreNetwork, 'isMPSession') == true then
         message = 'Applied to your own car locally. Resized geometry is not synchronized to peers; server rules still apply.'
       end
@@ -351,13 +372,17 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
 local ok, message = pcall(function()
   extensions.load('abmTuning')
   if not extensions.abmTuning then error('Install the updated ABM vehicle bridge.') end
-  if extensions.abmTuning.version ~= '0.7.1' then error('Restart BeamNG to load the ABM server-protected vehicle bridge 0.7.1.') end
+  if extensions.abmTuning.version ~= '0.9.0' then error('Restart BeamNG to load the ABM vehicle bridge 0.9.0.') end
+  local envelope = %s
+  if envelope.contract == 1 then
+    return extensions.abmTuning.executeTarget(%q, %s, envelope.generation,envelope.expiresAt,envelope.revision,envelope.client)
+  end
   return extensions.abmTuning.execute(%q, %s)
 end)
 obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveControl(' ..
   string.format('%%q', %q) .. ',' .. tostring(obj:getID()) .. ',' .. tostring(ok) .. ',' ..
   string.format('%%q', tostring(message):sub(1,256)) .. ') end')
-]], name, serialize(settings), command.requestId)
+]], serialize({contract=command.contract,generation=command.generation,expiresAt=command.expiresAt,revision=command.revision,client=command.client}), name, serialize(settings), name, serialize(settings), command.requestId)
     local queued = pcall(function() vehicle:queueLuaCommand(script) end)
     if not queued then pending[command.requestId] = nil; result(false,'Could not queue vehicle tuning.') end
   end
@@ -406,7 +431,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
     local response = {kind='result',requestId=id,ok=ok,message=message}
     if name == 'spawn' or name == 'replace' or name == 'switch' or name == 'enableBeamMP'
       or name == 'tuning' or name == 'repair' or name == 'ignite' or name == 'extinguish' or name == 'deflate'
-      or name == 'handling' or name == 'gears' or name == 'stability' or name == 'dealer' or name == 'dealerStop' or name == 'engine' or name == 'dimensions' then
+      or name == 'handling' or name == 'gears' or name == 'stability' or name == 'dealer' or name == 'dealerStop' or name == 'engine' or name == 'dimensions' or name == 'power' or name == 'fullReset' then
       completed[id] = response; completedOrder[#completedOrder+1] = id
       if #completedOrder > 128 then completed[table.remove(completedOrder,1)] = nil end
     end
@@ -436,10 +461,10 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
     return
   end
   if name ~= 'spawn' and name ~= 'replace' and name ~= 'switch' and name ~= 'tuning'
-    and not ({repair=true, ignite=true, extinguish=true, deflate=true, handling=true, gears=true, stability=true, dealer=true, dealerStop=true, engine=true, dimensions=true})[name] then
+    and not ({repair=true, ignite=true, extinguish=true, deflate=true, handling=true, gears=true, stability=true, dealer=true, dealerStop=true, engine=true, dimensions=true,power=true,fullReset=true})[name] then
     result(false,'Unsupported action'); return
   end
-  if ({tuning=true,handling=true,gears=true,stability=true,dealer=true,dealerStop=true,engine=true,dimensions=true})[name] then
+  if ({tuning=true,handling=true,gears=true,stability=true,dealer=true,dealerStop=true,engine=true,dimensions=true,power=true,fullReset=true})[name] then
     vehicleAction(command, result)
     return
   end
@@ -488,7 +513,7 @@ local function snapshot()
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
     version = short(beamng_versionb), beammpLoaded = mp ~= nil,
-    bridgeVersion = '0.7.1', controlsAvailable = true, sampleHz = 20,
+    bridgeVersion = '0.9.0', controlsAvailable = true, sampleHz = 20,
     gameFolder=FS and FS.getGamePath and FS:getGamePath(),
     userFolder=FS and FS.getUserPath and FS:getUserPath(),
     multiplayer = multiplayer, joining = call(mp, 'isGoingMPSession') == true,
@@ -519,8 +544,9 @@ local function snapshot()
     data.vehicleOwned = owned(id, multiplayer)
     data.vehicleName = data.vehicle
     if clock - vehicleSample < 1.5 then
-      for k, v in pairs(vehicleData) do if k ~= 'capabilities' then data.telemetry[k] = v end end
+      for k, v in pairs(vehicleData) do if k ~= 'capabilities' and k ~= 'workshop' then data.telemetry[k] = v end end
       data.capabilities = vehicleData.capabilities
+      data.workshop = vehicleData.workshop
     end
     data.capabilities = data.capabilities or {}
     data.capabilities.dealer = type(vehicle.why) == 'function'

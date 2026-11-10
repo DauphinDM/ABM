@@ -6,7 +6,7 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest release: 0.4.0 · Development: 0.8.0.** The repository and its releases
+**Latest release: 0.8.0 · Development: 0.9.0.** The repository and its releases
 are private. This is an independent project, not affiliated with BeamNG or BeamMP.
 
 ## What it does
@@ -30,12 +30,13 @@ The Car workshop groups related controls into **Engine & protection**,
 **Handling & gearbox**, **World & recovery**, and **Body · experimental**.
 Vehicle capabilities, movement, invalid inputs and server policy disable
 inapplicable controls. Install the updated bridge files and restart BeamNG
-when ready to receive capability data (wire version remains 0.7.1).
+when ready to receive capability data. New live-power, actual-gear readback and
+full-reset controls require bridge 0.9.0; see the [foundation guide](docs/workshop-foundation.md).
 
 ## Documentation
 
-The workshop additions and official-server guard are development features, not part of the published
-0.4 preview. See the [changelog](CHANGELOG.md) for limits and validation status.
+The 0.9 foundation additions are development features, not part of the published
+0.8 preview. See the [changelog](CHANGELOG.md) for limits and validation status.
 
 - [Installation and migration](docs/installation.md)
 - [User guide, tuning behavior and shortcuts](docs/user-guide.md)

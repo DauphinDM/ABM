@@ -1,4 +1,13 @@
 # Changelog
+## 0.9.0 — Foundation development
+
+- Separate live engine-power commands: bounded latest-value scheduling, no beam/gravity edits, finite-overflow checks.
+- Versioned vehicle-instance readback, engine RPM information, actual signed manual-gear ratios and an editable per-gear overview.
+- Suggested extra ratios use recent progression rather than a fixed 0.85 factor; suggestions are not performance optima.
+- Target/session/generation/expiry checks for new workshop commands, with cancellation on disconnect, policy loss and vehicle-instance changes.
+- Bottom-of-Car full reset cancels pending power, restores ABM vehicle adapters and requests a stopped physics reset; world gravity is separate.
+- This is roadmap slice A0, not the entire massive update. Editable RPM, clutch protection and persistent reset recipes remain later work.
+
 
 ## 0.8.0 — Unreleased
 

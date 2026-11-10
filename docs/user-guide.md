@@ -1,5 +1,7 @@
 # ABM user guide
 
+> **Development 0.9:** [Workshop foundation](workshop-foundation.md) replaces the old power Apply step with live power, adds actual per-gear readback/editing and a bottom-of-Car full reset. Bridge 0.9.0 and a game restart are required. Older versioned descriptions below remain historical where they describe the previous ratio text box. Editable maximum RPM, clutch protection and reset-persistent recipes are not implemented yet.
+
 ## Official-server guard (development 0.7.1)
 
 Multiplayer gameplay changes require bridge 0.7.1 and verified server permission.
