@@ -188,7 +188,7 @@ void Backend::storeTuning() {
 }
 QJsonObject Backend::workshopTarget() const {
     const auto workshop=m_state.value("workshop").toMap();
-    if (m_state.value("bridgeVersion").toString()!="0.9.0" || workshop.value("contract").toInt()!=1 || workshop.value("generation").toString().isEmpty()) return {};
+    if (!QStringList{"0.9.0","0.10.0"}.contains(m_state.value("bridgeVersion").toString()) || workshop.value("contract").toInt()!=1 || workshop.value("generation").toString().isEmpty()) return {};
     return {{"targetSession",m_state.value("sessionId").toString()},{"targetVehicle",QJsonValue::fromVariant(m_state.value("vehicleId"))},{"generation",workshop.value("generation").toString()}};
 }
 void Backend::cancelLivePower() {
@@ -197,7 +197,7 @@ void Backend::cancelLivePower() {
 void Backend::setLivePower(double multiplier) {
     const auto target=workshopTarget();
     if (!Protocol::enginePower(multiplier) || target.isEmpty() || !connected() || !m_state.value("sandboxAllowed").toBool()
-        || m_state.value("policyCleanup").toBool() || !m_state.value("vehicleOwned").toBool() || !m_state.value("capabilities").toMap().value("power").toBool()) {
+        || m_state.value("policyCleanup").toBool() || m_state.value("workshop").toMap().value("restoring").toBool() || !m_state.value("vehicleOwned").toBool() || !m_state.value("capabilities").toMap().value("power").toBool()) {
         cancelLivePower(); m_actionMessage=tr("Live power unavailable: select a supported own vehicle with bridge 0.9.0 and server permission."); emit actionChanged(); return;
     }
     m_queuedPower={{"enginePower",multiplier}}; m_powerTarget=target; m_powerQueuedAt=QDateTime::currentMSecsSinceEpoch();
@@ -206,7 +206,9 @@ void Backend::setLivePower(double multiplier) {
 void Backend::flushLivePower() {
     const auto now=QDateTime::currentMSecsSinceEpoch();
     if (m_queuedPower.isEmpty()) { m_powerTimer.stop(); return; }
-    if (now-m_powerQueuedAt>3000 || workshopTarget()!=m_powerTarget || !connected() || !m_state.value("sandboxAllowed").toBool() || m_state.value("policyCleanup").toBool()) { cancelLivePower(); return; }
+    if (now-m_powerQueuedAt>3000 || workshopTarget()!=m_powerTarget || !connected() || !m_state.value("sandboxAllowed").toBool()
+        || m_state.value("policyCleanup").toBool() || m_state.value("workshop").toMap().value("restoring").toBool()
+        || !m_state.value("vehicleOwned").toBool() || !m_state.value("capabilities").toMap().value("power").toBool()) { cancelLivePower(); return; }
     if (busy() || now-m_powerSentAt<250) return;
     const auto parameters=m_queuedPower; m_queuedPower={}; m_pendingPower=parameters.value("enginePower").toDouble(); m_powerSentAt=now;
     send("power",parameters);
@@ -236,6 +238,12 @@ void Backend::applyTuning(QVariantMap tuning) {
     m_nextTuning = parameters; // remember the request so the reply can confirm it
     send("tuning", parameters);
 }
+void Backend::setMaxRPM(double value) {
+    if (!Protocol::rpm(value)) { m_actionMessage=tr("RPM must be a whole number from 100 to 30000, within the engine's reported ceiling."); emit actionChanged(); return; }
+    send("rpm",QJsonObject{{"maxRPM",value}});
+}
+void Backend::setClutchProtection(bool enabled) { send("clutch",QJsonObject{{"clutchIndestructible",enabled}}); }
+void Backend::setResetPersistence(bool enabled) { send("persistence",QJsonObject{{"enabled",enabled}}); }
 void Backend::carAction(const QString &name) {
     if (!QStringList{"repair", "ignite", "extinguish", "deflate", "dealer", "dealerStop", "stability"}.contains(name)) return;
     send(name);
@@ -281,7 +289,7 @@ void Backend::send(const QString &action, const QJsonObject &parameters) {
     m_pending = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_pendingAction = action;
     auto message = parameters; message.insert("action", action); message.insert("requestId", m_pending);
-    if (QStringList{"power","fullReset","tuning","handling","gears","engine","dimensions","stability"}.contains(action) && m_state.value("bridgeVersion").toString()=="0.9.0") {
+    if (QStringList{"power","fullReset","tuning","handling","gears","engine","dimensions","stability","rpm","clutch","persistence"}.contains(action) && QStringList{"0.9.0","0.10.0"}.contains(m_state.value("bridgeVersion").toString())) {
         m_pendingTarget=workshopTarget();
         for (auto it=m_pendingTarget.begin();it!=m_pendingTarget.end();++it) message.insert(it.key(),it.value());
         message.insert("contract",1); message.insert("client",m_clientId); message.insert("revision",++m_intentRevision);
@@ -344,9 +352,10 @@ void Backend::setDemo(bool blocked) {
     m_pending.clear(); m_pendingAction.clear();
     m_error.clear();
     m_state = QJsonDocument::fromJson(R"({"connected":true,"multiplayer":true,"beammpLoaded":true,"server":"Coastal cruising · EU","map":"west_coast_usa","vehicle":"etk800","fps":89,"vehicleCount":14,"sessionSeconds":1452,"distance":18420,"topSpeed":62.5,"playerCount":3,"mpVehicleCount":5,"ping":32,"telemetry":{"speed":28.6,"rpm":3240,"gear":4,"fuel":0.72,"throttle":0.42,"brake":0,"coolant":88,"oil":96},"players":[{"name":"CoastDriver","local":true,"ping":32,"vehicles":1},{"name":"Apex","ping":48,"vehicles":2},{"name":"Tourer","ping":61,"vehicles":2}]})").object().toVariantMap();
-    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.9.0");
+    m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.10.0");
     m_state.insert("workshop",QVariantMap{{"contract",1},{"generation","demo-instance:0"},{"enginePower",1},
-        {"engines",QVariantList{QVariantMap{{"name","mainEngine"},{"maxRPM",7200},{"revLimiterRPM",7200},{"physicalRPM",7560}}}},
+        {"persistence",true},{"restoring",false},{"restoreStatus","saved"},{"clutchProtected",false},
+        {"engines",QVariantList{QVariantMap{{"name","mainEngine"},{"maxRPM",7200},{"revLimiterRPM",7200},{"physicalRPM",7560},{"rpmCeiling",8000},{"idleRPM",800}}}},
         {"gears",QVariantList{QVariantMap{{"index",-1},{"ratio",-3.2}},QVariantMap{{"index",0},{"ratio",0}},QVariantMap{{"index",1},{"ratio",3.5}},QVariantMap{{"index",2},{"ratio",2.1}},QVariantMap{{"index",3},{"ratio",1.4}},QVariantMap{{"index",4},{"ratio",1.0}},QVariantMap{{"index",5},{"ratio",.8}}}}});
     m_state.insert("sandboxAllowed", !blocked);
     m_state.insert("policyReason", blocked ? tr("Official event/new or mismatched server: gameplay changes are blocked.") : tr("Non-official server: no ABM official-server restriction."));
@@ -354,7 +363,7 @@ void Backend::setDemo(bool blocked) {
     m_state.insert("controlsAvailable", true); m_state.insert("sampleHz", 20);
     m_state.insert("vehicleId",42); m_state.insert("vehicleOwned",true);
     QVariantMap capabilities;
-    for (const auto key : {"power","engine","grip","brakes","steering","gears","dimensions","deformation","stability","ignite","extinguish","deflate","dealer","repair"}) capabilities.insert(key,true);
+    for (const auto key : {"power","engine","grip","brakes","steering","gears","dimensions","deformation","stability","ignite","extinguish","deflate","dealer","repair","rpm","clutch"}) capabilities.insert(key,true);
     m_state.insert("capabilities",capabilities);
     m_state.insert("gameSeen", true); m_state.insert("fpsAverage", 86); m_state.insert("fpsMinimum", 63);
     m_gameSeen = true;

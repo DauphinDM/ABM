@@ -55,7 +55,7 @@ jsonDecode=function(bytes) return commands[bytes] end
 m=dofile('game/lua/ge/extensions/beamdeck.lua')
 m.onExtensionLoaded(); assert(peer)
 m.onUpdate(.06)
-assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.9.0')
+assert(last.multiplayer==false and last.telemetry.speed==25 and last.bridgeVersion=='0.10.0')
 assert(last.map=='west_coast_usa' and vehicleCommand)
 m.receiveVehicle(5,{rpm=99}); m.onUpdate(.06); assert(last.telemetry.rpm==nil)
 m.receiveVehicle(42,{rpm=3200,fuel=.7}); m.onUpdate(.06); assert(last.telemetry.rpm==3200)
@@ -140,10 +140,16 @@ local damageCalls, thermalCalls=0,0
 local function damageHook() damageCalls=damageCalls+1 end
 local function thermalHook() thermalCalls=thermalCalls+1 end
 local engine={torqueCurve={[1000]=200,[2000]=300},idleTorque=50,
+  idleRPM=800,maxRPM=7200,maxAV=7200*math.pi/30,hasRevLimiter=true,revLimiterType='rpmDrop',revLimiterRPM=7200,revLimiterAV=7200*math.pi/30,
   maxTorqueRating=500,maxOverTorqueDamage=1000,maxOverRevDamage=1500,maxPhysicalAV=900,canFlood=true,
   lockUp=damageHook,onBreak=damageHook,applyDeformGroupDamage=damageHook,
   checkHydroLocking=damageHook,scaleOutputTorque=damageHook,thermals={updateGFX=thermalHook}}
 local combustion={mainEngine=engine}
+local clutchCalls=0
+local clutchUpdate=function() clutchCalls=clutchCalls+1 end
+local clutchDamage=function() clutchCalls=clutchCalls+10 end
+local clutch={thermalEfficiency=1,clutchTemperature=20,damageLockTorqueCoef=1,wearLockTorqueCoef=1,frictionLossPerUpdate=100,
+  updateGFX=clutchUpdate,applyDeformGroupDamage=clutchDamage,clutchPermanentlyDamaged=false}
 local limits, friction, brakes={}, {}, 1
 local policyResets=0
 local hydro={inputSource='steering_input',inputFactor=2}
@@ -161,7 +167,7 @@ for _,field in ipairs({'gearWhineCoefsOutput','gearWhineCoefsInput','synchroWear
   gearbox[field]={[-1]=1,[0]=1,[1]=1,[2]=1}
 end
 vmEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngine=engine} end,
-  getDevicesByType=function(kind) return kind=='combustionEngine' and combustion or {gearbox} end,calculateTreeInertia=function() end},
+  getDevicesByType=function(kind) return kind=='combustionEngine' and combustion or kind=='frictionClutch' and {clutch} or kind=='manualGearbox' and {gearbox} or {} end,calculateTreeInertia=function() end},
   wheels={wheels={[0]={},[1]={isTireDeflated=true}},scaleBrakeTorque=function(value) brakes=value end},
   hydros={hydros={hydro}},controller={mainController=mainController,getController=function() return nil end},
   v={data={beams={{cid=4,beamDeform=100,beamStrength=200}},wheels={[0]={treadNodes={5}},[1]={treadNodes={6}}},
@@ -177,7 +183,7 @@ vmEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngi
 local module=assert(loadfile('game/lua/vehicle/extensions/abmTuning.lua')); setfenv(module,vmEnv)
 vmEnv.extensions.abmTuning=module()
 local caps=vmEnv.extensions.abmTuning.capabilities()
-assert(caps.power and caps.engine and caps.grip and caps.brakes and caps.steering and caps.gears and caps.deformation)
+assert(caps.power and caps.engine and caps.grip and caps.brakes and caps.steering and caps.gears and caps.deformation and caps.rpm and caps.clutch)
 assert(not caps.stability and not caps.dimensions and not caps.ignite)
 assert(engine.torqueCurve[1000]==200 and hydro.inputFactor==2 and gearbox.maxGearIndex==2 and next(limits)==nil)
 local oldHook=engine.lockUp; engine.lockUp=nil
@@ -197,8 +203,8 @@ assert(not request('tuning',{enginePower=1e308,damageImmunity=true}).ok and engi
 assert(request('tuning',{enginePower=1,gravity=-9.81,damageImmunity=false}).ok)
 assert(engine.torqueCurve[1000]==200 and limits.deform==100 and limits.strength==200)
 vehicleCommands={}
-m.onUpdate(4) -- next snapshot tick re-applies the cheat to the same vehicle
-assert(vehicleCommands[1] and vehicleCommands[1]:find('abmTuning',1,true))
+m.onUpdate(4) -- Telemetry continues; no periodic GE tuning rewrite.
+assert(#vehicleCommands==0 and vehicleCommand:find('abmTuning.authorize',1,true))
 assert(not request('engine',{engineStrength=0,engineIndestructible=false}).ok)
 assert(not request('engine',{engineStrength=1,engineIndestructible='yes'}).ok)
 assert(request('engine',{engineStrength=2,engineIndestructible=false}).ok)
@@ -278,8 +284,9 @@ assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
 shiftPoints[3]=point3
 vmEnv.extensions.abmTuning.version='0.6.1'
 assert(not request('gears',{ratios={3,2,1,0.8}}).ok and gearbox.maxGearIndex==3)
-vmEnv.extensions.abmTuning.version='0.9.0'
+vmEnv.extensions.abmTuning.version='0.10.0'
 assert(not request('gears',{ratios={0}}).ok)
+vmEnv.extensions.abmTuning.execute('persistence',{enabled=false})
 vmEnv.extensions.abmTuning.onReset()
 shape={[5]={x=-1,y=-2,z=0},[6]={x=3,y=2,z=1}}; rest=math.sqrt(33)
 MPCoreNetwork.isMPSession=function() return false end
@@ -363,6 +370,43 @@ m.onUpdate(6); lease(false,true); assert(request('dealer').ok)
 MPCoreNetwork.isMPSession=function() return false end
 m.onUpdate(.06)
 local module=vmEnv.extensions.abmTuning
+-- New adapters compose without synthetic torque or changing damage thresholds.
+module.restoreForPolicy()
+module.execute('persistence',{enabled=true})
+local physical=engine.maxPhysicalAV
+module.execute('rpm',{maxRPM=5000})
+assert(engine.revLimiterRPM==5000 and math.abs(engine.revLimiterAV-5000*math.pi/30)<1e-9 and engine.maxPhysicalAV==physical)
+assert(module.readback().engines[1].rpmCeiling==7200)
+assert(not pcall(module.execute,'rpm',{maxRPM=8000}) and engine.revLimiterRPM==5000)
+assert(not pcall(module.execute,'rpm',{maxRPM=850}) and not pcall(module.execute,'rpm',{maxRPM=5000.5}))
+module.execute('clutch',{clutchIndestructible=true})
+clutch:updateGFX(.1); clutch:applyDeformGroupDamage(); assert(clutchCalls==0 and clutch.frictionLossPerUpdate==0)
+assert(module.readback().clutchProtected)
+module.execute('clutch',{clutchIndestructible=false})
+assert(clutch.updateGFX==clutchUpdate and clutch.applyDeformGroupDamage==clutchDamage)
+clutch.clutchPermanentlyDamaged=true; assert(not pcall(module.execute,'clutch',{clutchIndestructible=true})); clutch.clutchPermanentlyDamaged=false
+module.execute('clutch',{clutchIndestructible=true})
+shape={[5]={x=-1,y=-2,z=0},[6]={x=1,y=2,z=1}}; rest=math.sqrt(21)
+module.execute('power',{enginePower=2})
+module.execute('handling',handling)
+module.execute('gears',{ratios={3,2,1}})
+module.execute('dimensions',sizes)
+local oldCommits=commits
+module.onReset()
+assert(module.readback().restoring and engine.revLimiterRPM==7200 and gearbox.maxGearIndex==2 and engine.torqueCurve[1000]==200)
+-- Simulate the engine's physics reset after the extension's reset hook.
+shape={[5]={x=-1,y=-2,z=0},[6]={x=1,y=2,z=1}}; rest=math.sqrt(21); brakes=1
+module.authorize(os.time()+3,'test-single-player',true)
+module.updateGFX(.06); module.updateGFX(.06)
+assert(module.readback().restoreStatus=='restored' and not module.readback().restoring)
+assert(engine.revLimiterRPM==5000 and engine.torqueCurve[1000]==400 and gearbox.maxGearIndex==3 and brakes==4 and hydro.inputFactor==3)
+assert(shape[6].x==2 and shape[6].y==1 and commits==oldCommits+1 and module.readback().clutchProtected)
+module.updateGFX(1); module.updateGFX(1); assert(commits==oldCommits+1) -- Never every-frame deformation.
+module.onReset(); module.authorize(0,'test-single-player',false)
+module.updateGFX(1); assert(not module.readback().restoring and module.readback().restoreStatus=='policy blocked')
+module.restoreForPolicy()
+assert(not module.readback().clutchProtected and clutch.updateGFX==clutchUpdate and engine.revLimiterRPM==7200 and engine.torqueCurve[1000]==200)
+module.execute('persistence',{enabled=false})
 local originalToken=module.target()
 local report=module.readback()
 assert(report.contract==1 and report.generation==originalToken and report.gears[1].index==-1 and report.gears[2].index==0)

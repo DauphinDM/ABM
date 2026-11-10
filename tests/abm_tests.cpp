@@ -242,6 +242,25 @@ private slots:
         QCOMPARE(workshop.value("engines").toArray()[0].toObject().value("name").toString(),QString("<b>engine</b>"));
         QVERIFY(!workshop.value("engines").toArray()[0].toObject().contains("code"));
     }
+    void rpmClutchAndPersistenceUseBoundTargets() {
+        QVERIFY(Protocol::rpm(7200)); QVERIFY(!Protocol::rpm(7200.5)); QVERIFY(!Protocol::rpm("7200")); QVERIFY(!Protocol::rpm(30001));
+        Fixture f; QVERIFY(f.start()); Backend backend(f.path); QTRY_VERIFY(backend.connected());
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("multiplayer",false);
+        state.insert("bridgeVersion","0.9.0"); state.insert("vehicleId",42);
+        state.insert("workshop",QJsonObject{{"contract",1},{"generation","engine:0"}});
+        f.send(state); QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.9.0"));
+        backend.setMaxRPM(6000); QTRY_VERIFY(!backend.busy()); QVERIFY(backend.actionMessage().contains("0.10.0")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("bridgeVersion","0.10.0"); f.send(state); QTRY_COMPARE(backend.state().value("bridgeVersion").toString(),QString("0.10.0"));
+        backend.setMaxRPM(6000); QTRY_VERIFY(f.game.hasPendingDatagrams()); auto command=f.command();
+        QCOMPARE(command.value("action").toString(),QString("rpm")); QCOMPARE(command.value("maxRPM").toInt(),6000);
+        QCOMPARE(command.value("generation").toString(),QString("engine:0")); QVERIFY(!command.contains("gravity"));
+        f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
+        backend.setClutchProtection(true); QTRY_VERIFY(f.game.hasPendingDatagrams()); command=f.command();
+        QCOMPARE(command.value("action").toString(),QString("clutch")); QVERIFY(command.value("clutchIndestructible").toBool());
+        f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
+        backend.setResetPersistence(false); QTRY_VERIFY(f.game.hasPendingDatagrams()); command=f.command();
+        QCOMPARE(command.value("action").toString(),QString("persistence")); QCOMPARE(command.value("enabled"),QJsonValue(false));
+    }
     void preferencesStayInTestDirectory() {
         QTemporaryDir dir; Backend first(dir.filePath("state.json"));
         first.setMetric(false); first.toggleFavorite("etk800"); first.toggleFavorite("etk800/Racely (M)"); first.toggleFavorite("../bad");
@@ -416,7 +435,7 @@ private slots:
         write(dir.filePath("beamng.log"),"test"); launcher.setUserFolder(dir.path());
         QVERIFY(launcher.installBridge());
         const auto path=dir.filePath("lua/ge/extensions/beamdeck.lua");
-        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.9.0")); file.close();
+        QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains("0.10.0")); file.close();
         QVERIFY(QFileInfo::exists(dir.filePath("lua/vehicle/extensions/abmTuning.lua")));
         QVERIFY(QFileInfo::exists(dir.filePath("lua/ge/extensions/abm-official-servers.json")));
         write(path,"User-owned unrelated extension"); QVERIFY(!launcher.installBridge());
@@ -477,6 +496,11 @@ private slots:
         QTest::keyClick(window,Qt::Key_Escape); QTRY_COMPARE(search->property("text").toString(),QString());
         QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(window->property("selectedModel").toMap().isEmpty());
         window->setProperty("page",1);
+        auto *rpm=window->findChild<QQuickItem *>("rpmInput"); auto *rpmApply=window->findChild<QQuickItem *>("rpmApplyButton");
+        QVERIFY(rpm && rpmApply && rpm->isEnabled()); QVERIFY(!rpmApply->isEnabled());
+        rpm->setProperty("text","6000"); QTRY_VERIFY(rpmApply->isEnabled());
+        rpm->setProperty("text","9000"); QTRY_VERIFY(!rpmApply->isEnabled());
+        QVERIFY(window->findChild<QQuickItem *>("clutchToggle")->isEnabled());
         auto *section=window->findChild<QQuickItem *>("carSection"); QVERIFY(section); QCOMPARE(section->property("count").toInt(),4);
         auto *engineToggle=window->findChild<QQuickItem *>("engineToggle"); auto *strength=window->findChild<QQuickItem *>("strengthSlider");
         QVERIFY(engineToggle && strength); QVERIFY(strength->isEnabled()); engineToggle->setProperty("checked",true); QTRY_VERIFY(!strength->isEnabled());

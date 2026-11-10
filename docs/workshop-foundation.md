@@ -2,6 +2,8 @@
 
 Development version: 0.9.0. This implements the first foundation slice of [the research roadmap](massive-update-research.md), not all proposed features.
 
+> This page records the 0.9 foundation. Development 0.10 adds [RPM editing, clutch protection and ordinary-reset recipes](reset-persistence.md); the deferred-feature statements below describe 0.9, not the newer implementation.
+
 ## Live power
 
 Dragging the power slider or finishing a valid percentage edit requests a **power-only** change. There is no power Apply step. Beam protection and world gravity are not included in this action.

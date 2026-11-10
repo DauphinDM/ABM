@@ -1,4 +1,14 @@
 # Changelog
+## 0.10.0 — Reset-recipe development
+
+- Edit supported combustion-engine permanent RPM limits with actual idle/ceiling readback. Preserve physical damage thresholds and temporary ESC/launch limiters; do not synthesize torque curves.
+- Protect supported friction clutches from additional thermal/wear/deformation damage. Freeze their thermal update without increasing torque capacity or silently repairing an already damaged clutch.
+- Keep accepted power, beam protection, strength, RPM, clutch, handling, manual gears and experimental dimensions across ordinary resets of the same loaded vehicle. Restore once after readiness and authorization checks; stop on failure rather than retrying a mutation loop.
+- Add a per-vehicle persistence toggle and restoration status/error readback. Full reset and policy cleanup clear pending restoration before resetting physics. Recipes are memory-only, not automatic cross-vehicle presets.
+- Show estimated RPM after an upshift beside actual/edited gear ratios. This is a ratio calculation, not a performance prediction.
+- Require bridge/vehicle extension 0.10.0 for these additions. Existing exact-name official-server restrictions remain in force.
+- Native MCP discovery worked, but the running simulator could not be connected; real-game reset/clutch/geometry effects remain unverified.
+
 ## 0.9.0 — Foundation development
 
 - Separate live engine-power commands: bounded latest-value scheduling, no beam/gravity edits, finite-overflow checks.
@@ -9,7 +19,7 @@
 - This is roadmap slice A0, not the entire massive update. Editable RPM, clutch protection and persistent reset recipes remain later work.
 
 
-## 0.8.0 — Unreleased
+## 0.8.0 — Private preview
 
 - Add combinable Garage vehicle type, stock/mod/custom content and favorites
   filters; brand, body style, configuration type, drivetrain, transmission,

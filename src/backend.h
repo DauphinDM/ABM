@@ -60,6 +60,9 @@ public:
     Q_INVOKABLE void setLivePower(double multiplier);
     Q_INVOKABLE void cancelPowerEdits() { cancelLivePower(); }
     Q_INVOKABLE void fullReset();
+    Q_INVOKABLE void setMaxRPM(double value);
+    Q_INVOKABLE void setClutchProtection(bool enabled);
+    Q_INVOKABLE void setResetPersistence(bool enabled);
     Q_INVOKABLE void applyHandling(QVariantMap settings);
     Q_INVOKABLE void applyEngine(QVariantMap settings);
     Q_INVOKABLE void applyDimensions(QVariantMap settings);

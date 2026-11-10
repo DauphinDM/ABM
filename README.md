@@ -6,7 +6,7 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest release: 0.8.0 · Development: 0.9.0.** The repository and its releases
+**Latest release: 0.8.0 · Development: 0.10.0.** The repository and its releases
 are private. This is an independent project, not affiliated with BeamNG or BeamMP.
 
 ## What it does
@@ -31,11 +31,14 @@ The Car workshop groups related controls into **Engine & protection**,
 Vehicle capabilities, movement, invalid inputs and server policy disable
 inapplicable controls. Install the updated bridge files and restart BeamNG
 when ready to receive capability data. New live-power, actual-gear readback and
-full-reset controls require bridge 0.9.0; see the [foundation guide](docs/workshop-foundation.md).
+full-reset controls require bridge 0.9.0 or newer; see the [foundation guide](docs/workshop-foundation.md).
+Bridge 0.10.0 adds supported combustion-engine RPM limits, friction-clutch
+protection and same-vehicle reset recipes. See [reset persistence and RPM](docs/reset-persistence.md)
+for compatibility and safety limits. These features are experimental, not whole-car invulnerability.
 
 ## Documentation
 
-The 0.9 foundation additions are development features, not part of the published
+The 0.9–0.10 workshop additions are development features, not part of the published
 0.8 preview. See the [changelog](CHANGELOG.md) for limits and validation status.
 
 - [Installation and migration](docs/installation.md)
@@ -54,10 +57,10 @@ The 0.9 foundation additions are development features, not part of the published
 
 ## Quick start — Arch Linux / Omarchy
 
-Install the private release's `abm-0.4.0-1-x86_64.pkg.tar.zst` asset:
+Install the private release's `abm-0.8.0-1-x86_64.pkg.tar.zst` asset:
 
 ```sh
-sudo pacman -U abm-0.4.0-1-x86_64.pkg.tar.zst
+sudo pacman -U abm-0.8.0-1-x86_64.pkg.tar.zst
 abm-enable --json
 abm open
 ```

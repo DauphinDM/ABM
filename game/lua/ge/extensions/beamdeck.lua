@@ -210,9 +210,8 @@ local function configsForModel(model)
   return out
 end
 
-  -- Cheat-menu state for the current vehicle. Values re-apply every ~2 s so a
-  -- physics reset or vehicle reload restores them automatically; the vehicle
-  -- Lua keeps the original curve on first touch, so repeats are idempotent.
+  -- Last accepted tuning metadata. Reset recipes belong exclusively to the VM;
+  -- this table must never drive a periodic rewrite after reset or policy loss.
   local tuning = {}
 
   local function receivePolicyCleanup(id, ok)
@@ -269,20 +268,6 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
     end
   end
 
-  local function tuningVehicleCommand(power, damageImmune)
-    return 'pcall(function() extensions.load("abmTuning"); extensions.abmTuning.execute("tuning",' ..
-      serialize({enginePower=power or 1,damageImmunity=damageImmune == true}) .. ') end)'
-  end
-
-  local function applyTuning()
-    if not permission() then return end
-    local command = tuningVehicleCommand(tuning.power, tuning.damage)
-    local vehicle = getPlayerVehicle and getPlayerVehicle(0)
-    if vehicle then vehicle:queueLuaCommand(command) end
-    tuning.appliedTo = vehicle and vehicle:getID()
-    tuning.appliedTime = clock
-  end
-
   local function receiveControl(id, sourceVehicle, ok, message)
     local entry = pending[id]
     if not entry or entry.vehicle ~= sourceVehicle then return end
@@ -310,7 +295,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
       if call(MPCoreNetwork,'isMPSession') == true then
         command.expiresAt = math.min(command.expiresAt,os.time()+math.floor(policyLease.expires-clock))
       end
-    elseif name == 'power' or name == 'fullReset' then result(false,'Target-bound workshop contract required.'); return end
+    elseif ({power=true,fullReset=true,rpm=true,clutch=true,persistence=true})[name] then result(false,'Target-bound workshop contract required.'); return end
     if name == 'fullReset' then
       local speed=vehicle:getVelocity():length()
       if speed ~= speed or speed > 1 then result(false,'Stop before clearing ABM vehicle settings.'); return end
@@ -372,7 +357,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
 local ok, message = pcall(function()
   extensions.load('abmTuning')
   if not extensions.abmTuning then error('Install the updated ABM vehicle bridge.') end
-  if extensions.abmTuning.version ~= '0.9.0' then error('Restart BeamNG to load the ABM vehicle bridge 0.9.0.') end
+  if extensions.abmTuning.version ~= '0.10.0' then error('Restart BeamNG to load the ABM vehicle bridge 0.10.0.') end
   local envelope = %s
   if envelope.contract == 1 then
     return extensions.abmTuning.executeTarget(%q, %s, envelope.generation,envelope.expiresAt,envelope.revision,envelope.client)
@@ -431,7 +416,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
     local response = {kind='result',requestId=id,ok=ok,message=message}
     if name == 'spawn' or name == 'replace' or name == 'switch' or name == 'enableBeamMP'
       or name == 'tuning' or name == 'repair' or name == 'ignite' or name == 'extinguish' or name == 'deflate'
-      or name == 'handling' or name == 'gears' or name == 'stability' or name == 'dealer' or name == 'dealerStop' or name == 'engine' or name == 'dimensions' or name == 'power' or name == 'fullReset' then
+      or name == 'handling' or name == 'gears' or name == 'stability' or name == 'dealer' or name == 'dealerStop' or name == 'engine' or name == 'dimensions' or name == 'power' or name == 'fullReset' or name == 'rpm' or name == 'clutch' or name == 'persistence' then
       completed[id] = response; completedOrder[#completedOrder+1] = id
       if #completedOrder > 128 then completed[table.remove(completedOrder,1)] = nil end
     end
@@ -461,10 +446,10 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
     return
   end
   if name ~= 'spawn' and name ~= 'replace' and name ~= 'switch' and name ~= 'tuning'
-    and not ({repair=true, ignite=true, extinguish=true, deflate=true, handling=true, gears=true, stability=true, dealer=true, dealerStop=true, engine=true, dimensions=true,power=true,fullReset=true})[name] then
+    and not ({repair=true, ignite=true, extinguish=true, deflate=true, handling=true, gears=true, stability=true, dealer=true, dealerStop=true, engine=true, dimensions=true,power=true,fullReset=true,rpm=true,clutch=true,persistence=true})[name] then
     result(false,'Unsupported action'); return
   end
-  if ({tuning=true,handling=true,gears=true,stability=true,dealer=true,dealerStop=true,engine=true,dimensions=true,power=true,fullReset=true})[name] then
+  if ({tuning=true,handling=true,gears=true,stability=true,dealer=true,dealerStop=true,engine=true,dimensions=true,power=true,fullReset=true,rpm=true,clutch=true,persistence=true})[name] then
     vehicleAction(command, result)
     return
   end
@@ -513,7 +498,7 @@ local function snapshot()
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
     version = short(beamng_versionb), beammpLoaded = mp ~= nil,
-    bridgeVersion = '0.9.0', controlsAvailable = true, sampleHz = 20,
+    bridgeVersion = '0.10.0', controlsAvailable = true, sampleHz = 20,
     gameFolder=FS and FS.getGamePath and FS:getGamePath(),
     userFolder=FS and FS.getUserPath and FS:getUserPath(),
     multiplayer = multiplayer, joining = call(mp, 'isGoingMPSession') == true,
@@ -532,12 +517,15 @@ local function snapshot()
   if data.map then data.map = data.map:match('/levels/([^/]+)') or data.map end
   local vehicle = getPlayerVehicle and getPlayerVehicle(0)
   local id = vehicle and vehicle:getID()
-  if id ~= vehicleId then vehicleData, vehicleSample, vehicleId = {}, -10, id end
-  if vehicle and tuning.appliedTo == id and (tuning.power or tuning.damage) then
-    -- Re-apply active cheat settings so resets and reloads keep them; repeated
-    -- application is safe because each engine keeps its untouched base curve.
-    if tuning.appliedTo ~= id or clock - (tuning.appliedTime or -10) > 2 then applyTuning() end
+  if id ~= vehicleId then
+    local previous=vehicleId and be and be.getObjectByID and be:getObjectByID(vehicleId)
+    if previous and owned(vehicleId,multiplayer) then
+      pcall(function() previous:queueLuaCommand('pcall(function() if extensions.abmTuning and extensions.abmTuning.authorize then extensions.abmTuning.authorize(0,"selection changed",false) end end)') end)
+    end
+    vehicleData, vehicleSample, vehicleId = {}, -10, id
   end
+  -- Reset restoration belongs to the vehicle VM's generation-aware recipe.
+  -- Periodic GE reapplication would fight full reset and the persistence toggle.
   if vehicle then
     data.vehicle = short(vehicle:getJBeamFilename())
     data.vehicleId = id
@@ -553,7 +541,15 @@ local function snapshot()
     data.capabilities.repair = spawn and type(spawn.safeTeleport) == 'function' or false
     -- Speed uses world velocity, not driven wheel speed, so wheelspin is honest.
     data.telemetry.speed = vehicle:getVelocity():length()
-    vehicle:queueLuaCommand(vehicleCommand)
+    local allowed=permission() and owned(id,multiplayer)
+    local ttl=3
+    if multiplayer then ttl=math.max(0,math.min(3,math.floor((policyLease and policyLease.expires or clock)-clock))) end
+    local server=currentServer()
+    local context=sessionId..':'..(multiplayer and (server and server.key..'\n'..server.name or 'unknown') or 'single-player')
+    -- A sub-second remaining lease grants no execution time, but is not a
+    -- policy denial: retain the recipe while waiting for a fresh grant.
+    local grant=string.format('\npcall(function() if extensions.abmTuning and extensions.abmTuning.authorize then extensions.abmTuning.authorize(%d,%q,%s) end end)',os.time()+ttl,context,tostring(allowed))
+    vehicle:queueLuaCommand(vehicleCommand..grant)
   end
   if multiplayer then
     local server = call(mp, 'getCurrentServer')
@@ -595,7 +591,7 @@ local function onExtensionLoaded()
   if not udp then log('E', 'beamdeck', 'Cannot create telemetry socket'); return end
   udp:settimeout(0)
   udp:setpeername('127.0.0.1',44444)
-  log('I', 'abm', 'ABM 0.7: official-server protected controls on localhost:44444')
+  log('I', 'abm', 'ABM 0.10: target-bound workshop and guarded reset restoration on localhost:44444')
 end
 
 local function onUpdate(dtReal)

@@ -71,7 +71,7 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
     if (in.value("vehicleOwned").isBool()) out.insert("vehicleOwned", in.value("vehicleOwned"));
     QJsonObject capabilities;
     const auto incomingCaps = in.value("capabilities").toObject();
-    for (const auto key : {"power", "engine", "grip", "brakes", "steering", "gears", "dimensions", "deformation", "stability", "ignite", "extinguish", "deflate", "dealer", "repair"})
+    for (const auto key : {"power", "engine", "grip", "brakes", "steering", "gears", "dimensions", "deformation", "stability", "ignite", "extinguish", "deflate", "dealer", "repair","rpm","clutch"})
         if (incomingCaps.value(key).isBool()) capabilities.insert(key, incomingCaps.value(key));
     out.insert("capabilities", capabilities);
     const auto incomingWorkshop = in.value("workshop").toObject();
@@ -82,7 +82,7 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
         for (const auto &value : incomingWorkshop.value("engines").toArray()) {
             if (engines.size() >= 8) break;
             const auto item=value.toObject(); QJsonObject clean{{"name",bounded(item.value("name"),80)}};
-            for (const auto key : {"maxRPM","revLimiterRPM","physicalRPM"}) number(clean,item,key,0,1e32);
+            for (const auto key : {"maxRPM","revLimiterRPM","physicalRPM","rpmCeiling","idleRPM"}) number(clean,item,key,0,1e32);
             engines.append(clean);
         }
         for (const auto &value : incomingWorkshop.value("gears").toArray()) {
@@ -93,6 +93,10 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
         }
         workshop.insert("engines",engines); workshop.insert("gears",gears);
         workshop.insert("gearbox",bounded(incomingWorkshop.value("gearbox"),80));
+        for (const auto key : {"persistence","restoring","clutchProtected"})
+            if (incomingWorkshop.value(key).isBool()) workshop.insert(key,incomingWorkshop.value(key));
+        workshop.insert("restoreStatus",bounded(incomingWorkshop.value("restoreStatus"),64));
+        workshop.insert("restoreError",bounded(incomingWorkshop.value("restoreError"),256));
         out.insert("workshop",workshop);
     }
     number(out, in, "fps", 0, 2000);
@@ -354,12 +358,12 @@ QJsonObject Telemetry::state() const {
 QJsonObject Telemetry::policy() const {
     if (m_data.value("joining").toBool()) return {{"allowed", false}, {"reason", tr("Joining BeamMP: gameplay changes are locked.")}};
     if (!m_data.value("multiplayer").toBool()) return {{"allowed", true}, {"reason", tr("Single player: no server restriction.")}};
-    if (!QStringList{"0.7.1","0.9.0"}.contains(m_data.value("bridgeVersion").toString()))
+    if (!QStringList{"0.7.1","0.9.0","0.10.0"}.contains(m_data.value("bridgeVersion").toString()))
         return {{"allowed", false}, {"reason", tr("Multiplayer changes need bridge 0.7.1. Install it and restart BeamNG.")}};
     return m_policy.decision(m_data);
 }
 void Telemetry::updatePolicy() {
-    if (!m_lastPacket.isValid() || m_lastPacket.elapsed() >= 3000 || !QStringList{"0.7.1","0.9.0"}.contains(m_data.value("bridgeVersion").toString())
+    if (!m_lastPacket.isValid() || m_lastPacket.elapsed() >= 3000 || !QStringList{"0.7.1","0.9.0","0.10.0"}.contains(m_data.value("bridgeVersion").toString())
         || !m_data.value("multiplayer").toBool()) return;
     m_policy.refresh();
     if (m_policySent.isValid() && m_policySent.elapsed() < 1000) return;
@@ -390,12 +394,13 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     if (!m_lastPacket.isValid() || m_lastPacket.elapsed() >= 3000) {
         reply(false, tr("Game is not running; start BeamNG first.")); return;
     }
-    if (!QStringList{"catalog", "configs", "enableBeamMP", "spawn", "replace", "switch", "tuning", "repair", "ignite", "extinguish", "deflate", "handling", "gears", "stability", "dealer", "dealerStop", "engine", "dimensions", "power", "fullReset"}.contains(action) || m_requests.size() >= 16 || m_requests.contains(id)) {
+    if (!QStringList{"catalog", "configs", "enableBeamMP", "spawn", "replace", "switch", "tuning", "repair", "ignite", "extinguish", "deflate", "handling", "gears", "stability", "dealer", "dealerStop", "engine", "dimensions", "power", "fullReset","rpm","clutch","persistence"}.contains(action) || m_requests.size() >= 16 || m_requests.contains(id)) {
         reply(false, tr("Unsupported action or too many pending requests.")); return;
     }
     const bool driveAction = QStringList{"spawn", "replace", "switch"}.contains(action);
     const auto bridgeVersion = m_data.value("bridgeVersion").toString();
-    const bool workshopBridge = bridgeVersion == "0.9.0";
+    const bool workshopBridge = QStringList{"0.9.0","0.10.0"}.contains(bridgeVersion);
+    if (QStringList{"rpm","clutch","persistence"}.contains(action) && bridgeVersion!="0.10.0") { reply(false,tr("RPM, clutch protection and reset persistence need bridge 0.10.0. Restart BeamNG after installing it.")); return; }
     if ((action == "power" || action == "fullReset") && !workshopBridge) { reply(false,tr("Live power and full reset need bridge 0.9.0. Install it and restart BeamNG.")); return; }
     const bool mutates = !QStringList{"catalog", "configs", "enableBeamMP", "dealerStop"}.contains(action);
     if (mutates && (!policy().value("allowed").toBool() || m_data.value("policyCleanup").toBool()
@@ -417,12 +422,12 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     if (QStringList{"tuning", "repair", "ignite", "extinguish", "deflate"}.contains(action) && !workshopBridge && bridgeVersion != "0.4.0" && bridgeVersion != "0.5.0" && bridgeVersion != "0.6.0" && bridgeVersion != "0.6.1" && bridgeVersion != "0.6.2" && bridgeVersion != "0.7.0" && bridgeVersion != "0.7.1") {
         reply(false, tr("Restart BeamNG to load the updated Car controls.")); return;
     }
-    if (!m_data.value("controlsAvailable").toBool() || !QStringList{"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0"}.contains(bridgeVersion)) {
+    if (!m_data.value("controlsAvailable").toBool() || !QStringList{"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.7.0", "0.7.1","0.9.0","0.10.0"}.contains(bridgeVersion)) {
         reply(false, tr("Reload the ABM game extension to enable car controls.")); return;
     }
     if (action == "catalog" && !m_catalogRequest.isEmpty()) { reply(false, tr("A catalog request is already running.")); return; }
     QJsonObject command{{"source", "beamdeck-control"}, {"schema", 1}, {"sessionId", m_peerSession}, {"action", action}, {"requestId", id}};
-    const bool boundAction = QStringList{"power","fullReset","tuning","handling","gears","engine","dimensions","stability"}.contains(action);
+    const bool boundAction = QStringList{"power","fullReset","tuning","handling","gears","engine","dimensions","stability","rpm","clutch","persistence"}.contains(action);
     if (workshopBridge && boundAction) {
         const auto generation=m_data.value("workshop").toObject().value("generation").toString();
         const auto expiry=message.value("expiresAt").toDouble();
@@ -439,6 +444,16 @@ void Telemetry::command(QLocalSocket *client, const QJsonObject &message) {
     if (action == "power") {
         if (!Protocol::enginePower(message.value("enginePower"))) { reply(false,tr("Enter a finite positive power multiplier.")); return; }
         command.insert("enginePower",message.value("enginePower"));
+    }
+    if (mutates && action!="fullReset" && action!="persistence" && m_data.value("workshop").toObject().value("restoring").toBool()) { reply(false,tr("Reset restoration is in progress; wait or use Full reset.")); return; }
+    if (action=="rpm") {
+        if (!Protocol::rpm(message.value("maxRPM"))) { reply(false,tr("Invalid RPM limit.")); return; }
+        command.insert("maxRPM",message.value("maxRPM"));
+    }
+    if (action=="clutch" || action=="persistence") {
+        const QString key=action=="clutch"?"clutchIndestructible":"enabled";
+        if (!message.value(key).isBool()) { reply(false,tr("Expected an on/off setting.")); return; }
+        command.insert(key,message.value(key));
     }
     if (action == "fullReset") {
         const auto speed=m_data.value("telemetry").toObject().value("speed");

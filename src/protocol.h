@@ -12,6 +12,10 @@ inline bool enginePower(const QJsonValue &value) {
     const auto v = value.toDouble();
     return value.isDouble() && std::isfinite(v) && v > 0;
 }
+inline bool rpm(const QJsonValue &value) {
+    const auto n=value.toDouble();
+    return value.isDouble() && std::isfinite(n) && n>=100 && n<=30000 && n==std::floor(n);
+}
 inline bool handling(const QJsonObject &data) {
     for (const auto key : {"tireGrip", "slidingGrip", "brakePower", "steeringResponse"}) {
         const auto value = data.value(key);

@@ -1,5 +1,5 @@
 -- ABM vehicle tuning: fixed actions only, with preflight before mutation.
-local M = {version='0.9.0'}
+local M = {version='0.10.0'}
 local instance = tostring(obj:getID())..':'..tostring({})..':'..tostring(os.time())
 local generation = 0
 local revisions = {}
@@ -7,6 +7,10 @@ local acceptedPower = nil
 local gearBase
 local dimensionBase
 local engineBases = {}
+local rpmBases, clutchBases = {}, {}
+local recipe, restorePending, restoreFrames, restoreAge = {}, false, 0, 0
+local restoreStatus, restoreError = 'idle', ''
+local authorizedUntil, resetPersistence = 0, true
 local strengthFields = {'maxTorqueRating', 'maxOverTorqueDamage', 'maxOverRevDamage'}
 local protectionMethods = {'lockUp', 'onBreak', 'applyDeformGroupDamage', 'checkHydroLocking', 'scaleOutputTorque'}
 local function protected() end
@@ -21,6 +25,85 @@ local function copy(t)
   return out
 end
 local function between(n, low, high) return finite(n) and n >= low and n <= high end
+
+local rpmFields = {'maxRPM','maxAV','revLimiterRPM','revLimiterAV','revLimiterMaxAV','invRevLimiterRange'}
+local function rpmDevices()
+  local devices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('combustionEngine') or {}
+  if not next(devices) then error('A supported combustion engine is required.') end
+  for _, d in pairs(devices) do
+    if d.hasRevLimiter ~= true or not finite(d.idleRPM) or not finite(d.revLimiterRPM)
+      or not finite(d.revLimiterAV) or not finite(d.maxRPM) or not finite(d.maxAV)
+      or type(d.torqueCurve) ~= 'table' or not ({rpmDrop=true,timeBased=true,soft=true})[d.revLimiterType] then
+      error('Unsupported permanent rev limiter. Electric/custom motors are not supported.')
+    end
+    if d.revLimiterType == 'soft' and not between(d.revLimiterMaxAVOvershoot,.001,100000) then error('Unsupported soft limiter range.') end
+  end
+  return devices
+end
+local function rpmCeiling(d)
+  local ceiling = (rpmBases[d] and rpmBases[d].revLimiterRPM) or d.revLimiterRPM
+  for rpm, torque in pairs(d.beamdeckBase or d.torqueCurve) do
+    if finite(rpm) and finite(torque) and torque > 0 then ceiling=math.max(ceiling,rpm) end
+  end
+  return math.min(30000,ceiling)
+end
+local function setRPM(value)
+  if not between(value,100,30000) or value%1~=0 then error('RPM must be an integer between 100 and 30000.') end
+  local devices=rpmDevices()
+  for _,d in pairs(devices) do
+    if value < d.idleRPM+100 or value > rpmCeiling(d) then error('RPM must exceed idle by 100 and stay within the reported existing-curve ceiling. No synthetic torque is added.') end
+  end
+  for _,d in pairs(devices) do
+    if not rpmBases[d] then
+      local base={}; for _,field in ipairs(rpmFields) do base[field]=d[field] end; rpmBases[d]=base
+    end
+    d.maxRPM,d.revLimiterRPM=value,value
+    d.maxAV,d.revLimiterAV=value*math.pi/30,value*math.pi/30
+    if d.revLimiterType=='soft' then
+      d.revLimiterMaxAV=d.maxAV+d.revLimiterMaxAVOvershoot
+      d.invRevLimiterRange=1/d.revLimiterMaxAVOvershoot
+    end
+  end
+  return 'Permanent RPM limiter applied. Torque curves, shift points, ESC/launch temporary limits and physical damage thresholds are unchanged.'
+end
+local function clutches()
+  local devices=powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('frictionClutch') or {}
+  if not next(devices) then error('Requires a supported friction clutch; DCT/automatic/custom clutches are not supported.') end
+  for _,d in pairs(devices) do
+    if type(d.updateGFX)~='function' or type(d.applyDeformGroupDamage)~='function'
+      or not finite(d.thermalEfficiency) or not finite(d.clutchTemperature)
+      or not finite(d.damageLockTorqueCoef) or not finite(d.wearLockTorqueCoef) then error('Unsupported clutch damage API.') end
+  end
+  return devices
+end
+local function protectClutch(enabled)
+  if type(enabled)~='boolean' then error('Clutch protection must be on or off.') end
+  local devices=clutches()
+  for _,d in pairs(devices) do
+    if enabled and (d.clutchPermanentlyDamaged or d.thermalEfficiency < .999 or d.damageLockTorqueCoef < .999) then error('Clutch already damaged or overheated. Repair/reset before enabling protection.') end
+    local base=clutchBases[d]
+    if base and (d.updateGFX~=base.wrapper or d.applyDeformGroupDamage~=protected) then
+      error('Another mod replaced clutch hooks; reset the vehicle before restoring.')
+    end
+  end
+  for _,d in pairs(devices) do
+    local base=clutchBases[d]
+    if enabled and not base then
+      base={updateGFX=d.updateGFX,damage=d.applyDeformGroupDamage,wear=d.wearLockTorqueCoef}
+      base.wrapper=function(device)
+        device.frictionLossPerUpdate=0
+        device.wearLockTorqueCoef=base.wear
+      end
+      clutchBases[d]=base
+      d.updateGFX,d.applyDeformGroupDamage=base.wrapper,protected
+    elseif not enabled and base then
+      d.updateGFX,d.applyDeformGroupDamage=base.updateGFX,base.damage
+      clutchBases[d]=nil
+    end
+  end
+  return enabled and 'Clutch heat/deformation protection ON. Heat simulation is frozen; stock torque capacity and physical breakage remain.'
+    or 'Clutch protection OFF; normal heat and deformation hooks restored.'
+end
 
 local function restoreEngine(device, base)
   for _, field in ipairs(strengthFields) do device[field] = base.fields[field] end
@@ -265,7 +348,7 @@ local function gears(ratios)
     pcall(powertrain.calculateTreeInertia)
     error('Gearbox update failed; previous tables restored: '..tostring(err))
   end
-  return 'Manual gearbox ratios applied. Shift with sequential up/down controls; reset the vehicle to restore stock.'
+  return 'Manual ratios applied. Sequential shifting is supported. Ordinary reset keeps the recipe when enabled; Full reset clears it.'
 end
 
 -- Use the same node/rest-length/commit API as beamstate.load. Scale physical
@@ -328,7 +411,7 @@ local function dimensions(settings)
   for cid,p in pairs(positions) do obj:setNodePosition(cid,p) end
   for cid,rest in pairs(rests) do obj:setBeamLength(cid,rest) end
   obj:commitLoad()
-  return 'Experimental physical dimensions applied. Suspension/controllers may fight scaling; reset the vehicle to restore stock.'
+  return 'Experimental dimensions applied. Suspension/controllers may fight scaling. Ordinary reset keeps the recipe when enabled; Full reset clears it.'
 end
 
 local function stability()
@@ -338,7 +421,7 @@ local function stability()
   return 'Cycled the vehicle ESC/traction-control mode. Check its in-game indicator.'
 end
 
-local function execute(action, settings)
+local function executeRaw(action, settings)
   if action == 'power' then return setPower(settings.enginePower)
   elseif action == 'fullReset' then
     if not obj or type(obj.requestReset) ~= 'function' then error('Physics reset API unavailable.') end
@@ -347,6 +430,8 @@ local function execute(action, settings)
     if not finite(speed) or speed>1 then error('Vehicle started moving; reset refused.') end
     M.restoreForPolicy()
     return 'ABM vehicle settings cleared; physics reset requested. World gravity was not changed.'
+  elseif action == 'rpm' then return setRPM(settings.maxRPM)
+  elseif action == 'clutch' then return protectClutch(settings.clutchIndestructible)
   elseif action == 'tuning' then return tuning(settings)
   elseif action == 'engine' then return engineStrength(settings)
   elseif action == 'dimensions' then return dimensions(settings)
@@ -357,7 +442,33 @@ local function execute(action, settings)
   error('Unsupported vehicle tuning action.')
 end
 
+local persistentActions={power=true,tuning=true,engine=true,rpm=true,clutch=true,handling=true,gears=true,dimensions=true}
+local function execute(action,settings)
+  if action=='persistence' then
+    if type(settings.enabled)~='boolean' then error('Reset persistence must be on or off.') end
+    resetPersistence=settings.enabled
+    if not resetPersistence then recipe={}; restorePending=false; restoreStatus='off' else restoreStatus='idle' end
+    return 'Reset persistence '..(resetPersistence and 'ON for future accepted edits.' or 'OFF; saved reset recipe cleared.')
+  end
+  if restorePending and action~='fullReset' then error('Reset restoration in progress; wait or use Full reset.') end
+  local message=executeRaw(action,settings)
+  if resetPersistence and persistentActions[action] then
+    recipe[action]=copy(settings)
+    if settings.ratios then recipe[action].ratios=copy(settings.ratios) end
+    if action=='tuning' then recipe.power=nil end
+    restoreStatus,restoreError='saved',''
+  end
+  return message
+end
 M.execute = execute
+local authorizationContext
+M.authorize = function(expiresAt,context,allowed)
+  if type(context)~='string' or #context>800 or not finite(expiresAt) or expiresAt>os.time()+3 then return end
+  if authorizationContext and authorizationContext~=context then recipe={}; restorePending=false; restoreStatus='context changed' end
+  authorizationContext=context
+  authorizedUntil=allowed==true and expiresAt or 0
+  if not allowed then recipe={}; restorePending=false; restoreStatus='policy blocked' end
+end
 M.target = function() return instance..':'..generation end
 M.executeTarget = function(action, settings, target, expiresAt, revision, client)
   if target ~= M.target() then error('Vehicle instance changed; select it again.') end
@@ -370,13 +481,15 @@ M.executeTarget = function(action, settings, target, expiresAt, revision, client
   return execute(action,settings)
 end
 M.readback = function()
-  local out = {contract=1,generation=M.target(),engines={},gears={}}
+  local out = {contract=1,generation=M.target(),engines={},gears={},persistence=resetPersistence,
+    restoreStatus=restoreStatus,restoreError=restoreError,restoring=restorePending,clutchProtected=next(clutchBases)~=nil}
   if acceptedPower then out.enginePower = acceptedPower end
   for name, device in pairs(powertrain and powertrain.getDevicesByCategory and powertrain.getDevicesByCategory('engine') or {}) do
     if #out.engines >= 8 then break end
     local item = {name=tostring(name):sub(1,80)}
     if finite(device.maxRPM) then item.maxRPM=device.maxRPM end
     if finite(device.revLimiterRPM) then item.revLimiterRPM=device.revLimiterRPM end
+    if finite(device.revLimiterRPM) and pcall(rpmDevices) then item.rpmCeiling=rpmCeiling(device); item.idleRPM=device.idleRPM end
     if finite(device.maxPhysicalAV) then item.physicalRPM=device.maxPhysicalAV*30/math.pi end
     out.engines[#out.engines+1]=item
   end
@@ -396,7 +509,18 @@ M.onReset = function()
   generation = generation+1
   revisions = {}
   acceptedPower = nil
+  for _,device in pairs(powertrain and powertrain.getDevicesByCategory and powertrain.getDevicesByCategory('engine') or {}) do
+    if device.beamdeckBase then device.torqueCurve=copy(device.beamdeckBase) end
+    if device.beamdeckIdle~=nil then device.idleTorque=device.beamdeckIdle end
+  end
   dimensionBase = nil -- The physics reset restores stock node geometry.
+  for device,base in pairs(rpmBases) do for _,field in ipairs(rpmFields) do device[field]=base[field] end end
+  rpmBases={}
+  for device,base in pairs(clutchBases) do
+    if device.updateGFX==base.wrapper then device.updateGFX=base.updateGFX end
+    if device.applyDeformGroupDamage==protected then device.applyDeformGroupDamage=base.damage end
+  end
+  clutchBases={}
   for device, base in pairs(engineBases) do restoreEngine(device, base) end
   engineBases = {}
   -- Vehicle extensions reset before powertrain/controllers. Restore dimensions
@@ -412,6 +536,28 @@ M.onReset = function()
   for _, hydro in pairs(hydros and hydros.hydros or {}) do
     if hydro.abmInputFactor then hydro.inputFactor, hydro.abmInputFactor = hydro.abmInputFactor, nil end
   end
+  restorePending=resetPersistence and next(recipe)~=nil
+  restoreFrames,restoreAge=0,0
+  restoreStatus=restorePending and 'waiting for reset' or 'idle'
+end
+M.updateGFX=function(dt)
+  if not restorePending then return end
+  restoreFrames,restoreAge=restoreFrames+1,restoreAge+(finite(dt) and math.max(0,dt) or 0)
+  if restoreAge>10 then restorePending=false; restoreStatus='suspended'; restoreError='Reset not ready within 10 seconds. Reapply manually.'; return end
+  if restoreFrames<2 or restoreAge<.1 or os.time()>=authorizedUntil then return end
+  if recipe.gears or recipe.dimensions then
+    if type(obj.getVelocity)~='function' or not finite(obj:getVelocity():length()) or obj:getVelocity():length()>1 then return end
+  end
+  -- Apply exactly once to fresh post-reset baselines. A failed adapter suspends
+  -- the entire recipe rather than repeatedly deforming geometry or resetting.
+  restorePending=false
+  local ok,message=pcall(function()
+    for _,action in ipairs({'tuning','power','engine','rpm','clutch','handling','gears','dimensions'}) do
+      if recipe[action] then executeRaw(action,recipe[action]) end
+    end
+  end)
+  restoreStatus=ok and 'restored' or 'suspended'
+  restoreError=ok and '' or tostring(message):sub(1,256)
 end
 M.capabilities = function()
   local caps = {power=false, engine=false, grip=false, brakes=false, steering=false, gears=false,
@@ -421,6 +567,8 @@ M.capabilities = function()
   end
   local engines = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('combustionEngine') or {}
   caps.engine = next(engines) ~= nil
+  caps.rpm=pcall(rpmDevices)
+  caps.clutch=pcall(clutches)
   for _, device in pairs(engines) do
     for _, field in ipairs(strengthFields) do if not finite(device[field]) then caps.engine = false end end
     for _, method in ipairs(protectionMethods) do if type(device[method]) ~= 'function' then caps.engine = false end end
@@ -463,6 +611,8 @@ M.capabilities = function()
   return caps
 end
 M.restoreForPolicy = function()
+  recipe,restorePending,restoreStatus,restoreError={},false,'cleared',''
+  authorizedUntil=0
   -- Restore ABM-owned values before the normal physics reset. Reset alone does
   -- not rebuild a modified torque curve or the manual gearbox's private tables.
   tuning({enginePower=1,damageImmunity=false})
