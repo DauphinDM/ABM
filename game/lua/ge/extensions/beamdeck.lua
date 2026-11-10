@@ -50,6 +50,11 @@ local d = {rpm=e.rpm, gear=e.gearIndex, fuel=e.fuel, throttle=e.throttle,
   lights=active(e.lights_state), leftSignal=active(e.signal_left_input),
   rightSignal=active(e.signal_right_input), abs=active(e.abs),
   esc=active(e.esc), engineRunning=active(e.running)}
+local ok, caps = pcall(function()
+  if not extensions.abmTuning then extensions.load('abmTuning') end
+  return extensions.abmTuning.capabilities()
+end)
+if ok and type(caps) == 'table' then d.capabilities = caps end
 obj:queueGameEngineLua("if extensions.beamdeck then extensions.beamdeck.receiveVehicle(" ..
   tostring(obj:getID()) .. "," .. serialize(d) .. ") end")
 ]]
@@ -70,11 +75,19 @@ end
 local function queueItems(kind, requestId, items, model)
   local truncated = #items > 2048
   local total = math.min(#items, 2048)
-  for start = 1, math.max(1, total), 12 do
-    local chunk = {}
-    for i=start, math.min(start+11,total) do chunk[#chunk+1] = items[i] end
-    catalogQueue[#catalogQueue+1] = {kind=kind,requestId=requestId,model=model,items=chunk,
-      chunk=math.floor((start-1)/12),complete=start+11>=total,truncated=truncated}
+  local chunks, chunk, size = {}, {}, 0
+  for i=1,total do
+    local bytes = #jsonEncode(items[i])
+    if bytes > 28000 then truncated = true
+    else
+      if #chunk >= 12 or size + bytes > 28000 then chunks[#chunks+1], chunk, size = chunk, {}, 0 end
+      chunk[#chunk+1], size = items[i], size+bytes
+    end
+  end
+  if #chunk > 0 or #chunks == 0 then chunks[#chunks+1] = chunk end
+  for index, values in ipairs(chunks) do
+    catalogQueue[#catalogQueue+1] = {kind=kind,requestId=requestId,model=model,items=values,
+      chunk=index-1,complete=index==#chunks,truncated=truncated}
   end
 end
 
@@ -163,8 +176,10 @@ local function catalog(requestId)
       local id = type(model) == 'table' and (model.key or key) or key
       if type(model) == 'table' and type(id) == 'string' and id:match('^[%w_-]+$') and #id <= 80 and #models < 2048 then
         allowedModels[id] = true
-        models[#models + 1] = {id=id, name=short(model.Name or id),
+        local item = {id=id, name=short(model.Name or id),
           brand=short(model.Brand or '', 80), type=short(model.Type or '', 80), preview=preview(model.preview)}
+        item.facets = M.catalogFacets(model)
+        models[#models + 1] = item
       end
     end
     table.sort(models, function(a,b) return ((a.brand or '') .. (a.name or '')) < ((b.brand or '') .. (b.name or '')) end)
@@ -180,9 +195,11 @@ local function configsForModel(model)
   if data and type(data.configs) == 'table' then
     for key, config in pairs(data.configs) do
       if validConfig(key) and type(config) == 'table' then
+        local facets = M.catalogFacets(config)
         out[#out + 1] = {key=key, name=short(config.Configuration or config.Name or key),
           description=short(config.Description or '',256), preview=preview(config.preview),
-          custom=config.Source == 'Custom', source=short(config.Source or '',80),
+          custom=config.Source == 'Custom' or config.aggregates and config.aggregates.Source and config.aggregates.Source.Custom == true,
+          source=short(config.Source or '',80), facets=facets,
           drivetrain=short(config.Drivetrain or '',80), transmission=short(config.Transmission or '',80)}
       end
     end
@@ -499,10 +516,15 @@ local function snapshot()
   if vehicle then
     data.vehicle = short(vehicle:getJBeamFilename())
     data.vehicleId = id
+    data.vehicleOwned = owned(id, multiplayer)
     data.vehicleName = data.vehicle
     if clock - vehicleSample < 1.5 then
-      for k, v in pairs(vehicleData) do data.telemetry[k] = v end
+      for k, v in pairs(vehicleData) do if k ~= 'capabilities' then data.telemetry[k] = v end end
+      data.capabilities = vehicleData.capabilities
     end
+    data.capabilities = data.capabilities or {}
+    data.capabilities.dealer = type(vehicle.why) == 'function'
+    data.capabilities.repair = spawn and type(spawn.safeTeleport) == 'function' or false
     -- Speed uses world velocity, not driven wheel speed, so wheelspin is honest.
     data.telemetry.speed = vehicle:getVelocity():length()
     vehicle:queueLuaCommand(vehicleCommand)
@@ -591,6 +613,29 @@ local function onUpdate(dtReal)
 end
 
 M.receiveVehicle = receiveVehicle
+-- Keep bounded filter values, not the game's unbounded metadata tables.
+M.catalogFacets = function(item)
+  local fields = {type='Type', brand='Brand', bodyStyle='Body Style', country='Country',
+    source='Source', drivetrain='Drivetrain', transmission='Transmission', configType='Config Type',
+    fuelType='Fuel Type', propulsion='Propulsion'}
+  local facets = {}
+  for key, field in pairs(fields) do
+    local values, seen = {}, {}
+    local function add(value)
+      if type(value) == 'string' and #value > 0 and #values < 16 then
+        value = value:sub(1,80)
+        if not seen[value] then values[#values+1], seen[value] = value, true end
+      end
+    end
+    add(item[field])
+    for value, present in pairs(item.aggregates and item.aggregates[field] or {}) do
+      if present then add(value) end
+    end
+    table.sort(values)
+    facets[key] = values
+  end
+  return facets
+end
 M.receiveControl = receiveControl
 M.receivePolicyCleanup = receivePolicyCleanup
 M.onExtensionLoaded = onExtensionLoaded

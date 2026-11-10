@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "Garage.js" as Garage
 
 ApplicationWindow {
     id: win
@@ -31,6 +32,10 @@ ApplicationWindow {
     readonly property bool dimensionsReady: controls && sandboxAllowed && ["0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
     readonly property bool gearsReady: controls && sandboxAllowed && ["0.6.2", "0.7.0", "0.7.1"].indexOf(game.bridgeVersion) >= 0 && !backend.busy
     readonly property var tuning: backend.tuning
+    readonly property bool ownVehicle: !!game.vehicle && game.vehicleOwned !== false
+    readonly property bool stopped: typeof telemetry.speed === "number" && isFinite(telemetry.speed) && telemetry.speed <= 1
+    readonly property var capabilities: game.capabilities || ({})
+    function supports(name) { return ownVehicle && capabilities[name] === true }
     readonly property bool canDriveAction: controls && sandboxAllowed && !backend.busy && !demoMode && (!telemetry.speed || telemetry.speed <= 1) && !!game.map
     property var selectedModel: ({})
     property var selectedConfig: ({})
@@ -40,6 +45,22 @@ ApplicationWindow {
     property string configSearch: ""
     property string modelFilter: "all"
     property string configFilter: "all"
+    property var modelFacets: ({})
+    property var configFacets: ({})
+    property string garageOrder: "name"
+    property bool favoriteOnly: false
+    property bool extraFilters: false
+    readonly property var garageEntries: selectedModel.id ? (backend.configsModel === selectedModel.id ? backend.configs : []) : backend.catalog
+    readonly property var activeFacets: selectedModel.id ? configFacets : modelFacets
+    function setFacet(field, value) {
+        var next = Object.assign({}, activeFacets); next[field] = value
+        if (selectedModel.id) configFacets = next; else modelFacets = next
+    }
+    function clearGarageFilters() {
+        garageQuery = ""; favoriteOnly = false
+        if (selectedModel.id) { configFilter = "all"; configFacets = ({}) }
+        else { modelFilter = "all"; modelFacets = ({}) }
+    }
     property real modelScroll: 0
     property string autoCatalogSession: ""
     property string notice: ""
@@ -55,13 +76,14 @@ ApplicationWindow {
     onDevOpenChanged: {
         const targets = {drive:0, car:1, garage:2, session:3}
         if (targets[devOpen] !== undefined) win.page = targets[devOpen]
-        else if (["handling", "gears", "fun", "engine", "dimensions", "blocked"].indexOf(devOpen) >= 0) { win.page = 1; carSection.currentIndex = {handling:1,gears:2,fun:3,engine:4,dimensions:5,blocked:0}[devOpen] }
+        else if (["handling", "gears", "fun", "engine", "dimensions", "blocked"].indexOf(devOpen) >= 0) { win.page = 1; carSection.currentIndex = {handling:1,gears:1,fun:2,engine:0,dimensions:3,blocked:0}[devOpen] }
         else if (devOpen === "owned") ownedDialog.open()
         else if (devOpen === "trip") tripDialog.open()
         else if (devOpen === "diagnostics") diagnostics.open()
         else if (devOpen === "paths") settingsDialog.open()
         else if (devOpen === "help") win.helpVisible = true
         else if (devOpen === "filters") { win.page = 2; filterBox.popup.open() }
+        else if (devOpen === "facets") { win.page = 2; win.extraFilters = true }
         else if (["spawn", "replace", "switch"].indexOf(devOpen) >= 0) {
             win.pendingAction = devOpen
             win.actionTarget = {id:"etk800/base", name:"ETK 800 · Factory configuration", vehicleId:42}
@@ -72,15 +94,8 @@ ApplicationWindow {
     }
 
     readonly property var garageItems: {
-        var configMode = !!selectedModel.id
-        var entries = configMode ? (backend.configsModel === selectedModel.id ? backend.configs : []) : backend.catalog
-        var filter = configMode ? configFilter : modelFilter
-        var query = garageQuery.toLowerCase()
-        return entries.filter(function(v) {
-            return (filter !== "favorites" || backend.favorites.indexOf(v.id) >= 0)
-                && (filter !== "custom" || v.custom === true)
-                && ((v.brand || "") + " " + (v.name || "") + " " + (v.key || "")).toLowerCase().indexOf(query) >= 0
-        })
+        var entries = Garage.select(garageEntries,activeFacets,selectedModel.id ? configFilter : modelFilter,backend.favorites,garageQuery,garageOrder)
+        return favoriteOnly ? entries.filter(function(v) { return backend.favorites.indexOf(v.id) >= 0 }) : entries
     }
     function number(value, decimals) {
         var language = translator.language
@@ -90,6 +105,23 @@ ApplicationWindow {
     function time(value) { return typeof value !== "number" ? "—" : number(Math.floor(value/60)) + ":" + ("0" + Math.floor(value%60)).slice(-2) }
     function tell(text) { notice = text; noticeTimer.restart() }
     function inputNumber(text) { return text.trim() === "" ? NaN : Number(text) }
+    function applyPowerDraft() {
+        backend.applyTuning({enginePower:supports("power") ? powerInput.multiplier : 1,
+            gravity:tuning.gravity !== undefined ? tuning.gravity : -9.81,
+            damageImmunity:supports("deformation") && damageToggle.checked})
+    }
+    function applyGravityDraft(gravity) {
+        backend.applyTuning({enginePower:supports("power") && tuning.enginePower !== undefined ? tuning.enginePower : 1,
+            gravity:gravity, damageImmunity:supports("deformation") && tuning.damageImmunity === true})
+    }
+    function inRange(text, low, high) { var n = inputNumber(text); return isFinite(n) && n >= low && n <= high }
+    readonly property bool validHandling: (!supports("grip") || inRange(gripInput.text,0,10) && inRange(slidingInput.text,0,10)) && (!supports("brakes") || inRange(brakeInput.text,0,10)) && (!supports("steering") || inRange(steeringInput.text,.1,3))
+    readonly property bool validRatios: {
+        var text = ratiosInput.text.trim()
+        if (!text || text.length > 24000) return false
+        var ratios = text.split(/[,;\s]+/).map(Number)
+        return ratios.every(function(n) { return isFinite(n) && n >= .01 && n <= 100 }) && JSON.stringify(ratios).length <= 24000
+    }
     function maybeCatalog() {
         var session = game.sessionId || ""
         if (page === 2 && controls && !backend.busy && !backend.catalog.length && autoCatalogSession !== session) {
@@ -248,15 +280,16 @@ ApplicationWindow {
                             MetricCard { Layout.fillWidth: true; label: qsTr("VEHICLE"); value: (win.game.vehicleName || win.game.vehicle || "—"); unit: (win.telemetry.speed !== undefined ? win.speed(win.telemetry.speed) + " " + (win.metric ? "km/h" : "mph") : "parked or unknown") }
                             MetricCard { Layout.fillWidth: true; label: qsTr("GEAR"); value: win.telemetry.gear === undefined ? "—" : win.telemetry.gear === 0 ? "N" : win.telemetry.gear < 0 ? "R" : win.number(win.telemetry.gear); unit: qsTr("RPM %1").arg(win.telemetry.rpm === undefined ? "—" : win.number(win.smoothRpm)) }
                         }
-                        ComboBox { id: carSection; Layout.fillWidth: true; visible: win.controls; font.pixelSize: 11
-                            model: [qsTr("Power & world"), qsTr("Grip & handling"), qsTr("Gearbox"), qsTr("Fun & recovery"), qsTr("Engine strength"), qsTr("Dimensions · experimental")] }
-                        PlainLabel { visible: win.controls && !backend.busy && (carSection.currentIndex === 4 ? !win.engineReady : carSection.currentIndex > 0 && !win.sandboxReady); Layout.fillWidth: true; text: carSection.currentIndex === 4 ? qsTr("Engine controls need bridge 0.6. Install the bridge, then restart BeamNG when ready.") : qsTr("New controls need bridge 0.5. Install the bridge, then restart BeamNG when ready."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
+                        ComboBox { id: carSection; objectName: "carSection"; Layout.fillWidth: true; visible: win.controls; font.pixelSize: 11
+                            model: [qsTr("Engine & protection"), qsTr("Handling & gearbox"), qsTr("World & recovery"), qsTr("Body · experimental")] }
+                        PlainLabel { visible: win.controls && !win.ownVehicle; Layout.fillWidth: true; text: qsTr("Select your own vehicle to use the workshop."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
+                        PlainLabel { visible: win.controls && win.ownVehicle && Object.keys(win.capabilities).length < 3; Layout.fillWidth: true; text: qsTr("Waiting for vehicle capabilities. Install the updated bridge and restart BeamNG if controls stay disabled."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
                         ColumnLayout { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; spacing: 2
                             RowLayout { Layout.fillWidth: true
                                 PlainLabel { Layout.fillWidth: true; text: qsTr("Engine power"); font.pixelSize: 11; color: textMain }
                                 TextField { id: powerInput; objectName: "powerInput"; Layout.preferredWidth: 112; implicitHeight: 30; font.pixelSize: 11; color: textMain
                                     text: String((win.tuning.enginePower !== undefined ? win.tuning.enginePower : 1) * 100)
-                                    selectByMouse: true; enabled: win.tuningReady && !backend.busy
+                                    selectByMouse: true; enabled: win.tuningReady && !backend.busy && win.supports("power")
                                     property real multiplier: text.trim() === "" ? NaN : Number(text) / 100
                                     property bool validPower: isFinite(multiplier) && multiplier > 0
                                     background: Rectangle { color: surface; border.width: 1; border.color: powerInput.validPower ? "#474952" : "#df6b61" }
@@ -268,15 +301,15 @@ ApplicationWindow {
                                 from: 0.5; to: 3; stepSize: 0.05
                                 value: Math.max(from, Math.min(to, powerInput.multiplier || 1))
                                 onMoved: powerInput.text = String(Math.round(value * 100))
-                                enabled: win.tuningReady && !backend.busy
+                                enabled: powerInput.enabled
                                 background: Rectangle { y: (powerSlider.height - 5) / 2; height: 5; width: powerSlider.availableWidth; color: "#26282f"
                                     Rectangle { width: parent.width * powerSlider.position; height: parent.height; color: accent } }
                                 handle: Rectangle { width: 14; height: 14; color: powerSlider.pressed || powerSlider.hovered ? accent : textMain; border.width: 1; border.color: "#0e0f13"
                                     x: powerSlider.visualPosition * (powerSlider.availableWidth - width); y: (powerSlider.height - height) / 2 }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("Slider: 50–300%. Type any positive percentage above. No fixed power cap in bridge 0.5; numeric overflow is rejected. 100% restores stock torque."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: win.supports("power") ? qsTr("50–300% slider · type any positive percentage. 100% = stock torque. Overflow is rejected.") : qsTr("Power adjustment unavailable for this engine."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; spacing: 2
+                        ColumnLayout { visible: win.controls && carSection.currentIndex === 2; Layout.fillWidth: true; spacing: 2
                             RowLayout { Layout.fillWidth: true
                                 PlainLabel { Layout.fillWidth: true; text: qsTr("Gravity"); font.pixelSize: 11; color: textMain }
                                 PlainLabel { text: gravitySlider.value.toFixed(2) + " m/s²"; font.pixelSize: 11; color: accent }
@@ -285,7 +318,7 @@ ApplicationWindow {
                                 id: gravitySlider; Layout.fillWidth: true; implicitHeight: 24
                                 from: -30; to: 0; stepSize: 0.01
                                 value: win.tuning.gravity !== undefined ? win.tuning.gravity : -9.81
-                                enabled: win.tuningReady && !backend.busy
+                                enabled: win.tuningReady && !backend.busy && win.ownVehicle
                                 background: Rectangle { y: (gravitySlider.height - 5) / 2; height: 5; width: gravitySlider.availableWidth; color: "#26282f"
                                     Rectangle { width: parent.width * gravitySlider.position; height: parent.height; color: accent } }
                                 handle: Rectangle { width: 14; height: 14; color: gravitySlider.pressed || gravitySlider.hovered ? accent : textMain; border.width: 1; border.color: "#0e0f13"
@@ -295,88 +328,92 @@ ApplicationWindow {
                                 Repeater {
                                     model: [{label: qsTr("Earth"), g: -9.81}, {label: qsTr("Moon"), g: -1.62}, {label: qsTr("Mars"), g: -3.71}, {label: qsTr("Venus"), g: -8.87}, {label: qsTr("Jupiter"), g: -24.92}, {label: qsTr("Pluto"), g: -0.58}, {label: qsTr("Zero-g"), g: 0}]
                                     Button { required property string label; required property real g; text: label; font.pixelSize: 10; padding: 5; implicitHeight: 24; flat: true
-                                        enabled: win.tuningReady && !backend.busy && powerInput.validPower
-                                        onClicked: { gravitySlider.value = g; backend.applyTuning({enginePower: powerInput.multiplier, gravity: g, damageImmunity: damageToggle.checked}) } }
+                                        enabled: gravitySlider.enabled && Math.abs(gravitySlider.value-g) > .005
+                                        onClicked: { gravitySlider.value = g; win.applyGravityDraft(g) } }
                                 }
                             }
                             PlainLabel { Layout.fillWidth: true; text: qsTr("Applies to the entire world. Earth is −9.81 m/s²."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                             Button { text: qsTr("Apply gravity"); Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: gravitySlider.enabled
+                                 onClicked: win.applyGravityDraft(gravitySlider.value) }
                         }
                         Button {
                             id: damageToggle; visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; checkable: true; checked: win.tuning.damageImmunity === true
                             text: checked ? qsTr("Deformation immunity: ON") : qsTr("Deformation immunity")
-                            font.pixelSize: 11; padding: 6; implicitHeight: 30; enabled: win.tuningReady && !backend.busy
+                            font.pixelSize: 11; padding: 6; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("deformation")
                             background: Rectangle { color: damageToggle.enabled && damageToggle.checked ? accent : surface; radius: 0 }
                         }
-                        PlainLabel { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; text: qsTr("Raises beam strength and deformation limits. Turn off to restore stock limits. Engines and tires can still take damage."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                        Button { text: qsTr("Apply tuning"); visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11
-                            enabled: win.tuningReady && !backend.busy && powerInput.validPower
-                            onClicked: backend.applyTuning({enginePower: powerInput.multiplier, gravity: gravitySlider.value, damageImmunity: damageToggle.checked}) }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: gap
+                        PlainLabel { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; text: qsTr("Beam protection changes deformation/strength limits, not engine or tire damage."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                        Button { text: qsTr("Apply power & beam limits"); visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11
+                             enabled: win.tuningReady && !backend.busy && win.ownVehicle && (!win.supports("power") || powerInput.validPower) && (win.supports("power") || win.supports("deformation"))
+                             onClicked: win.applyPowerDraft() }
+                         ColumnLayout { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: 4
                             PlainLabel { text: qsTr("Grip & handling"); font.pixelSize: 12; color: accent }
-                            GridLayout { Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: gap
+                             GridLayout { Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: 4
                                 PlainLabel { text: qsTr("Tire grip ×"); color: textMain; font.pixelSize: 11 }
-                                TextField { id: gripInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11 }
+                                 TextField { id: gripInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11; implicitHeight: 28; padding: 4; enabled: win.sandboxReady && win.supports("grip") }
                                 PlainLabel { text: qsTr("Sliding grip ×"); color: textMain; font.pixelSize: 11 }
-                                TextField { id: slidingInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11 }
+                                 TextField { id: slidingInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11; implicitHeight: 28; padding: 4; enabled: gripInput.enabled }
                                 PlainLabel { text: qsTr("Brake strength ×"); color: textMain; font.pixelSize: 11 }
-                                TextField { id: brakeInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11 }
+                                 TextField { id: brakeInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11; implicitHeight: 28; padding: 4; enabled: win.sandboxReady && win.supports("brakes") }
                                 PlainLabel { text: qsTr("Steering response ×"); color: textMain; font.pixelSize: 11 }
-                                TextField { id: steeringInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11 }
+                                 TextField { id: steeringInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11; implicitHeight: 28; padding: 4; enabled: win.sandboxReady && win.supports("steering") }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("1 = stock. Grip/brakes: 0–10×. Steering: 0.1–3×, within physical steering limits. Damaged tires are skipped. Other controllers may override changes."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                            Button { text: qsTr("Apply handling"); Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11; enabled: win.sandboxReady
-                                onClicked: backend.applyHandling({tireGrip:win.inputNumber(gripInput.text), slidingGrip:win.inputNumber(slidingInput.text), brakePower:win.inputNumber(brakeInput.text), steeringResponse:win.inputNumber(steeringInput.text)}) }
-                            Button { text: qsTr("Cycle ESC / traction mode"); Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: win.sandboxReady; onClicked: backend.carAction("stability") }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("Uses the vehicle's own ESC mode cycle, if supported. Check the in-game indicator. Reset the vehicle to restore stock handling."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                             PlainLabel { Layout.fillWidth: true; text: qsTr("1 = stock. Grip/brakes 0–10×; steering 0.1–3× within physical limits. Skips damaged tires; other controllers may override."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            Button { text: qsTr("Apply handling"); objectName: "handlingApplyButton"; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: win.sandboxReady && win.validHandling && (win.supports("grip") || win.supports("brakes") || win.supports("steering"))
+                                onClicked: backend.applyHandling({tireGrip:win.supports("grip") ? win.inputNumber(gripInput.text) : 1, slidingGrip:win.supports("grip") ? win.inputNumber(slidingInput.text) : 1, brakePower:win.supports("brakes") ? win.inputNumber(brakeInput.text) : 1, steeringResponse:win.supports("steering") ? win.inputNumber(steeringInput.text) : 1}) }
+                            Button { text: qsTr("Cycle ESC / traction mode"); objectName: "stabilityButton"; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: win.sandboxReady && win.supports("stability"); onClicked: backend.carAction("stability") }
+                             PlainLabel { Layout.fillWidth: true; text: qsTr("ESC uses the car's own mode cycle. Reset restores stock handling."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 2; Layout.fillWidth: true; spacing: gap
+                         ColumnLayout { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: 4
                             PlainLabel { text: qsTr("Build your gearbox"); font.pixelSize: 12; color: accent }
                             PlainLabel { Layout.fillWidth: true; text: qsTr("Forward ratios, in order. Add as many as fit the 24 KB command budget; no fixed gear-count cap. Each ratio: 0.01–100."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                            ScrollView { Layout.fillWidth: true; Layout.preferredHeight: 108; clip: true
-                                TextArea { id: ratiosInput; objectName: "ratiosInput"; text: "3.5, 2.1, 1.4, 1.0, 0.8, 0.65"; wrapMode: TextEdit.Wrap; selectByMouse: true; font.pixelSize: 12; color: textMain; background: Rectangle { color: surface } }
+                             ScrollView { Layout.fillWidth: true; Layout.preferredHeight: 64; clip: true
+                                TextArea { id: ratiosInput; objectName: "ratiosInput"; text: "3.5, 2.1, 1.4, 1.0, 0.8, 0.65"; wrapMode: TextEdit.Wrap; selectByMouse: true; font.pixelSize: 12; color: textMain; enabled: win.gearsReady && win.supports("gears"); background: Rectangle { color: surface } }
                             }
                             RowLayout { Layout.fillWidth: true
-                                Button { text: qsTr("+ Gear"); font.pixelSize: 11; implicitHeight: 30
+                                Button { text: qsTr("+ Gear"); objectName: "addGearButton"; font.pixelSize: 11; implicitHeight: 30; enabled: ratiosInput.enabled && win.validRatios && ratiosInput.text.length < 23980
                                     onClicked: { var values = ratiosInput.text.trim().split(/[,;\s]+/); var last = Number(values[values.length-1]); if (isFinite(last) && last >= 0.01 && last <= 100) ratiosInput.text += ", " + Math.max(.01,last*.85).toFixed(4) } }
-                                Button { text: qsTr("Apply ratios"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.gearsReady && win.telemetry.speed !== undefined && win.telemetry.speed <= 1; onClicked: backend.applyGears(ratiosInput.text) }
+                                Button { text: qsTr("Apply ratios"); objectName: "gearsApplyButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: ratiosInput.enabled && win.validRatios && win.stopped; onClicked: backend.applyGears(ratiosInput.text) }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("Bridge 0.6.2 required. Stop first. Supported manual gearboxes/controllers only; not automatic, DCT or CVT. Rebuilds synchronizers AND controller shift points, selecting neutral. Extra gears inherit stock top-gear shift thresholds. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                             PlainLabel { Layout.fillWidth: true; text: qsTr("Stop first. Supported manual gearboxes only, not automatic/DCT/CVT. Rebuilds synchronizers and shift points in neutral. Extra gears inherit top-gear thresholds. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
-                        GridLayout { visible: win.controls && carSection.currentIndex === 3; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: gap
-                            Button { text: qsTr("Why This Dealer?"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.sandboxReady; onClicked: backend.carAction("dealer") }
-                            Button { text: qsTr("Stop bouncing"); objectName: "dealerStopButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 36; enabled: win.controls && ["0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(win.game.bridgeVersion) >= 0 && !backend.busy; onClicked: backend.carAction("dealerStop") }
+                        GridLayout { visible: win.controls && carSection.currentIndex === 2; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: gap
+                            Button { text: qsTr("Why This Dealer?"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 32; enabled: win.sandboxReady && win.supports("dealer"); onClicked: backend.carAction("dealer") }
+                            Button { text: qsTr("Stop bouncing"); objectName: "dealerStopButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 32; enabled: win.controls && win.supports("dealer") && ["0.6.1", "0.6.2", "0.7.0", "0.7.1"].indexOf(win.game.bridgeVersion) >= 0 && !backend.busy; onClicked: backend.carAction("dealerStop") }
                             PlainLabel { Layout.columnSpan: 2; Layout.fillWidth: true; text: qsTr("The real easter egg: why(\"this dealer\") starts; why(\"stop\") ends it without a reset. Stop needs bridge 0.6.1. Only game builds that expose this API."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                            Button { text: qsTr("Repair"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("repair") }
-                            Button { text: qsTr("Fire"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("ignite") }
-                            Button { text: qsTr("Extinguish"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("extinguish") }
-                            Button { text: qsTr("Deflate tires"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy; onClicked: backend.carAction("deflate") }
+                            Button { text: qsTr("Repair"); objectName: "repairButton"; Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("repair") && win.stopped; onClicked: backend.carAction("repair") }
+                            Button { text: qsTr("Fire"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("ignite"); onClicked: backend.carAction("ignite") }
+                            Button { text: qsTr("Extinguish"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("extinguish"); onClicked: backend.carAction("extinguish") }
+                            Button { text: qsTr("Deflate tires"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("deflate"); onClicked: backend.carAction("deflate") }
                         }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 4; Layout.fillWidth: true; spacing: gap
+                        ColumnLayout { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; spacing: 4
                             RowLayout { Layout.fillWidth: true
                                 PlainLabel { Layout.fillWidth: true; text: qsTr("Engine strength"); font.pixelSize: 12; color: accent }
                                 PlainLabel { text: strengthSlider.value.toFixed(1) + "×"; font.pixelSize: 13; color: textMain }
                             }
                             Slider { id: strengthSlider; objectName: "strengthSlider"; Layout.fillWidth: true; implicitHeight: 24
-                                from: 0.1; to: 100; value: 1; stepSize: 0.1; enabled: win.engineReady && !engineToggle.checked
+                                from: 0.1; to: 100; value: 1; stepSize: 0.1; enabled: win.engineReady && win.supports("engine") && !engineToggle.checked
                                 background: Rectangle { y: (strengthSlider.height - 5) / 2; height: 5; width: strengthSlider.availableWidth; color: "#26282f"
                                     Rectangle { width: parent.width * strengthSlider.position; height: parent.height; color: accent } }
                                 handle: Rectangle { width: 14; height: 14; color: strengthSlider.pressed || strengthSlider.hovered ? accent : textMain; border.width: 1; border.color: "#0e0f13"
                                     x: strengthSlider.visualPosition * (strengthSlider.availableWidth - width); y: (strengthSlider.height - height) / 2 }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("0.1–100× stock torque tolerance and over-torque/over-rev damage budgets. 1× restores stock strength. Does not increase power or the rev limiter."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                            Button { id: engineToggle; objectName: "engineToggle"; Layout.fillWidth: true; checkable: true; enabled: win.engineReady
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("0.1–100× damage tolerance · 1× = stock. Does not change power or the rev limiter."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            Button { id: engineToggle; objectName: "engineToggle"; Layout.fillWidth: true; checkable: true; enabled: win.engineReady && win.supports("engine")
                                 text: checked ? qsTr("Indestructible engine: ON") : qsTr("Indestructible engine: OFF")
                                 font.pixelSize: 11; implicitHeight: 32
                                 onClicked: backend.applyEngine({engineStrength:strengthSlider.value, engineIndestructible:checked})
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("Supported combustion engines only. Protection blocks engine damage/lock-up and hydrolocking; thermal simulation freezes while ON. Does not repair existing damage or protect tires, mounts, turbos or the rest of the drivetrain."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                            Button { text: qsTr("Apply engine strength"); Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11; enabled: win.engineReady
-                                onClicked: backend.applyEngine({engineStrength:strengthSlider.value, engineIndestructible:engineToggle.checked}) }
-                            Button { text: qsTr("Restore stock engine limits"); Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: win.engineReady
-                                onClicked: { strengthSlider.value = 1; engineToggle.checked = false; backend.applyEngine({engineStrength:1, engineIndestructible:false}) } }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("OFF restores normal damage hooks at the selected strength. Vehicle reset restores stock engine limits. These controls show requested settings, not measured engine state."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("Protection blocks supported engine damage and hydrolocking; freezes heat simulation. No repair or tire/mount/turbo/drivetrain protection."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                             RowLayout { Layout.fillWidth: true; spacing: gap
+                                 Button { text: qsTr("Apply strength"); Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: strengthSlider.enabled
+                                     onClicked: backend.applyEngine({engineStrength:strengthSlider.value, engineIndestructible:engineToggle.checked}) }
+                                 Button { text: qsTr("Stock limits"); Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: win.engineReady && win.supports("engine") && (engineToggle.checked || Math.abs(strengthSlider.value-1) > .01)
+                                     onClicked: { strengthSlider.value = 1; engineToggle.checked = false; backend.applyEngine({engineStrength:1, engineIndestructible:false}) } }
+                             }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("OFF restores damage at the selected strength. Reset restores stock engine limits."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 5; Layout.fillWidth: true; spacing: gap
+                        ColumnLayout { visible: win.controls && carSection.currentIndex === 3; Layout.fillWidth: true; spacing: gap
                             PlainLabel { text: qsTr("Physical dimensions · experimental"); font.pixelSize: 12; color: accent }
                             PlainLabel { Layout.fillWidth: true; text: qsTr("Width, length and height relative to the first captured shape. 1× = captured size. Nodes and beam rest lengths change together; this is not a visual-only stretch."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             Repeater { id: dimensionSliders; model: [qsTr("Width"), qsTr("Length"), qsTr("Height")]
@@ -386,7 +423,7 @@ ApplicationWindow {
                                         PlainLabel { text: modelData; Layout.fillWidth: true; color: textMain; font.pixelSize: 11 }
                                         PlainLabel { text: dimensionSlider.value.toFixed(2) + "×"; color: accent; font.pixelSize: 11 }
                                     }
-                                    Slider { id: dimensionSlider; Layout.fillWidth: true; implicitHeight: 26; from: .5; to: 2; value: 1; stepSize: .01; enabled: win.dimensionsReady
+                                    Slider { id: dimensionSlider; Layout.fillWidth: true; implicitHeight: 26; from: .5; to: 2; value: 1; stepSize: .01; enabled: win.dimensionsReady && win.supports("dimensions") && win.stopped
                                         background: Rectangle { y: (dimensionSlider.height-5)/2; height: 5; width: dimensionSlider.availableWidth; color: "#26282f"
                                             Rectangle { width: parent.width*dimensionSlider.position; height: parent.height; color: accent } }
                                         handle: Rectangle { width: 14; height: 14; color: dimensionSlider.pressed || dimensionSlider.hovered ? accent : textMain; border.width: 1; border.color: "#0e0f13"
@@ -395,19 +432,17 @@ ApplicationWindow {
                                 }
                             }
                             PlainLabel { Layout.fillWidth: true; text: qsTr("0.5–2× each axis. Stop and repair broken beams first. Your own car only in BeamMP (bridge 0.6.2): resized geometry is NOT synchronized to other players. Follow server rules. Suspension, wheels and props may fight resizing; mass/tire parameters stay unchanged. Reset restores stock."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                            CheckBox { id: dimensionConsent; text: qsTr("I accept unstable physics and vehicle damage"); font.pixelSize: 10; Layout.fillWidth: true }
+                            CheckBox { id: dimensionConsent; text: qsTr("I accept unstable physics and vehicle damage"); font.pixelSize: 10; Layout.fillWidth: true; enabled: win.dimensionsReady && win.supports("dimensions") && win.stopped }
                             Button { text: qsTr("Apply physical dimensions"); objectName: "dimensionsApplyButton"; Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11
-                                enabled: win.dimensionsReady && (win.game.multiplayer !== true || ["0.6.2", "0.7.0", "0.7.1"].indexOf(win.game.bridgeVersion) >= 0) && win.telemetry.speed !== undefined && win.telemetry.speed <= 1 && dimensionConsent.checked
+                                enabled: dimensionConsent.enabled && (win.game.multiplayer !== true || ["0.6.2", "0.7.0", "0.7.1"].indexOf(win.game.bridgeVersion) >= 0) && dimensionConsent.checked
                                 onClicked: backend.applyDimensions({width:dimensionSliders.itemAt(0).factor,length:dimensionSliders.itemAt(1).factor,height:dimensionSliders.itemAt(2).factor}) }
                             PlainLabel { visible: !win.dimensionsReady; Layout.fillWidth: true; text: qsTr("Multiplayer changes require bridge 0.7 and server permission. Restart BeamNG after installing the bridge."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
                         PlainLabel { visible: win.controls; Layout.fillWidth: true; text: qsTr("Sandbox changes affect your selected vehicle, not saved configs. Last requested values are not live readback. Multiplayer servers may overrule changes."); font.pixelSize: 9; color: textDim; wrapMode: Text.Wrap }
                         RowLayout { visible: win.controls && carSection.currentIndex === 0 && win.tuning.enginePower !== undefined; Layout.fillWidth: true; spacing: gap
                             Button { text: qsTr("Engine 100%"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true
-                                enabled: win.tuningReady && !backend.busy
-                                onClicked: { powerInput.text = "100"; backend.applyTuning({enginePower: 1, gravity: gravitySlider.value, damageImmunity: damageToggle.checked}) } }
-                            Button { text: qsTr("Gravity stock"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; enabled: win.tuningReady && !backend.busy && powerInput.validPower
-                                onClicked: { gravitySlider.value = -9.81; backend.applyTuning({enginePower: powerInput.multiplier, gravity: -9.81, damageImmunity: damageToggle.checked}) } }
+                                enabled: win.tuningReady && !backend.busy && win.supports("power") && powerInput.multiplier !== 1
+                                 onClicked: { powerInput.text = "100"; win.applyPowerDraft() } }
                         }
                     }
                 }
@@ -429,15 +464,31 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true; spacing: gap
                         ComboBox {
-                            id: filterBox; textRole: "label"; valueRole: "value"
-                            model: win.selectedModel.id ? [{label:qsTr("All"),value:"all"},{label:qsTr("Custom"),value:"custom"},{label:qsTr("Favorites"),value:"favorites"}]
-                                : [{label:qsTr("All"),value:"all"},{label:qsTr("Favorites"),value:"favorites"}]
+                            id: filterBox; objectName: "garageView"; Layout.fillWidth: true; Layout.minimumWidth: 0; textRole: "label"; valueRole: "value"
+                            model: [{label:qsTr("All content"),value:"all"},{label:qsTr("Custom configs"),value:"custom"},{label:qsTr("Mod content"),value:"mods"},{label:qsTr("Stock content"),value:"stock"}]
                             currentIndex: { var filter=win.selectedModel.id ? win.configFilter : win.modelFilter; for(var i=0;i<model.length;i++) if(model[i].value===filter) return i; return 0 }
                             onActivated: { if(win.selectedModel.id) win.configFilter=currentValue; else win.modelFilter=currentValue }
                             font.pixelSize: 10; padding: 4; implicitHeight: 28
                         }
+                        GarageFilter { objectName: "garageType"; Layout.fillWidth: true; Layout.minimumWidth: 0; entries: win.garageEntries; field: "type"; allLabel: qsTr("All vehicle types"); selectedValue: win.activeFacets.type || ""; onChosen: function(value) { win.setFacet("type",value) } }
+                        Button { text: "★"; checkable: true; checked: win.favoriteOnly; onClicked: win.favoriteOnly = checked; implicitHeight: 28; implicitWidth: 30; padding: 4; font.pixelSize: 12; ToolTip.visible: hovered; ToolTip.text: qsTr("Favorites only") }
+                    }
+                    RowLayout { Layout.fillWidth: true; spacing: gap
+                        Button { text: win.extraFilters ? qsTr("Less filters") : qsTr("More filters"); checked: win.extraFilters; checkable: true; font.pixelSize: 10; implicitHeight: 26; padding: 4; onClicked: win.extraFilters = checked }
+                        Button { text: qsTr("Clear"); font.pixelSize: 10; implicitHeight: 26; padding: 4; enabled: !!win.garageQuery || win.favoriteOnly || (win.selectedModel.id ? win.configFilter : win.modelFilter) !== "all" || Object.keys(win.activeFacets).some(function(k) { return !!win.activeFacets[k] })
+                             onClicked: win.clearGarageFilters() }
                         Item { Layout.fillWidth: true }
-                        PlainLabel { text: qsTr("%1 shown").arg(win.number(win.garageItems.length)); color: textDim; font.pixelSize: 10 }
+                        PlainLabel { text: qsTr("%1 / %2").arg(win.number(win.garageItems.length)).arg(win.number(win.garageEntries.length)); color: textDim; font.pixelSize: 10 }
+                        ComboBox { objectName: "garageSort"; textRole: "label"; valueRole: "value"; font.pixelSize: 10; implicitHeight: 26; padding: 4; Layout.preferredWidth: 108
+                            model: [{label:qsTr("Name A–Z"),value:"name"},{label:qsTr("Name Z–A"),value:"reverse"},{label:qsTr("Brand"),value:"brand"},{label:qsTr("Type"),value:"type"},{label:qsTr("Source"),value:"source"},{label:qsTr("Favorites first"),value:"favorites"}]
+                            onActivated: win.garageOrder = currentValue }
+                    }
+                    GridLayout { visible: win.extraFilters; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: 4
+                        Repeater { model: [{field:"brand",label:qsTr("All brands")},{field:"bodyStyle",label:qsTr("All body styles")},{field:"configType",label:qsTr("All config types")},{field:"drivetrain",label:qsTr("All drivetrains")},{field:"transmission",label:qsTr("All transmissions")},{field:"source",label:qsTr("All sources / mods")},{field:"country",label:qsTr("All countries")},{field:"fuelType",label:qsTr("All fuel types")},{field:"propulsion",label:qsTr("All propulsion")}]
+                            GarageFilter { required property var modelData; Layout.fillWidth: true; Layout.minimumWidth: 0; entries: win.garageEntries; field: modelData.field; allLabel: modelData.label; selectedValue: win.activeFacets[field] || ""; onChosen: function(value) { win.setFacet(field,value) } }
+                        }
+                    }
+                    PlainLabel { visible: win.extraFilters; Layout.fillWidth: true; text: win.selectedModel.id ? qsTr("Only metadata supplied by the game is listed. Missing metadata is not guessed.") : qsTr("Model filters match any of its configs. Open a model to filter individual variants."); color: textDim; font.pixelSize: 9; wrapMode: Text.Wrap
                     }
                     GridView {
                         id: garageGrid; objectName: "garageGrid"
@@ -519,7 +570,7 @@ ApplicationWindow {
         }
         Menu { id: garageMenu; margins: win.pad; font.pixelSize: 11
             MenuItem { text: qsTr("Refresh"); enabled: (win.controls || demoMode) && !backend.busy; onTriggered: { if(win.selectedModel.id) backend.requestConfigs(win.selectedModel.id); else backend.requestCatalog() } }
-            MenuItem { text: qsTr("Clear search and filters"); onTriggered: { win.garageQuery=""; win.modelFilter="all"; win.configFilter="all" } }
+             MenuItem { text: qsTr("Clear search and filters"); onTriggered: win.clearGarageFilters() }
         }
         Dialog { id: settingsDialog; anchors.centerIn: parent; width: Math.min(parent.width-20,460)
             onOpened: { userPath.text = demoMode ? "/home/player/BeamNG" : win.launcher.userFolder; gamePath.text = demoMode ? "/games/BeamNG.drive" : win.launcher.gameFolder; mpPath.text = demoMode ? "/games/BeamMP/BeamMP-Launcher" : win.launcher.launcherPath }

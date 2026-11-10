@@ -68,6 +68,12 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
     out.insert("sandboxAllowed", in.value("sandboxAllowed").toBool());
     out.insert("policyReason", bounded(in.value("policyReason"), 256));
     out.insert("policyCleanup", in.value("policyCleanup").toBool());
+    if (in.value("vehicleOwned").isBool()) out.insert("vehicleOwned", in.value("vehicleOwned"));
+    QJsonObject capabilities;
+    const auto incomingCaps = in.value("capabilities").toObject();
+    for (const auto key : {"power", "engine", "grip", "brakes", "steering", "gears", "dimensions", "deformation", "stability", "ignite", "extinguish", "deflate", "dealer", "repair"})
+        if (incomingCaps.value(key).isBool()) capabilities.insert(key, incomingCaps.value(key));
+    out.insert("capabilities", capabilities);
     number(out, in, "fps", 0, 2000);
     number(out, in, "vehicleCount", 0, 10000);
     number(out, in, "vehicleId", 0, 10000000);
@@ -215,6 +221,18 @@ void Telemetry::drain() {
                 QJsonObject clean{{"id", model}, {"name", bounded(item.value("name"))},
                     {"brand", bounded(item.value("brand"), 80)}, {"type", bounded(item.value("type"), 80)},
                     {"preview", Protocol::preview(item.value("preview"), model)}};
+                QJsonObject facets;
+                const auto incomingFacets = item.value("facets").toObject();
+                for (const auto field : {"type", "brand", "bodyStyle", "country", "source", "drivetrain", "transmission", "configType", "fuelType", "propulsion"}) {
+                    QJsonArray values;
+                    for (const auto &value : incomingFacets.value(field).toArray()) {
+                        const auto text = bounded(value, 80);
+                        if (!text.isEmpty() && !values.contains(text)) values.append(text);
+                        if (values.size() >= 32) break;
+                    }
+                    facets.insert(field, values);
+                }
+                clean.insert("facets", facets);
                 if (kind == "configs") {
                     const auto key = item.value("key").toString();
                     if (!Protocol::config(key)) continue;

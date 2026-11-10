@@ -69,9 +69,9 @@ Item {
             }
             PlainLabel {
                 Layout.fillWidth: true
-                text: !card.modelCard && card.fallbackPreview ? qsTr("Model preview")
-                    : card.modelData.custom ? qsTr("Custom configuration")
-                    : card.modelData.type || card.modelData.drivetrain || qsTr("Factory configuration")
+                text: (card.modelData.custom ? qsTr("Custom") : card.modelData.type || card.modelData.drivetrain || qsTr("Configuration"))
+                    + (card.modelData.source && card.modelData.source !== "BeamNG - Official" && card.modelData.source !== "Custom" ? " · " + card.modelData.source : "")
+                    + (!card.modelCard && card.fallbackPreview ? " · " + qsTr("Model preview") : "")
                 font.pixelSize: 9
                 color: "#9b9ca9"
                 elide: Text.ElideRight
@@ -106,6 +106,7 @@ Item {
         height: photo.height
         visible: photo.status !== Image.Ready
         color: "#40121319"
+        PlainLabel { anchors.centerIn: parent; text: photo.status === Image.Loading ? qsTr("Loading…") : qsTr("No preview"); color: "#9b9ca9"; font.pixelSize: 10 }
     }
 
     Rectangle {  // selection frame drawn on top

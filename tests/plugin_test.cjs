@@ -39,4 +39,24 @@ for (const file of ['src/PlainLabel.qml', 'src/Main.qml', 'src/MetricCard.qml'])
     if (file.endsWith('PlainLabel.qml')) assert.match(source, /textFormat: Text.PlainText/);
     else assert.doesNotMatch(source, /\b(?:Label|Text)\s*\{/);
 }
-console.log('Plugin security/model tests passed');
+const garage = vm.createContext({});
+vm.runInContext(fs.readFileSync('src/Garage.js', 'utf8'), garage);
+const vehicles = [
+    {id:'car',name:'Alpha',facets:{type:['Car'],brand:['ETK'],source:['BeamNG - Official','Custom'],transmission:['Manual']}},
+    {id:'truck',name:'Bravo',facets:{type:['Truck'],brand:['Gavril'],source:['BeamNG - Official']}},
+    {id:'mod',name:'Charlie',facets:{type:['Truck'],brand:['Sample'],source:['Rally Pack'],configType:['Rally']}},
+    {id:'unknown',name:'Delta'}
+];
+const ids = (...args) => Array.from(garage.select(vehicles, ...args), item => item.id);
+assert.deepEqual(ids({type:'Truck'},'all',[],'','name'), ['truck','mod']);
+assert.deepEqual(ids({type:'Truck',brand:'Sample'},'mods',[],'rally','name'), ['mod']);
+assert.deepEqual(ids({},'custom',[],'','name'), ['car']);
+assert.deepEqual(ids({},'stock',[],'','name'), ['car','truck']);
+assert.deepEqual(ids({},'favorites',['mod'],'','name'), ['mod']);
+assert.deepEqual(ids({},'all',['mod'],'','favorites'), ['mod','car','truck','unknown']);
+assert.deepEqual(ids({},'all',[],'','reverse'), ['unknown','mod','truck','car']);
+assert.deepEqual(ids({transmission:'Manual'},'all',[],'','name'), ['car']);
+assert.equal(garage.options([{facets:{source:['__proto__','Rally Pack','Rally Pack']}}],'source','All').length,3);
+assert.equal(garage.sourceMatches({custom:true},'custom'),true);
+assert.equal(garage.sourceMatches({id:'unknown'},'mods'),false);
+console.log('Plugin security/model and garage filter tests passed');

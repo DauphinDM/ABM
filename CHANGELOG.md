@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.7.1 — Unreleased
+## 0.8.0 — Unreleased
+
+- Add combinable Garage vehicle type, stock/mod/custom content and favorites
+  filters; brand, body style, configuration type, drivetrain, transmission,
+  source/mod, country, fuel and propulsion facets, plus six sort orders.
+- Forward bounded real game metadata and size-aware catalog chunks. Model
+  facets cover any of their configurations; unknown metadata is not guessed.
+- Consolidate the workshop into four related sections. Read vehicle capability
+  flags and disable unsupported, unsafe-at-speed, invalid or policy-locked
+  controls; keep bounce stop available on restricted servers.
+- Keep bridge protocol 0.7.1 and the existing official-server policy unchanged.
+  Updated bridge files and a game restart are needed for capability discovery.
+
+## 0.7.1 — Development snapshot
 
 - Approve frozen regular official server names independently of IP/port, so
   host rotations are supported. Both receiver and game bridge use exact raw

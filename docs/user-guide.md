@@ -36,10 +36,21 @@ or opens diagnostics. Pausing is local display behavior, not a game pause.
 
 ## Car: editing and sandbox actions
 
-Select an active vehicle in BeamNG and load bridge 0.5.0 for the full workshop
-(0.4 retains its original power/world controls). Choose **Power & world**, **Grip &
-handling**, **Gearbox**, or **Fun & recovery**. Adjust **Engine power**,
-**Gravity** and **Deformation immunity**, then choose **Apply tuning**.
+Select your own active vehicle in BeamNG. The four workshop sections are:
+
+- **Engine & protection**: power, beam immunity, engine strength and protection.
+- **Handling & gearbox**: grip, brakes, steering, ESC and manual ratios together.
+- **World & recovery**: gravity/presets, bounce start/stop, repair, fire and tires.
+- **Body · experimental**: width, length and height, with explicit risk consent.
+
+Install all updated bridge files and restart BeamNG when ready. The wire version
+remains **0.7.1**, but older copies do not report the new capability flags. Controls
+stay disabled until the selected vehicle reports support. Gear apply, repair and
+dimensions require a known stopped speed; invalid handling/ratio inputs disable
+Apply. Strength is disabled while engine immunity is on. Server policy remains
+authoritative; **Stop bouncing** remains available when other actions are locked.
+Values are requested drafts, not measured live settings. Apply the relevant group
+explicitly; engine protection and planet presets still apply immediately.
 
 | Control | Range / behavior |
 | --- | --- |
@@ -98,7 +109,7 @@ other systems can still fail. It cannot repair existing deformation.
 
 ### Physical dimensions (development 0.6.2)
 
-Car → **Dimensions · experimental** exposes three independent sliders. Accept
+Car → **Body · experimental** exposes three independent sliders. Accept
 the physics warning, stop bouncing and stop the vehicle, then Apply. BeamMP now
 allows your **own car only** with bridge 0.6.2. Broken beams require repair/reset first.
 **Resized geometry is local, not synchronized to peers.** Other players may see
@@ -126,8 +137,8 @@ game exposes the easter egg. The ABM Stop button checks availability/ownership.
 
 ### Engine strength and protection (development 0.6)
 
-Choose **Car → Engine strength**. Move the slider and press **Apply engine
-strength**. The **Engine indestructible** toggle applies immediately. These
+Choose **Car → Engine & protection**. Move the strength slider and press **Apply
+strength**. The **Indestructible engine** toggle applies immediately. These
 values are requested settings, not live durability measurements.
 
 Strength scales the captured stock torque rating and damage budgets, not
@@ -140,7 +151,7 @@ disables over-torque/over-rev failures, and **freezes thermal simulation**. It
 does not repair existing damage, refill fuel, stop unrelated controllers, or
 protect tires, mounts, turbochargers and the rest of the drivetrain. It is an
 engine-only sandbox mode, not a guarantee of an indestructible car. Turning it
-off restores normal hooks at the selected strength. **Restore stock engine**
+off restores normal hooks at the selected strength. **Stock limits**
 sets 1× with protection off; a vehicle reset also restores these engine edits.
 Effects still need real-game validation.
 
@@ -166,10 +177,26 @@ vehicle; respect server rules, and expect servers to override local actions.
 
 1. Load a map and let the catalog populate.
 2. Search/filter models and click a photo to see its configurations.
-3. Filter configurations by **All**, **Custom**, or **Favorites**.
+3. Combine **All content**, **Custom configs**, **Mod content** or **Stock content**
+   with a vehicle type (Car, Truck, Trailer, Prop, etc., as reported by the game).
 4. Star a model/configuration to persist it as a favorite.
 5. Select a configuration and choose **Spawn** or **Replace**.
 6. Review the confirmation before accepting; replace discards the current car.
+
+The **★** filter is independent: favorites can be combined with all other filters.
+**More filters** adds brand, body style, configuration type, drivetrain,
+transmission, exact source/mod name, country, fuel type and propulsion. Choices
+come from the current model/configuration catalog, not a hardcoded vehicle list.
+Filters with no metadata are disabled. **Clear** resets search and filters for
+the current level; model and configuration filters are remembered separately.
+
+Sort by name A–Z/Z–A, brand, type, source or favorites first. Search includes
+metadata and descriptions, so mod and config details are searchable too.
+At model level a facet means **any configuration** has that value: selecting
+Manual and Diesel does not prove one variant has both. Open the model to narrow
+individual configurations. Models can contain both stock and custom/mod configs,
+so content categories can overlap. Missing metadata is never guessed. The updated
+bridge files are required for full metadata even though the wire version is unchanged.
 
 Photos come from loose game files or installed archives. A configuration without
 its own photo uses a labeled model fallback, or **No preview**. Custom part

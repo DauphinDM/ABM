@@ -94,18 +94,23 @@ local configurations={
   ['Racely (M)']={Configuration='Racely (M)',pcFilename='/vehicles/etk800/Racely (M).pc',preview='/vehicles/etk800/Racely (M).jpg',Source='Custom'}
 }
 core_vehicles={
-  getModelList=function() return {models={etk800={key='etk800',Name='800',Brand='ETK',Type='Car',preview='/vehicles/etk800/default.jpg'}}} end,
+   getModelList=function() return {models={etk800={key='etk800',Name='800',Brand='ETK',Type='Car',preview='/vehicles/etk800/default.jpg',
+     aggregates={Source={['BeamNG - Official']=true,Custom=true},Transmission={Manual=true,Automatic=true}}}}} end,
   getModel=function(model) assert(model=='etk800'); return {configs=configurations} end,
   spawnNewVehicle=function(model,options) assert(model=='etk800' and type(options)=='table' and options.config=='/vehicles/etk800/Racely (M).pc');spawns=spawns+1 end,
   replaceVehicle=function(model,options) assert(model=='etk800' and type(options)=='table' and options.config=='/vehicles/etk800/base.pc');replaces=replaces+1 end
 }
 local response=request('catalog')
 assert(response.kind=='catalog' and response.complete and response.items[1].id=='etk800' and response.items[1].preview.path)
+assert(response.items[1].facets.type[1]=='Car' and #response.items[1].facets.source==2 and #response.items[1].facets.transmission==2)
+local facets=m.catalogFacets({Source='Named mod',aggregates={Source={Mod=true},['Body Style']={Sedan=true},Type={Car=true},Unknown={Secret=true}}})
+assert(#facets.source==2 and facets.bodyStyle[1]=='Sedan' and facets.type[1]=='Car' and facets.Unknown==nil)
 response=request('configs',{model='etk800'})
 assert(response.kind=='configs' and #response.items==2 and response.items[1].name)
 local custom
 for _,c in ipairs(response.items) do if c.key=='Racely (M)' then custom=c end end
 assert(custom and custom.custom and custom.preview.path=='/vehicles/etk800/Racely (M).jpg')
+assert(custom.facets.source[1]=='Custom')
 assert(not request('configs',{model='../bad'}).ok)
 speed=0
 response=request('spawn',{model='etk800',config='Racely (M)'})
@@ -170,6 +175,13 @@ vmEnv=setmetatable({powertrain={getDevicesByCategory=function() return {mainEngi
     end}, extensions={load=function() end}}, {__index=_G})
 local module=assert(loadfile('game/lua/vehicle/extensions/abmTuning.lua')); setfenv(module,vmEnv)
 vmEnv.extensions.abmTuning=module()
+local caps=vmEnv.extensions.abmTuning.capabilities()
+assert(caps.power and caps.engine and caps.grip and caps.brakes and caps.steering and caps.gears and caps.deformation)
+assert(not caps.stability and not caps.dimensions and not caps.ignite)
+assert(engine.torqueCurve[1000]==200 and hydro.inputFactor==2 and gearbox.maxGearIndex==2 and next(limits)==nil)
+local oldHook=engine.lockUp; engine.lockUp=nil
+assert(not vmEnv.extensions.abmTuning.capabilities().engine)
+engine.lockUp=oldHook
 vehicleCommands={}
 assert(not request('tuning',{enginePower=0}).ok)
 assert(not request('tuning',{enginePower=math.huge}).ok)
@@ -351,7 +363,7 @@ local collected
 local env={electrics={values={rpm=3200,abs=true,running=true,turboBoost=14.504}},
   powertrain={getDevice=function() return {maxRPM=7200} end},sensors={gx2=9.81,gy2=0},
   obj={getID=function() return 42 end,queueGameEngineLua=function() end},
-  serialize=function(data) collected=data;return '{}' end,tostring=tostring,type=type}
+  serialize=function(data) collected=data;return '{}' end,tostring=tostring,type=type,pcall=pcall}
 local compiled=assert(loadstring(vehicleCommand));setfenv(compiled,env);compiled()
 assert(collected.abs and collected.engineRunning and collected.boost==1)
 getPlayerVehicle=function() return nil end

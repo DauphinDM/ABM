@@ -243,8 +243,11 @@ void Backend::requestConfigs(const QString &model) {
     if (m_demo) {
         m_configsModel = model;
         m_configs = decorate(QJsonArray{QJsonObject{{"id",model + "/base"},{"model",model},{"key","base"},{"name",tr("Factory configuration")},
+            {"source","BeamNG - Official"},{"drivetrain","RWD"},{"transmission","Manual"},
+            {"facets",QJsonObject{{"source",QJsonArray{"BeamNG - Official"}},{"drivetrain",QJsonArray{"RWD"}},{"transmission",QJsonArray{"Manual"}},{"configType",QJsonArray{"Factory"}}}},
             {"preview",QJsonObject{{"path","/vehicles/" + model + "/default.jpg"}}}},
-            QJsonObject{{"id",model + "/Weekend build"},{"model",model},{"key","Weekend build"},{"name",tr("Weekend build")},{"custom",true}}}, model);
+            QJsonObject{{"id",model + "/Weekend build"},{"model",model},{"key","Weekend build"},{"name",tr("Weekend build")},{"custom",true},{"source","Custom"},
+                {"facets",QJsonObject{{"source",QJsonArray{"Custom"}},{"drivetrain",QJsonArray{"AWD"}},{"transmission",QJsonArray{"Manual"}},{"configType",QJsonArray{"Custom"}}}}}}, model);
         emit configsChanged(); return;
     }
     send("configs", QJsonObject{{"model", model}});
@@ -288,6 +291,10 @@ void Backend::setDemo(bool blocked) {
     m_state.insert("policyReason", blocked ? tr("Official event/new or mismatched server: gameplay changes are blocked.") : tr("Non-official server: no ABM official-server restriction."));
     if (blocked) m_state.insert("server", "Official event · demo");
     m_state.insert("controlsAvailable", true); m_state.insert("sampleHz", 20);
+    m_state.insert("vehicleId",42); m_state.insert("vehicleOwned",true);
+    QVariantMap capabilities;
+    for (const auto key : {"power","engine","grip","brakes","steering","gears","dimensions","deformation","stability","ignite","extinguish","deflate","dealer","repair"}) capabilities.insert(key,true);
+    m_state.insert("capabilities",capabilities);
     m_state.insert("gameSeen", true); m_state.insert("fpsAverage", 86); m_state.insert("fpsMinimum", 63);
     m_gameSeen = true;
     m_state.insert("cpuMs", 9.4); m_state.insert("gpuMs", 11.2);
@@ -297,10 +304,28 @@ void Backend::setDemo(bool blocked) {
     telemetry.insert("lateralG", .32); telemetry.insert("longitudinalG", .14);
     telemetry.insert("fuelVolume", 42); telemetry.insert("boost", .8);
     m_state.insert("telemetry", telemetry);
-    m_catalog = decorate(QJsonArray{QJsonObject{{"id","etk800"},{"name","800 Series"},{"brand","ETK"},{"type","Car"},
-            {"preview",QJsonObject{{"path","/vehicles/etk800/default.jpg"}}}},
-        QJsonObject{{"id","scintilla"},{"name","Scintilla"},{"brand","Civetta"},{"type","Car"},
-            {"preview",QJsonObject{{"path","/vehicles/scintilla/default.jpg"}}}}});
+    QJsonArray models{
+        QJsonObject{{"id","etk800"},{"name","800 Series"},{"brand","ETK"},{"type","Car"},{"source","BeamNG - Official"},
+            {"facets",QJsonObject{{"type",QJsonArray{"Car"}},{"brand",QJsonArray{"ETK"}},{"source",QJsonArray{"BeamNG - Official","Custom"}},{"bodyStyle",QJsonArray{"Sedan","Wagon"}},{"country",QJsonArray{"Germany"}},{"drivetrain",QJsonArray{"AWD","RWD"}},{"transmission",QJsonArray{"Manual","Automatic"}},{"fuelType",QJsonArray{"Gasoline","Diesel"}},{"propulsion",QJsonArray{"ICE"}}}}},
+        QJsonObject{{"id","scintilla"},{"name","Scintilla"},{"brand","Civetta"},{"type","Car"},{"source","BeamNG - Official"},
+            {"facets",QJsonObject{{"bodyStyle",QJsonArray{"Coupe"}},{"country",QJsonArray{"Italy"}},{"transmission",QJsonArray{"DCT"}}}}},
+        QJsonObject{{"id","tseries"},{"name","T-Series"},{"brand","Gavril"},{"type","Truck"},{"source","BeamNG - Official"},
+            {"facets",QJsonObject{{"bodyStyle",QJsonArray{"Semi Truck"}},{"fuelType",QJsonArray{"Diesel"}},{"country",QJsonArray{"United States"}}}}},
+        QJsonObject{{"id","pickup"},{"name","D-Series"},{"brand","Gavril"},{"type","Truck"},{"source","BeamNG - Official"},
+            {"facets",QJsonObject{{"bodyStyle",QJsonArray{"Pickup"}},{"country",QJsonArray{"United States"}}}}},
+        QJsonObject{{"id","demo_rally"},{"name","Rally truck · demo mod"},{"brand","Sample Works"},{"type","Truck"},{"source","Sample Rally Pack"},
+            {"facets",QJsonObject{{"source",QJsonArray{"Sample Rally Pack"}},{"configType",QJsonArray{"Rally"}},{"drivetrain",QJsonArray{"AWD"}}}}}
+    };
+    for (qsizetype index = 0; index < models.size(); ++index) {
+        auto item = models[index].toObject();
+        auto facets = item.value("facets").toObject();
+        for (const auto key : {"type","brand","source"}) if (!facets.contains(key)) facets.insert(key,QJsonArray{item.value(key)});
+        item.insert("facets",facets);
+        const auto id = item.value("id").toString();
+        item.insert("preview",QJsonObject{{"path","/vehicles/" + (id == "demo_rally" ? QString("tseries") : id) + "/default.jpg"}});
+        models[index] = item;
+    }
+    m_catalog = decorate(models);
     m_configs.clear(); m_configsModel.clear();
     for (int i = 0; i < 300; ++i)
         m_history.append(QVariantMap{{"speed", 20 + 8 * std::sin(i * .06)}, {"rpm", 3000 + 900 * std::sin(i * .06)}, {"fps", 85 + 5 * std::sin(i * .13)}, {"ping", 32 + 4 * std::sin(i * .09)}});

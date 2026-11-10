@@ -1,5 +1,22 @@
 # ABM visual audit
 
+## 0.8 — selector facets and grouped workshop
+
+- Inspected ten demo captures in `/tmp/opencode/abm-08-audit`: four workshop
+  groups, Garage, expanded facets, content menu, configs, config facets and
+  policy-locked controls. Contact sheet is local, not a release asset.
+- Review fixes: compact handling fields/editor, preserve space at narrow Garage
+  widths, and show a clear placeholder for missing/corrupt previews. One installed
+  game JPEG could not decode; capture logs include that image-provider warning.
+- Single test pass: 30 Qt tests passed, including combined filters and disabled
+  moving/invalid/immunity/policy controls. Node filter/security, headless CLI and
+  standalone lifecycle passed. Lua passed new metadata/capability and existing
+  action/policy cases, then its isolated telemetry mock lacked `pcall`; fixed
+  the mock during review, without a second test loop.
+- Capability flags are conservative UI hints, not authorization. Updated bridge
+  files require a game restart; live capability reporting remains unverified.
+  No live game commands or game restarts were performed.
+
 ## 0.7 — official-server lock
 
 - Captured allowed and blocked Car pages in `/tmp/opencode/abm-07-audit`,

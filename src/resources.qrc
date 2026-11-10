@@ -1,5 +1,7 @@
 <RCC><qresource prefix="/">
   <file>Main.qml</file>
+  <file>Garage.js</file>
+  <file>GarageFilter.qml</file>
   <file>PlainLabel.qml</file>
   <file>MetricCard.qml</file>
   <file>DriveGauge.qml</file>

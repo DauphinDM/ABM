@@ -338,6 +338,55 @@ M.onReset = function()
     if hydro.abmInputFactor then hydro.inputFactor, hydro.abmInputFactor = hydro.abmInputFactor, nil end
   end
 end
+M.capabilities = function()
+  local caps = {power=false, engine=false, grip=false, brakes=false, steering=false, gears=false,
+    dimensions=false, deformation=false, stability=false, ignite=false, extinguish=false, deflate=false}
+  for _, device in pairs(powertrain and powertrain.getDevicesByCategory and powertrain.getDevicesByCategory('engine') or {}) do
+    if type(device.torqueCurve) == 'table' and next(device.torqueCurve) then caps.power = true end
+  end
+  local engines = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('combustionEngine') or {}
+  caps.engine = next(engines) ~= nil
+  for _, device in pairs(engines) do
+    for _, field in ipairs(strengthFields) do if not finite(device[field]) then caps.engine = false end end
+    for _, method in ipairs(protectionMethods) do if type(device[method]) ~= 'function' then caps.engine = false end end
+    if not finite(device.maxPhysicalAV) or not device.thermals or type(device.thermals.updateGFX) ~= 'function' then caps.engine = false end
+  end
+  for id, wheel in pairs(v.data.wheels or {}) do
+    local state = wheels and wheels.wheels and wheels.wheels[id]
+    if not (state and (state.isTireDeflated or state.isBroken)) and type(wheel.treadNodes) == 'table'
+      and next(wheel.treadNodes) and type(obj.setNodeFrictionSlidingCoefs) == 'function' then caps.grip = true end
+  end
+  caps.brakes = wheels ~= nil and type(wheels.scaleBrakeTorque) == 'function'
+  for _, hydro in pairs(hydros and hydros.hydros or {}) do
+    if (hydro.inputSource == 'steering_input' or hydro.inputSource == 'steering') and finite(hydro.inputFactor) then caps.steering = true end
+  end
+  local devices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('manualGearbox') or {}
+  local gearbox, amount
+  amount = 0
+  for _, device in pairs(devices) do gearbox, amount = device, amount+1 end
+  if amount == 1 and type(gearbox.setGearIndex) == 'function' and type(powertrain.calculateTreeInertia) == 'function' then
+    caps.gears = pcall(function()
+      controllerShiftPoints(gearbox)
+      for _, field in ipairs(gearFields) do
+        if type(gearbox[field]) ~= 'table' or gearbox[field][gearbox.maxGearIndex] == nil then error('Unsupported gearbox') end
+      end
+    end)
+  end
+  caps.dimensions = next(v.data.nodes or {}) ~= nil and next(v.data.beams or {}) ~= nil
+  for _, method in ipairs({'getNodePosition','setNodePosition','getBeamRestLength','setBeamLength','beamIsBroken','commitLoad','getDirectionVector','getDirectionVectorUp'}) do
+    if type(obj[method]) ~= 'function' then caps.dimensions = false end
+  end
+  if caps.dimensions then
+    for _, beam in pairs(v.data.beams) do if obj:beamIsBroken(beam.cid) then caps.dimensions = false; break end end
+  end
+  caps.deformation = next(v.data.beams or {}) ~= nil and type(obj.setBeamDeform) == 'function' and type(obj.setBeamStrength) == 'function'
+  local esc = controller and controller.getController and controller.getController('esc')
+  caps.stability = esc ~= nil and esc.isExisting == true and type(esc.toggleESCMode) == 'function'
+  caps.ignite = fire ~= nil and type(fire.igniteVehicle) == 'function'
+  caps.extinguish = fire ~= nil and type(fire.extinguishVehicle) == 'function'
+  caps.deflate = caps.grip and beamstate ~= nil and type(beamstate.deflateTires) == 'function'
+  return caps
+end
 M.restoreForPolicy = function()
   -- Restore ABM-owned values before the normal physics reset. Reset alone does
   -- not rebuild a modified torque curve or the manual gearbox's private tables.

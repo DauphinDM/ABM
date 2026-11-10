@@ -6,7 +6,7 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest release: 0.4.0 · Development: 0.7.1.** The repository and its releases
+**Latest release: 0.4.0 · Development: 0.8.0.** The repository and its releases
 are private. This is an independent project, not affiliated with BeamNG or BeamMP.
 
 ## What it does
@@ -15,7 +15,7 @@ are private. This is an independent project, not affiliated with BeamNG or BeamM
 | --- | --- |
 | **Drive** | Speed/RPM gauge, gear, fuel, speed history, coolant, boost, warnings |
 | **Car** | Power entry, engine strength/protection, gravity, grip/brakes/steering, manual gears, ESC, bounce start/stop, experimental width/length/height, repair/fire/tires (safe extra gears and own-car multiplayer resizing require bridge 0.6.2; resizing is not synchronized to peers) |
-| **Garage** | Search real installed models and configurations, preview photos, custom configs, favorites, spawn/replace confirmations |
+| **Garage** | Combine vehicle type, stock/mod/custom content, favorites and nine metadata filters; sort models/configs, preview photos, confirm spawn/replace |
 | **Session** | Trip time/distance, top/average speed, FPS history, searchable multiplayer players, owned vehicles |
 
 Diagnostics adds temperature, pedals, steering, G forces, frame times and timing
@@ -25,6 +25,12 @@ not invented. Photos are read from your own installation, not downloaded.
 The UI uses compact, square **Qt Quick Basic** controls, translucent surfaces,
 opaque text, and the live Omarchy accent. English is included. The standalone
 app works without Omarchy; Windows support remains experimental.
+
+The Car workshop groups related controls into **Engine & protection**,
+**Handling & gearbox**, **World & recovery**, and **Body · experimental**.
+Vehicle capabilities, movement, invalid inputs and server policy disable
+inapplicable controls. Install the updated bridge files and restart BeamNG
+when ready to receive capability data (wire version remains 0.7.1).
 
 ## Documentation
 

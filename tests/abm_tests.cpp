@@ -81,6 +81,14 @@ private slots:
         const auto out=Telemetry::sanitize(QJsonDocument(input).toJson());
         QCOMPARE(out.value("telemetry").toObject().size(),1); QVERIFY(!out.contains("run"));
     }
+    void vehicleCapabilitiesAreStrictAndBounded() {
+        auto input=QJsonDocument::fromJson(packet()).object();
+        input.insert("capabilities",QJsonObject{{"power",true},{"gears",false},{"engine","yes"},{"runLua",true}});
+        input.insert("vehicleOwned",false);
+        auto out=Telemetry::sanitize(QJsonDocument(input).toJson());
+        QCOMPARE(out.value("capabilities").toObject(),(QJsonObject{{"power",true},{"gears",false}}));
+        QVERIFY(!out.value("vehicleOwned").toBool());
+    }
     void boundsCollectionsAndStrings() {
         auto input=QJsonDocument::fromJson(packet()).object(); QJsonArray players;
         for(int i=0;i<200;++i) players.append(QJsonObject{{"name",QString(100,'a')}});
@@ -286,8 +294,10 @@ private slots:
         Fixture f; QVERIFY(f.start()); Backend backend(f.path); QTRY_VERIFY(backend.connected());
         backend.requestCatalog(); QTRY_VERIFY(f.game.hasPendingDatagrams()); const auto command=f.command();
         f.send({{"kind","catalog"},{"requestId",command.value("requestId")},{"chunk",0},{"complete",true},
-            {"items",QJsonArray{QJsonObject{{"id","etk800"},{"name","800"}},QJsonObject{{"id","../bad"}}}}});
+            {"items",QJsonArray{QJsonObject{{"id","etk800"},{"name","800"},{"facets",QJsonObject{{"type",QJsonArray{"Car","Car",42}},{"source",QJsonArray{"Custom"}},{"unknown",QJsonArray{"secret"}}}}},QJsonObject{{"id","../bad"}}}}});
         QTRY_COMPARE(backend.catalog().size(),1); QVERIFY(!backend.busy());
+        const auto facets=backend.catalog()[0].toMap().value("facets").toMap();
+        QCOMPARE(facets.value("type").toList(),QVariantList{"Car"}); QVERIFY(!facets.contains("unknown"));
         backend.requestConfigs("../bad"); QVERIFY(!backend.busy());
         QLocalSocket client; client.connectToServer(Telemetry::socketPath(f.path)); QTRY_VERIFY(client.canReadLine()); messages(client);
         client.write("{\"action\":\"configs\",\"requestId\":\"bad\",\"model\":\"../bad\"}\n");
@@ -419,7 +429,11 @@ private slots:
         window->setProperty("helpVisible",true); QTest::keyClick(window,Qt::Key_Escape); QVERIFY(!window->property("helpVisible").toBool());
         QTest::qWait(1100); QVERIFY(window->property("uiFps").toInt()>0); QVERIFY(window->property("uiFps").toInt()<=65);
         window->setProperty("page",2); QTest::qWait(80);
-        auto *grid=window->findChild<QQuickItem *>("garageGrid"); QVERIFY(grid); QCOMPARE(grid->property("count").toInt(),2);
+        auto *grid=window->findChild<QQuickItem *>("garageGrid"); QVERIFY(grid); QCOMPARE(grid->property("count").toInt(),5);
+        window->setProperty("modelFacets",QVariantMap{{"type","Truck"}}); QTRY_COMPARE(grid->property("count").toInt(),3);
+        window->setProperty("modelFilter","mods"); QTRY_COMPARE(grid->property("count").toInt(),1);
+        window->setProperty("modelFacets",QVariantMap{}); window->setProperty("modelFilter","custom"); QTRY_COMPARE(grid->property("count").toInt(),1);
+        window->setProperty("modelFilter","all"); QTRY_COMPARE(grid->property("count").toInt(),5);
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,grid->mapToScene(QPointF(60,50)).toPoint());
         QTRY_COMPARE(backend.configs().size(),2); QTRY_COMPARE(grid->property("count").toInt(),2);
         QVERIFY(!window->property("selectedModel").toMap().value("id").toString().isEmpty());
@@ -427,6 +441,18 @@ private slots:
         QTest::keyClick(window,Qt::Key_U); QCOMPARE(search->property("text").toString(),QString("u")); QVERIFY(!window->property("metric").toBool());
         QTest::keyClick(window,Qt::Key_Escape); QTRY_COMPARE(search->property("text").toString(),QString());
         QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(window->property("selectedModel").toMap().isEmpty());
+        window->setProperty("page",1);
+        auto *section=window->findChild<QQuickItem *>("carSection"); QVERIFY(section); QCOMPARE(section->property("count").toInt(),4);
+        auto *engineToggle=window->findChild<QQuickItem *>("engineToggle"); auto *strength=window->findChild<QQuickItem *>("strengthSlider");
+        QVERIFY(engineToggle && strength); QVERIFY(strength->isEnabled()); engineToggle->setProperty("checked",true); QTRY_VERIFY(!strength->isEnabled());
+        section->setProperty("currentIndex",1);
+        auto *ratios=window->findChild<QQuickItem *>("ratiosInput"); auto *add=window->findChild<QQuickItem *>("addGearButton");
+        auto *apply=window->findChild<QQuickItem *>("gearsApplyButton"); QVERIFY(ratios && add && apply);
+        QVERIFY(add->isEnabled()); QVERIFY(!apply->isEnabled()); // Demo is moving.
+        ratios->setProperty("text","bad, ratios"); QTRY_VERIFY(!add->isEnabled()); QVERIFY(!apply->isEnabled());
+        section->setProperty("currentIndex",2); auto *repair=window->findChild<QQuickItem *>("repairButton"); QVERIFY(repair && !repair->isEnabled());
+        backend.setDemo(true); QTRY_VERIFY(!engineToggle->isEnabled());
+        auto *stop=window->findChild<QQuickItem *>("dealerStopButton"); QVERIFY(stop && stop->isEnabled());
         write(dir.filePath("language"),"da\n"); QTRY_COMPARE(translator.language(),QString("da"));
         for (const auto dimensions : {QSize(380,600),QSize(540,850),QSize(900,850)}) {
             window->resize(dimensions); QTest::qWait(100); QVERIFY(grid->width()>0);
