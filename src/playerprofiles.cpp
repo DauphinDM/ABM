@@ -44,10 +44,31 @@ void PlayerProfiles::copySessionId(const QString &key) {
     ++m_lookupRevision; m_intent.clear(); if(m_reply) m_reply->abort();
     QGuiApplication::clipboard()->setText(id.toString()); tell(tr("Copied session ID, not permanent account ID."));
 }
+void PlayerProfiles::copyText(const QString &text, const QString &message) {
+    if (text.isEmpty() || !QGuiApplication::clipboard()) { tell(tr("Player information unavailable.")); return; }
+    ++m_lookupRevision; m_intent.clear(); if (m_reply) m_reply->abort();
+    auto *clipboard = QGuiApplication::clipboard();
+    clipboard->setText(text);
+    tell(clipboard->text() == text ? message : tr("Clipboard did not retain the player information."));
+}
+void PlayerProfiles::copyName(const QString &key) {
+    copyText(row(key).value("rawName").toString(), tr("Copied player name."));
+}
+void PlayerProfiles::copyDetails(const QString &key) {
+    const auto p = row(key);
+    if (p.isEmpty()) { tell(tr("Player information unavailable.")); return; }
+    QStringList lines;
+    lines << tr("Name: %1").arg(p.value("rawName").toString());
+    if (p.contains("sessionPlayerId")) lines << tr("Session ID: %1 (not a permanent account ID)").arg(p.value("sessionPlayerId").toString());
+    if (!p.value("role").toString().isEmpty()) lines << tr("Role: %1").arg(p.value("role").toString());
+    if (p.contains("vehicles")) lines << tr("Vehicles: %1").arg(p.value("vehicles").toString());
+    if (p.contains("ping")) lines << tr("Ping: %1 ms (%2)").arg(p.value("ping").toString(), p.value("pingSource").toString());
+    copyText(lines.join('\n'), tr("Copied session player details."));
+}
 void PlayerProfiles::copyAccount(const QString &key) {
     ++m_lookupRevision; if(m_reply) m_reply->abort();
     const auto p=row(key); const auto name=p.value("rawName").toString(); const auto url=profileUrl(name,true);
-    if (p.isEmpty() || p.value("guest").toBool() || url.isEmpty() || !QGuiApplication::clipboard()) { tell(tr("Permanent account ID unavailable (guest or unknown identity).")); return; }
+    if (p.isEmpty() || p.value("guest").toBool() || url.isEmpty() || !QGuiApplication::clipboard()) { tell(tr("Public forum ID unavailable (guest or unknown identity).")); return; }
     const auto session=m_session; const auto revision=m_lookupRevision, clip=m_clipboardRevision;
     m_intent=key;
     QNetworkRequest request(url); request.setTransferTimeout(10000);

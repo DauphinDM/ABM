@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("abm");
     app.setApplicationDisplayName("ABM");
-    app.setApplicationVersion("0.11.0");
+    app.setApplicationVersion("0.11.1");
     app.setDesktopFileName("abm");
     app.setWindowIcon(QIcon::fromTheme("abm"));
     if (help) {
@@ -136,7 +136,8 @@ int main(int argc, char *argv[]) {
             if (!ownedReceiver->start(receiverPort)) { receiverError = ownedReceiver->errorString(); ownedReceiver.reset(); }
         }
     }
-    QQuickStyle::setStyle("Basic");
+    QQuickStyle::setStyle("MotorsportGlass");
+    QQuickStyle::setFallbackStyle("Basic");
     Translator translator; app.installTranslator(&translator);
     Theme theme(capture ? QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/beamside-preview-theme" : QString());
     Backend backend;

@@ -1,0 +1,9 @@
+module MotorsportGlass
+Button 2.0 Button.qml
+TextField 2.0 TextField.qml
+TextArea 2.0 TextArea.qml
+Slider 2.0 Slider.qml
+DialogButtonBox 2.0 DialogButtonBox.qml
+Dialog 2.0 Dialog.qml
+ComboBox 2.0 ComboBox.qml
+internal FieldSurface FieldSurface.qml

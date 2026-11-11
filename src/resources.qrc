@@ -11,10 +11,28 @@
   <file>DriveGauge.qml</file>
   <file>TrendChart.qml</file>
   <file>VariantCard.qml</file>
+  <file>GlassPanel.qml</file>
+  <file>StatusPill.qml</file>
+  <file>HeroCluster.qml</file>
+  <file>TelemetryRibbon.qml</file>
+  <file>GMeter.qml</file>
+  <file>NavDock.qml</file>
+  <file>CommandPalette.qml</file>
   <file>agent-skill.md</file>
   <file>i18n/en.json</file>
   <file alias="bridge/beamdeck.lua">../game/lua/ge/extensions/beamdeck.lua</file>
   <file alias="bridge/modScript.lua">../game/scripts/beamdeck/modScript.lua</file>
   <file alias="bridge/abmTuning.lua">../game/lua/vehicle/extensions/abmTuning.lua</file>
   <file alias="bridge/official-servers.json">../game/lua/ge/extensions/abm-official-servers.json</file>
+</qresource>
+<qresource prefix="/qt/qml/MotorsportGlass">
+  <file alias="qmldir">GlassStyle.qmldir</file>
+  <file alias="Button.qml">GlassButton.qml</file>
+  <file alias="TextField.qml">GlassTextField.qml</file>
+  <file alias="TextArea.qml">GlassTextArea.qml</file>
+  <file alias="Slider.qml">GlassSlider.qml</file>
+  <file alias="FieldSurface.qml">GlassFieldSurface.qml</file>
+  <file alias="DialogButtonBox.qml">GlassDialogButtonBox.qml</file>
+  <file alias="Dialog.qml">GlassDialog.qml</file>
+  <file alias="ComboBox.qml">GlassComboBox.qml</file>
 </qresource></RCC>

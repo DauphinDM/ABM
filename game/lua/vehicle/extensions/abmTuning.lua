@@ -5,6 +5,7 @@ local generation = 0
 local revisions = {}
 local acceptedPower = nil
 local gearBase
+local gearedFields = {'gearRatios','gearWhineCoefsOutput','gearWhineCoefsInput'}
 local dimensionBase
 local engineBases = {}
 local rpmBases, clutchBases = {}, {}
@@ -25,6 +26,23 @@ local function copy(t)
   return out
 end
 local function between(n, low, high) return finite(n) and n >= low and n <= high end
+
+-- One primary gearbox. CVT is supported as a single-ratio edit; other automatic
+-- types keep their existing gear count and only replace the ratios.
+local gearboxTypes = {
+  {'manualGearbox','manual'}, {'automaticGearbox','automatic'}, {'dctGearbox','dct'},
+  {'sequentialGearbox','sequential'}, {'cvtGearbox','cvt'}
+}
+local function primaryGearbox()
+  local found, kind, count = nil, nil, 0
+  for _, spec in ipairs(gearboxTypes) do
+    for _, device in pairs(powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType(spec[1]) or {}) do
+      found, kind, count = device, spec[2], count + 1
+    end
+  end
+  if count ~= 1 then return nil, nil end
+  return found, kind
+end
 
 local rpmFields = {'maxRPM','maxAV','revLimiterRPM','revLimiterAV','revLimiterMaxAV','invRevLimiterRange'}
 local function rpmDevices()
@@ -81,6 +99,7 @@ local function protectClutch(enabled)
   local devices=clutches()
   for _,d in pairs(devices) do
     if enabled and (d.clutchPermanentlyDamaged or d.thermalEfficiency < .999 or d.damageLockTorqueCoef < .999) then error('Clutch already damaged or overheated. Repair/reset before enabling protection.') end
+    if enabled and (not finite(d.lockTorque) or d.lockTorque<=0 or not finite(d.maxClutchAngle) or d.maxClutchAngle<=0) then error('Unsupported clutch clamp API.') end
     local base=clutchBases[d]
     if base and (d.updateGFX~=base.wrapper or d.applyDeformGroupDamage~=protected) then
       error('Another mod replaced clutch hooks; reset the vehicle before restoring.')
@@ -89,20 +108,25 @@ local function protectClutch(enabled)
   for _,d in pairs(devices) do
     local base=clutchBases[d]
     if enabled and not base then
-      base={updateGFX=d.updateGFX,damage=d.applyDeformGroupDamage,wear=d.wearLockTorqueCoef}
+      base={updateGFX=d.updateGFX,damage=d.applyDeformGroupDamage,wear=d.wearLockTorqueCoef,
+        lockTorque=d.lockTorque,maxAngle=d.maxClutchAngle}
       base.wrapper=function(device)
         device.frictionLossPerUpdate=0
         device.wearLockTorqueCoef=base.wear
+        device.lockTorque=base.lockTorque*20
+        device.maxClutchAngle=base.maxAngle*20
       end
       clutchBases[d]=base
       d.updateGFX,d.applyDeformGroupDamage=base.wrapper,protected
+      d.lockTorque,d.maxClutchAngle=base.lockTorque*20,base.maxAngle*20
     elseif not enabled and base then
       d.updateGFX,d.applyDeformGroupDamage=base.updateGFX,base.damage
+      d.lockTorque,d.maxClutchAngle=base.lockTorque,base.maxAngle
       clutchBases[d]=nil
     end
   end
-  return enabled and 'Clutch heat/deformation protection ON. Heat simulation is frozen; stock torque capacity and physical breakage remain.'
-    or 'Clutch protection OFF; normal heat and deformation hooks restored.'
+  return enabled and 'Clutch heat/deformation protection ON. Heat simulation is frozen and clamp capacity is raised 20x; other drivetrain shock and damage remain possible.'
+    or 'Clutch protection OFF; normal heat, clamp capacity and deformation hooks restored.'
 end
 
 local function restoreEngine(device, base)
@@ -290,17 +314,152 @@ local function replacePoints(target, source)
   for index, point in pairs(copyPoints(source)) do target[index]=point end
 end
 
+local function gearSnapshot(gearbox, kind)
+  return {device=gearbox,kind=kind,ratios=copy(gearbox.gearRatios),
+    minRatio=gearbox.minGearRatio,maxRatio=gearbox.maxGearRatio,
+    count=gearbox.gearCount,max=gearbox.maxGearIndex,min=gearbox.minGearIndex,
+    gearRatio=gearbox.gearRatio,desired=gearbox.desiredGearRatio,
+    gearRatio1=gearbox.gearRatio1,gearRatio2=gearbox.gearRatio2,
+    gearIndex=gearbox.gearIndex,gearIndex1=gearbox.gearIndex1,gearIndex2=gearbox.gearIndex2,
+    whineOutput=type(gearbox.gearWhineCoefsOutput)=='table' and copy(gearbox.gearWhineCoefsOutput) or nil,
+    whineInput=type(gearbox.gearWhineCoefsInput)=='table' and copy(gearbox.gearWhineCoefsInput) or nil}
+end
+
+local function restoreGearSnapshot(base)
+  local gearbox=base.device
+  for key in pairs(gearbox.gearRatios or {}) do gearbox.gearRatios[key]=nil end
+  for key,value in pairs(base.ratios or {}) do gearbox.gearRatios[key]=value end
+  gearbox.minGearRatio,gearbox.maxGearRatio=base.minRatio,base.maxRatio
+  gearbox.gearCount,gearbox.maxGearIndex,gearbox.minGearIndex=base.count,base.max,base.min
+  gearbox.gearRatio,gearbox.desiredGearRatio=base.gearRatio,base.desired
+  gearbox.gearRatio1,gearbox.gearRatio2=base.gearRatio1,base.gearRatio2
+  gearbox.gearIndex,gearbox.gearIndex1,gearbox.gearIndex2=base.gearIndex,base.gearIndex1,base.gearIndex2
+  if base.whineOutput then
+    for key in pairs(gearbox.gearWhineCoefsOutput or {}) do gearbox.gearWhineCoefsOutput[key]=nil end
+    for key,value in pairs(base.whineOutput) do gearbox.gearWhineCoefsOutput[key]=value end
+  end
+  if base.whineInput then
+    for key in pairs(gearbox.gearWhineCoefsInput or {}) do gearbox.gearWhineCoefsInput[key]=nil end
+    for key,value in pairs(base.whineInput) do gearbox.gearWhineCoefsInput[key]=value end
+  end
+  pcall(powertrain.calculateTreeInertia)
+end
+
+local function ratiosBounds(ratios, skip)
+  local low,high=math.huge,0
+  for index,ratio in pairs(ratios) do
+    if index~=skip and ratio~=0 then low,high=math.min(low,math.abs(ratio)),math.max(high,math.abs(ratio)) end
+  end
+  return low,high
+end
+
+-- Re-engage a captured gear after resizing. The backend already requires a
+-- stopped vehicle, so a direct shift without sync time is the safe path and
+-- prevents leaving the transmission in neutral when Apply finishes.
+local function replaceGear(gearbox, kind, index, index1, index2)
+  local low = finite(gearbox.minGearIndex) and gearbox.minGearIndex or -1
+  local high = finite(gearbox.maxGearIndex) and gearbox.maxGearIndex or 0
+  local function clamp(value)
+    value = finite(value) and math.floor(value) or 0
+    return math.max(low, math.min(high, value))
+  end
+  local target = clamp(index)
+  if kind == 'dct' and type(gearbox.setGearIndex1) == 'function' and type(gearbox.setGearIndex2) == 'function' then
+    local first, second = clamp(index1 or target), clamp(index2 or target)
+    gearbox:setGearIndex1(first)
+    gearbox:setGearIndex2(second)
+    gearbox.gearIndex, gearbox.gearIndex1, gearbox.gearIndex2 = first, first, second
+  elseif type(gearbox.setGearIndex) == 'function' then
+    gearbox:setGearIndex(target)
+    gearbox.gearIndex = target
+  else
+    error('Transmission gear selector unavailable.')
+  end
+  local ratios = gearbox.gearRatios or {}
+  if finite(ratios[gearbox.gearIndex]) then gearbox.gearRatio = ratios[gearbox.gearIndex] end
+  gearbox.desiredGearIndex = gearbox.gearIndex
+  gearbox.desiredGearRatio = gearbox.gearRatio
+  if finite(gearbox.gearIndex1) then gearbox.gearRatio1 = ratios[gearbox.gearIndex1] end
+  if finite(gearbox.gearIndex2) then gearbox.gearRatio2 = ratios[gearbox.gearIndex2] end
+  powertrain.calculateTreeInertia()
+end
+
 local function gears(ratios)
   if type(ratios) ~= 'table' or #ratios < 1 then error('Enter forward gear ratios.') end
   for _, ratio in ipairs(ratios) do
     if not between(ratio, 0.01, 100) then error('Ratios must be finite and between 0.01 and 100.') end
   end
-  local devices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('manualGearbox') or {}
-  local gearbox, count
-  count = 0
-  for _, device in pairs(devices) do gearbox, count = device, count + 1 end
-  if count ~= 1 or type(gearbox.setGearIndex) ~= 'function' then error('Requires exactly one supported manual gearbox; automatic/CVT/DCT are not supported.') end
+  local gearbox, kind = primaryGearbox()
+  if not gearbox then error('Requires exactly one supported transmission.') end
   if type(powertrain.calculateTreeInertia) ~= 'function' then error('Powertrain inertia API unavailable.') end
+  if kind == 'cvt' then
+    if #ratios ~= 1 then error('CVT accepts one fixed ratio.') end
+    if not finite(gearbox.minGearRatio) or not finite(gearbox.maxGearRatio) then error('CVT ratio range unavailable.') end
+    if not gearBase or gearBase.device ~= gearbox then gearBase=gearSnapshot(gearbox,kind) end
+    local ratio=ratios[1]
+    local ok,err=pcall(function()
+      gearbox.minGearRatio,gearbox.maxGearRatio=ratio,ratio
+      if type(gearbox.setGearRatio)=='function' then gearbox:setGearRatio(ratio) else gearbox.gearRatio=ratio end
+      powertrain.calculateTreeInertia()
+    end)
+    if not ok then restoreGearSnapshot(gearBase); gearBase=nil; error('CVT update failed; previous range restored: '..tostring(err)) end
+    return 'CVT ratio fixed at '..tostring(ratio)..'. The variator range is now a single ratio; reset restores the stock range when persistence is ON.'
+  end
+  if kind ~= 'manual' then
+    if #ratios > 256 then error('At most 256 forward ratios are supported.') end
+    for _,field in ipairs(gearedFields) do
+      if type(gearbox[field])~='table' then error('Transmission table unavailable: '..field..'.') end
+    end
+    local template=gearbox.maxGearIndex
+    if not between(template,1,256) or template%1~=0 then error('Unsupported gearbox gear count.') end
+    local points=controllerShiftPoints(gearbox)
+    if not gearBase or gearBase.device ~= gearbox then
+      gearBase=gearSnapshot(gearbox,kind)
+      gearBase.points,gearBase.stockPoints=points,copyPoints(points)
+      for _,field in ipairs(gearedFields) do gearBase[field]=copy(gearbox[field]) end
+    end
+    if points ~= gearBase.points then error('Shift controller changed; reset the vehicle before editing gears.') end
+    local nextPoints=copyPoints(gearBase.stockPoints)
+    for index in pairs(nextPoints) do if type(index)=='number' and index>0 then nextPoints[index]=nil end end
+    for index=1,#ratios do nextPoints[index]=copy(gearBase.stockPoints[math.min(index,gearBase.max)]) end
+    local staged,previous={},{}
+    for _,field in ipairs(gearedFields) do
+      previous[field]=gearbox[field]
+      staged[field]=copy(gearBase[field])
+      for index in pairs(staged[field]) do if type(index)=='number' and index>0 then staged[field][index]=nil end end
+      for index=1,#ratios do
+        staged[field][index]=field=='gearRatios' and ratios[index] or (gearBase[field][math.min(index,gearBase.max)] or 0)
+      end
+    end
+    local low,high=ratiosBounds(staged.gearRatios)
+    if not finite(low) or high<=0 then error('No usable forward ratios.') end
+    local previousGear, previousGear1, previousGear2 = gearbox.gearIndex, gearbox.gearIndex1, gearbox.gearIndex2
+    -- The GE bridge requires a stopped vehicle; select neutral before resizing.
+    if type(gearbox.setGearIndex)=='function' then gearbox:setGearIndex(0)
+    elseif type(gearbox.setGearIndex1)=='function' and type(gearbox.setGearIndex2)=='function' then
+      gearbox:setGearIndex1(0); gearbox:setGearIndex2(0)
+    else error('Transmission neutral selector unavailable.') end
+    local oldMax,oldCount,oldLow,oldHigh=gearbox.maxGearIndex,gearbox.gearCount,gearbox.minGearRatio,gearbox.maxGearRatio
+    local oldPoints=copyPoints(points)
+    local ok,err=pcall(function()
+      replacePoints(points,nextPoints)
+      for _,field in ipairs(gearedFields) do gearbox[field]=staged[field] end
+      gearbox.maxGearIndex=#ratios
+      gearbox.gearCount=#ratios+math.abs(gearbox.minGearIndex or -1)
+      gearbox.minGearRatio,gearbox.maxGearRatio=low,high
+      replaceGear(gearbox,kind,previousGear,previousGear1,previousGear2)
+    end)
+    if not ok then
+      for _,field in ipairs(gearedFields) do gearbox[field]=previous[field] end
+      replacePoints(points,oldPoints)
+      gearbox.maxGearIndex,gearbox.gearCount,gearbox.minGearRatio,gearbox.maxGearRatio=oldMax,oldCount,oldLow,oldHigh
+      pcall(replaceGear,gearbox,kind,previousGear,previousGear1,previousGear2)
+      pcall(powertrain.calculateTreeInertia)
+      error('Gearbox update failed; previous ratios and gear count restored: '..tostring(err))
+    end
+    return 'Ratios applied to the '..kind..' transmission: '..#ratios..' forward gears. Reverse/neutral are preserved and the previous gear was re-engaged. Reset restores stock ratios and count when persistence is ON; Full reset clears it.'
+  end
+  if type(gearbox.setGearIndex) ~= 'function' then error('Requires exactly one supported manual gearbox.') end
   local fields = gearFields
   local template = gearbox.maxGearIndex
   for _, field in ipairs(fields) do
@@ -308,7 +467,7 @@ local function gears(ratios)
   end
   local points = controllerShiftPoints(gearbox)
   if not gearBase or gearBase.device ~= gearbox then
-    gearBase = {device=gearbox, max=template, count=gearbox.gearCount,
+    gearBase = {kind='manual',device=gearbox, max=template, count=gearbox.gearCount,
       minRatio=gearbox.minGearRatio,maxRatio=gearbox.maxGearRatio,
       points=points,stockPoints=copyPoints(points)}
     for _, field in ipairs(fields) do gearBase[field] = copy(gearbox[field]) end
@@ -326,6 +485,7 @@ local function gears(ratios)
       staged[field][index] = field == 'gearRatios' and ratios[index] or gearBase[field][math.min(index,gearBase.max)]
     end
   end
+  local previousGear = gearbox.gearIndex
   -- The GE bridge requires a stopped vehicle; select neutral before resizing.
   gearbox:setGearIndex(0)
   local oldMax,oldCount,oldLow,oldHigh = gearbox.maxGearIndex,gearbox.gearCount,gearbox.minGearRatio,gearbox.maxGearRatio
@@ -339,16 +499,17 @@ local function gears(ratios)
     for _, field in ipairs(fields) do gearbox[field]=staged[field] end
     gearbox.maxGearIndex,gearbox.gearCount = #ratios,#ratios+math.abs(gearbox.minGearIndex or -1)
     gearbox.minGearRatio,gearbox.maxGearRatio = low,high
-    powertrain.calculateTreeInertia()
+    replaceGear(gearbox,'manual',previousGear)
   end)
   if not ok then
     for _, field in ipairs(fields) do gearbox[field]=previous[field] end
     replacePoints(points,oldPoints)
     gearbox.maxGearIndex,gearbox.gearCount,gearbox.minGearRatio,gearbox.maxGearRatio = oldMax,oldCount,oldLow,oldHigh
+    pcall(replaceGear,gearbox,'manual',previousGear)
     pcall(powertrain.calculateTreeInertia)
     error('Gearbox update failed; previous tables restored: '..tostring(err))
   end
-  return 'Manual ratios applied. Sequential shifting is supported. Ordinary reset keeps the recipe when enabled; Full reset clears it.'
+  return 'Manual ratios applied and the previous gear re-engaged. Sequential shifting is supported. Ordinary reset keeps the recipe when enabled; Full reset clears it.'
 end
 
 -- Use the same node/rest-length/commit API as beamstate.load. Scale physical
@@ -518,18 +679,29 @@ M.readback = function()
   for name, device in pairs(clutchDevices) do
     if #out.clutches >= 4 then break end
     local item = {name=tostring(name):sub(1,80)}
-    if finite(device.temperature) then item.temperature=device.temperature end
+    if finite(device.clutchTemperature) then item.temperature=device.clutchTemperature end
+    if finite(device.clutchMaxSafeTemp) then item.maxSafeTemperature=device.clutchMaxSafeTemp end
     if finite(device.thermalEfficiency) then item.efficiency=device.thermalEfficiency end
+    if device.clutchPermanentlyDamaged ~= nil then item.permanentlyDamaged=device.clutchPermanentlyDamaged==true end
     out.clutches[#out.clutches+1]=item
   end
-  local devices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('manualGearbox') or {}
-  local gearbox, count=nil,0
-  for _, device in pairs(devices) do gearbox,count=device,count+1 end
-  if count == 1 and type(gearbox.gearRatios)=='table' and between(gearbox.minGearIndex,-16,0) and between(gearbox.maxGearIndex,1,256) then
-    out.gearbox=tostring(gearbox.name or 'manualGearbox'):sub(1,80)
-    for index=gearbox.minGearIndex,gearbox.maxGearIndex do
-      local ratio=gearbox.gearRatios[index]
-      if finite(ratio) then out.gears[#out.gears+1]={index=index,ratio=ratio} end
+  local gearbox, kind = primaryGearbox()
+  if gearbox then
+    out.gearbox=tostring(gearbox.name or kind):sub(1,80)
+    out.gearboxType=kind
+    if kind=='cvt' then
+      out.cvt=true
+      out.gearCount=1
+      for _, field in ipairs({'minGearRatio','maxGearRatio','gearRatio'}) do
+        if finite(gearbox[field]) then out[field]=gearbox[field] end
+      end
+      if finite(gearbox.gearRatio) then out.gears[#out.gears+1]={index=1,ratio=gearbox.gearRatio} end
+    elseif type(gearbox.gearRatios)=='table' and between(gearbox.minGearIndex,-16,0) and between(gearbox.maxGearIndex,1,256) then
+      out.gearCount=gearbox.maxGearIndex
+      for index=gearbox.minGearIndex,gearbox.maxGearIndex do
+        local ratio=gearbox.gearRatios[index]
+        if finite(ratio) then out.gears[#out.gears+1]={index=index,ratio=ratio} end
+      end
     end
   end
   return out
@@ -548,6 +720,7 @@ M.onReset = function()
   for device,base in pairs(clutchBases) do
     if device.updateGFX==base.wrapper then device.updateGFX=base.updateGFX end
     if device.applyDeformGroupDamage==protected then device.applyDeformGroupDamage=base.damage end
+    device.lockTorque,device.maxClutchAngle=base.lockTorque,base.maxAngle
   end
   clutchBases={}
   for device, base in pairs(engineBases) do restoreEngine(device, base) end
@@ -555,11 +728,16 @@ M.onReset = function()
   -- Vehicle extensions reset before powertrain/controllers. Restore dimensions
   -- first so their stock-ratio reset never indexes an expanded gearbox.
   if gearBase then
-    local device = gearBase.device
-    for _, field in ipairs(gearFields) do device[field] = copy(gearBase[field]) end
-    device.maxGearIndex, device.gearCount = gearBase.max, gearBase.count
-    device.minGearRatio, device.maxGearRatio = gearBase.minRatio, gearBase.maxRatio
-    replacePoints(gearBase.points,gearBase.stockPoints)
+    if gearBase.kind == 'manual' then
+      local device = gearBase.device
+      for _, field in ipairs(gearFields) do device[field] = copy(gearBase[field]) end
+      device.maxGearIndex, device.gearCount = gearBase.max, gearBase.count
+      device.minGearRatio, device.maxGearRatio = gearBase.minRatio, gearBase.maxRatio
+      replacePoints(gearBase.points,gearBase.stockPoints)
+    else
+      restoreGearSnapshot(gearBase)
+      if gearBase.points and gearBase.stockPoints then replacePoints(gearBase.points,gearBase.stockPoints) end
+    end
     gearBase = nil
   end
   for _, hydro in pairs(hydros and hydros.hydros or {}) do
@@ -612,17 +790,25 @@ M.capabilities = function()
   for _, hydro in pairs(hydros and hydros.hydros or {}) do
     if (hydro.inputSource == 'steering_input' or hydro.inputSource == 'steering') and finite(hydro.inputFactor) then caps.steering = true end
   end
-  local devices = powertrain and powertrain.getDevicesByType and powertrain.getDevicesByType('manualGearbox') or {}
-  local gearbox, amount
-  amount = 0
-  for _, device in pairs(devices) do gearbox, amount = device, amount+1 end
-  if amount == 1 and type(gearbox.setGearIndex) == 'function' and type(powertrain.calculateTreeInertia) == 'function' then
-    caps.gears = pcall(function()
-      controllerShiftPoints(gearbox)
-      for _, field in ipairs(gearFields) do
-        if type(gearbox[field]) ~= 'table' or gearbox[field][gearbox.maxGearIndex] == nil then error('Unsupported gearbox') end
-      end
-    end)
+  local gearbox, gearKind = primaryGearbox()
+  if gearbox and type(powertrain.calculateTreeInertia) == 'function' then
+    if gearKind == 'cvt' then
+      caps.gears = finite(gearbox.minGearRatio) and finite(gearbox.maxGearRatio)
+    elseif gearKind == 'manual' then
+      caps.gears = type(gearbox.setGearIndex) == 'function' and pcall(function()
+        controllerShiftPoints(gearbox)
+        for _, field in ipairs(gearFields) do
+          if type(gearbox[field]) ~= 'table' or gearbox[field][gearbox.maxGearIndex] == nil then error('Unsupported gearbox') end
+        end
+      end)
+    else
+      caps.gears = between(gearbox.maxGearIndex,1,256) and pcall(function()
+        for _,field in ipairs(gearedFields) do if type(gearbox[field])~='table' then error('Unsupported transmission tables') end end
+        controllerShiftPoints(gearbox)
+        if gearKind=='dct' and (type(gearbox.setGearIndex1)~='function' or type(gearbox.setGearIndex2)~='function') then error('Unsupported DCT selectors') end
+        if gearKind~='dct' and type(gearbox.setGearIndex)~='function' then error('Unsupported gear selector') end
+      end)
+    end
   end
   caps.dimensions = next(v.data.nodes or {}) ~= nil and next(v.data.beams or {}) ~= nil
   for _, method in ipairs({'getNodePosition','setNodePosition','getBeamRestLength','setBeamLength','beamIsBroken','commitLoad','getDirectionVector','getDirectionVectorUp'}) do

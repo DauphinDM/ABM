@@ -1,4 +1,13 @@
 # Changelog
+## 0.11.1 — Ratio editing beyond manual gearboxes
+
+- Apply ratios and add or remove forward gears on manual, automatic, DCT and sequential transmissions while preserving reverse and neutral.
+- Re-engage the previously selected gear after resizing, so Apply no longer leaves the car revving in neutral.
+- Support CVT as a single fixed-ratio edit; reset restores the stock variator range when persistence is enabled.
+- Show the detected transmission type and enable `+ Gear` only where gear-count editing is supported.
+- Ratio edits still require a stopped, owned vehicle and remain target-bound and reset-aware.
+- Clutch protection now also raises supported friction-clutch clamp capacity 20× so high-power tunes can transfer torque; heat/wear stay frozen, but other drivetrain shock and damage remain possible. Reset restores the original clamp.
+
 ## 0.11.0 — Latency, players and presets
 
 - Capture BeamMP's own local/remote ping updates without editing BeamMP files; show provenance and freshness, never treat `-1` as latency.

@@ -7,11 +7,11 @@ Rectangle {
     required property string value
     property string unit: ""
     Layout.fillWidth: true
-    implicitHeight: 40
-    color: "#d016171c"
+    implicitHeight: 46
+    color: "#e60f1117"
     border.width: 1
-    border.color: "#401c1f26"
-    radius: 0
+    border.color: "#2effffff"
+    radius: 8
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 8; spacing: 1
         PlainLabel { text: card.label; color: "#9b9ca9"; font.pixelSize: 9; Layout.fillWidth: true }

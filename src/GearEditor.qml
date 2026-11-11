@@ -10,6 +10,9 @@ ColumnLayout {
     property bool dirty: false
     property bool loading: false
     property real referenceRPM: 0
+    property string gearboxType: ""
+    readonly property bool cvt: gearboxType === "cvt"
+    readonly property bool canAdd: ["manual","automatic","dct","sequential"].indexOf(gearboxType) >= 0
     property color foreground: "#eeeeee"
     property color muted: "#aaaaaa"
     property color surface: "#26282f"
@@ -72,7 +75,6 @@ ColumnLayout {
             TextField { Layout.preferredWidth: 90; implicitHeight: 28; padding: 4; font.pixelSize: 11; color: editor.foreground
                 text: String(modelData.ratio); enabled: modelData.index>0 && editor.enabled; selectByMouse: true
                 onEditingFinished: if (!editor.loading && modelData.index>0 && text!==String(modelData.ratio)) editor.edit(modelData.index,text)
-                background: Rectangle { color: editor.surface }
             }
             PlainLabel { Layout.preferredWidth: 75; text: editor.retainedRPM(modelData.index); color: editor.muted; font.pixelSize: 10 }
         }
@@ -81,8 +83,10 @@ ColumnLayout {
         var values = forward.map(Number).filter(function(n) { return isFinite(n) && n > 0 })
         return values.length > 1 ? values[0] / values[values.length - 1] : NaN
     }
-    PlainLabel { Layout.fillWidth: true; text: editor.dirty ? qsTr("Edited draft · actual data keeps updating without replacing edits.") : qsTr("Actual ratios from selected vehicle · reverse/neutral are read-only."); color: editor.muted; font.pixelSize: 10; wrapMode: Text.Wrap }
+    PlainLabel { Layout.fillWidth: true; text: editor.dirty ? qsTr("Edited draft · actual data keeps updating without replacing edits.") : editor.cvt ? qsTr("CVT: the single edited ratio replaces the variator range with a fixed ratio.") : qsTr("Actual ratios from selected vehicle · reverse/neutral are read-only."); color: editor.muted; font.pixelSize: 10; wrapMode: Text.Wrap }
     PlainLabel { Layout.fillWidth: true; visible: isFinite(editor.spread); color: editor.muted; font.pixelSize: 9; wrapMode: Text.Wrap
         text: qsTr("%1 forward gears · overall ratio spread %2×. Target road speed is not estimated because final drive and verified tire radius are unavailable.").arg(editor.forward.length).arg(editor.spread.toFixed(2)) }
+    PlainLabel { Layout.fillWidth: true; visible: editor.gearboxType.length>0 && !editor.cvt; color: editor.muted; font.pixelSize: 9; wrapMode: Text.Wrap
+        text: qsTr("%1 transmission · forward gear count can be extended; reverse/neutral stay fixed. CVT remains a single fixed ratio.").arg(editor.gearboxType) }
     PlainLabel { Layout.fillWidth: true; text: qsTr("*RPM immediately after upshift at the reported limiter; theoretical, no clutch slip or controller delay."); color: editor.muted; font.pixelSize: 9; wrapMode: Text.Wrap }
 }

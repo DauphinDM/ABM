@@ -4,15 +4,17 @@ import QtQuick.Layouts
 
 // One stable multiplayer row. Identity is the session row key, never the
 // display name. Ping provenance and freshness stay visible.
-RowLayout {
+ColumnLayout {
     id: row
-    property var modelData
+    required property var modelData
+    objectName: "playerRow_" + (player.rowKey || "missing")
     readonly property var player: modelData || ({})
     property var profiles
     property color foreground: "#e8e8ed"
     property color muted: "#9b9ca9"
     property color accentColor: "#7aa2f7"
     property int fontSize: 11
+    readonly property bool actionPressed: nameButton.pressed || detailsButton.pressed || profileButton.pressed || forumButton.pressed || sessionButton.pressed
     signal profileRequested()
 
     function millis(value) {
@@ -30,8 +32,11 @@ RowLayout {
     }
 
     Layout.fillWidth: true
-    spacing: 6
+    spacing: 4
 
+    RowLayout {
+    Layout.fillWidth: true
+    spacing: 6
     Rectangle {
         width: 6; height: 6; radius: 3
         color: row.player.local ? row.accentColor : "#555966"
@@ -71,6 +76,7 @@ RowLayout {
             font.pixelSize: 9
             text: {
                 var parts = []
+                if (row.player.sessionPlayerId !== undefined) parts.push(qsTr("Session #%1").arg(row.player.sessionPlayerId))
                 if (row.player.role) parts.push(row.player.role)
                 if (row.player.vehicles !== undefined) parts.push(qsTr("%1 vehicles").arg(row.player.vehicles))
                 parts.push(row.pingLabel())
@@ -78,7 +84,28 @@ RowLayout {
             }
         }
     }
+    }
+    Flow {
+    Layout.fillWidth: true
+    spacing: 4
     Button {
+        id: nameButton
+        objectName: "copyPlayerName"
+        text: qsTr("Copy name")
+        font.pixelSize: 9; padding: 4; implicitHeight: 24
+        enabled: !!row.player.rawName && !!row.profiles
+        onClicked: row.profiles.copyName(row.player.rowKey)
+    }
+    Button {
+        id: detailsButton
+        objectName: "copyPlayerDetails"
+        text: qsTr("Copy details")
+        font.pixelSize: 9; padding: 4; implicitHeight: 24
+        enabled: !!row.player.rowKey && !!row.profiles
+        onClicked: row.profiles.copyDetails(row.player.rowKey)
+    }
+    Button {
+        id: profileButton
         text: qsTr("Profile")
         font.pixelSize: 9; padding: 4; implicitHeight: 24; flat: true
         enabled: !!row.player.rawName && !!row.profiles
@@ -87,19 +114,24 @@ RowLayout {
         ToolTip.text: qsTr("Open the public forum username page. This does not verify account ownership.")
     }
     Button {
-        text: qsTr("Account ID")
+        id: forumButton
+        text: qsTr("Forum ID")
         font.pixelSize: 9; padding: 4; implicitHeight: 24; flat: true
         enabled: !!row.player.rowKey && row.player.guest !== true && !!row.profiles
         onClicked: if (row.profiles) row.profiles.copyAccount(row.player.rowKey)
         ToolTip.visible: hovered
-        ToolTip.text: qsTr("Resolve the public forum ID and copy it. The clipboard changes cancel late copies.")
+        ToolTip.text: qsTr("Copy the public forum ID by username lookup, not a verified BeamMP account ID. Clipboard changes cancel late copies.")
     }
     Button {
+        id: sessionButton
         text: qsTr("Session ID")
         font.pixelSize: 9; padding: 4; implicitHeight: 24; flat: true
-        enabled: !!row.player.sessionPlayerId && !!row.profiles
+        objectName: "copyPlayerSessionId"
+        enabled: row.player.sessionPlayerId !== undefined && !!row.profiles
         onClicked: if (row.profiles) row.profiles.copySessionId(row.player.rowKey)
         ToolTip.visible: hovered
         ToolTip.text: qsTr("Copy this session only. It is not the permanent account ID.")
     }
+    }
+    Rectangle { Layout.fillWidth: true; height: 1; color: "#22ffffff" }
 }

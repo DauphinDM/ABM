@@ -558,7 +558,7 @@ void Backend::setDemo(bool blocked) {
     m_state = QJsonDocument::fromJson(R"({"connected":true,"multiplayer":true,"beammpLoaded":true,"server":"Coastal cruising · EU","map":"west_coast_usa","vehicle":"etk800","fps":89,"vehicleCount":14,"sessionSeconds":1452,"distance":18420,"topSpeed":62.5,"serverIp":"203.0.113.7","serverPort":30814,"playerCount":3,"mpVehicleCount":5,"ping":32,"telemetry":{"speed":28.6,"rpm":3240,"gear":4,"fuel":0.72,"throttle":0.42,"brake":0,"coolant":88,"oil":96},"players":[{"name":"CoastDriver","rawName":"CoastDriver","sessionPlayerId":1,"local":true,"ping":32,"pingSource":"local","pingAgeMs":400,"vehicles":1,"role":"USER"},{"name":"Apex","rawName":"Apex","sessionPlayerId":2,"ping":48,"pingSource":"remote","pingAgeMs":700,"vehicles":2,"role":"USER"},{"name":"Tourer","rawName":"Tourer","sessionPlayerId":3,"vehicles":2,"guest":true,"role":"USER"}]})").object().toVariantMap();
     m_state.insert("vehicleName", "ETK 800 Series"); m_state.insert("bridgeVersion", "0.11.0");
     m_state.insert("workshop",QVariantMap{{"contract",1},{"generation","demo-instance:0"},{"enginePower",1},
-        {"persistence",true},{"restoring",false},{"restoreStatus","saved"},{"clutchProtected",false},{"gearbox","6-speed manual"},
+        {"persistence",true},{"restoring",false},{"restoreStatus","saved"},{"clutchProtected",false},{"gearbox","6-speed manual"},{"gearboxType","manual"},{"gearCount",6},
         {"engines",QVariantList{QVariantMap{{"name","mainEngine"},{"maxRPM",7200},{"revLimiterRPM",7200},{"physicalRPM",7560},{"rpmCeiling",8000},{"idleRPM",800}}}},
         {"gears",QVariantList{QVariantMap{{"index",-1},{"ratio",-3.2}},QVariantMap{{"index",0},{"ratio",0}},QVariantMap{{"index",1},{"ratio",3.5}},QVariantMap{{"index",2},{"ratio",2.1}},QVariantMap{{"index",3},{"ratio",1.4}},QVariantMap{{"index",4},{"ratio",1.0}},QVariantMap{{"index",5},{"ratio",.8}}}}});
     m_state.insert("sandboxAllowed", !blocked);
@@ -604,7 +604,15 @@ void Backend::setDemo(bool blocked) {
     for (int i = 0; i < 300; ++i)
         m_history.append(QVariantMap{{"speed", 20 + 8 * std::sin(i * .06)}, {"rpm", 3000 + 900 * std::sin(i * .06)}, {"fps", 85 + 5 * std::sin(i * .13)}, {"ping", 32 + 4 * std::sin(i * .09)}});
     emit historyChanged(); emit catalogChanged(); emit configsChanged();
-    m_players = m_state.value("players").toList(); emit playersChanged();
+    m_players = m_state.value("players").toList();
+    // Demo rows need the same session identity keys as sanitized live packets.
+    for (auto &entry : m_players) {
+        auto player = entry.toMap();
+        player.insert("rowKey", "id:" + player.value("sessionPlayerId").toString());
+        entry = player;
+    }
+    m_state.insert("players", m_players);
+    emit playersChanged();
     m_profiles->setPlayers(m_state.value("sessionId").toString(), m_players);
     m_activeVehicles = {QVariantMap{{"id",42},{"name","ETK 800 Series"},{"model","etk800"},{"owned",true}}};
     emit activeVehiclesChanged();

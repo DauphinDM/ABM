@@ -109,11 +109,18 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
             if (name.isEmpty()) continue;
             QJsonObject clean{{"name",name}};
             number(clean,item,"temperature",-100,2000);
+            number(clean,item,"maxSafeTemperature",-100,2000);
             number(clean,item,"efficiency",0,1);
+            if (item.value("permanentlyDamaged").isBool()) clean.insert("permanentlyDamaged",item.value("permanentlyDamaged"));
             clutches.append(clean);
         }
         workshop.insert("clutches",clutches);
         workshop.insert("gearbox",bounded(incomingWorkshop.value("gearbox"),80));
+        const auto gearType=bounded(incomingWorkshop.value("gearboxType"),16);
+        if (QStringList{"manual","automatic","dct","sequential","cvt"}.contains(gearType)) workshop.insert("gearboxType",gearType);
+        number(workshop,incomingWorkshop,"gearCount",0,256);
+        for (const auto key : {"minGearRatio","maxGearRatio","gearRatio"}) number(workshop,incomingWorkshop,key,0.01,100);
+        if (incomingWorkshop.value("cvt").isBool()) workshop.insert("cvt",incomingWorkshop.value("cvt"));
         for (const auto key : {"persistence","restoring","clutchProtected"})
             if (incomingWorkshop.value(key).isBool()) workshop.insert(key,incomingWorkshop.value(key));
         workshop.insert("restoreStatus",bounded(incomingWorkshop.value("restoreStatus"),64));

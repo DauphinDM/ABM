@@ -1,4 +1,5 @@
 #include <QDateTime>
+#include <QClipboard>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -71,7 +72,8 @@ class AbmTests : public QObject {
 private slots:
     void initTestCase() {
         // Exercise the same customizable controls as the app on every platform.
-        QQuickStyle::setStyle("Basic");
+        QQuickStyle::setStyle("MotorsportGlass");
+        QQuickStyle::setFallbackStyle("Basic");
     }
     void rejectsInvalidPackets() {
         for (const auto &p : {QByteArray("[]"),QByteArray("null"),QByteArray("{}"),QByteArray("{bad"),QByteArray(40000,'x'),QByteArray(R"({"schema":2,"source":"beamdeck"})")})
@@ -275,6 +277,25 @@ private slots:
         QVERIFY(PlayerProfiles::accountId(body,"Other").isEmpty());
         QVERIFY(PlayerProfiles::accountId(R"({"user":{"id":-1,"username":"Test Driver"}})","Test Driver").isEmpty());
         QVERIFY(PlayerProfiles::accountId(QByteArray(300000,'x'),"Test Driver").isEmpty());
+    }
+    void playerCopiesUseCurrentSessionRoster() {
+        PlayerProfiles profiles;
+        profiles.setPlayers("session-a", {QVariantMap{{"rowKey","id:0"},{"rawName","Test Guest"},
+            {"sessionPlayerId",0},{"guest",true},{"vehicles",2},{"role","USER"}}});
+        profiles.copyName("id:0");
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("Test Guest"));
+        profiles.copyDetails("id:0");
+        const auto details = QGuiApplication::clipboard()->text();
+        QVERIFY(details.contains("Session ID: 0"));
+        QVERIFY(details.contains("Vehicles: 2"));
+        QVERIFY(!details.contains("Ping:"));
+        profiles.copySessionId("id:0");
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("0"));
+        profiles.setPlayers("session-b", {});
+        profiles.copyName("id:0");
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("0"));
+        profiles.copyDetails("id:0");
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("0"));
     }
     void playerTelemetryKeepsStableIdentityAndProvenance() {
         auto input=QJsonDocument::fromJson(packet()).object();
@@ -534,6 +555,70 @@ private slots:
         write(dir.filePath("language"),"pt-BR\n"); QTRY_COMPARE(translator.language(),QString("pt-BR"));
         QCOMPARE(translator.translate("Main","Save"),QString("Salvar")); QCOMPARE(translator.translate("Main","Open"),QString("Abrir"));
     }
+    void glassControlInteraction() {
+        QTemporaryDir dir; Theme theme(dir.path());
+        QQmlApplicationEngine engine; QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors) warnings<<e.toString();});
+        engine.rootContext()->setContextProperty("theme",&theme);
+        engine.loadData(R"(
+            import QtQuick
+            import QtQuick.Controls
+            ApplicationWindow {
+                id: root
+                width: 380; height: 500; visible: true
+                property int clicks: 0
+                property int acceptedCount: 0
+                property int rejectedCount: 0
+                Column {
+                    Button { objectName: "testButton"; text: "Apply"; onClicked: root.clicks++ }
+                    TextField { objectName: "testField"; width: 200; placeholderText: "Search" }
+                    TextArea { objectName: "testArea"; width: 200; height: 80; placeholderText: "Notes" }
+                    ComboBox { objectName: "testCombo"; model: ["Engine", "Handling", "World"] }
+                }
+                Dialog {
+                    objectName: "testDialog"; width: 300; title: "Confirm"
+                    standardButtons: Dialog.Ok | Dialog.Cancel
+                    function focusOkay() { standardButton(Dialog.Ok).forceActiveFocus() }
+                    onAccepted: root.acceptedCount++
+                    onRejected: root.rejectedCount++
+                }
+            }
+        )");
+        QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow *>(engine.rootObjects().first()); QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window)); window->requestActivate();
+        auto *button=window->findChild<QQuickItem *>("testButton"); QVERIFY(button);
+        button->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Space);
+        QCOMPARE(window->property("clicks").toInt(),1);
+        button->setEnabled(false); QTest::keyClick(window,Qt::Key_Space);
+        QCOMPARE(window->property("clicks").toInt(),1);
+        auto *field=window->findChild<QQuickItem *>("testField"); QVERIFY(field);
+        const auto typeText=[&](const QByteArray &text) { for (char c:text) QTest::keyClick(window,c); };
+        field->forceActiveFocus(); typeText("ratio");
+        QCOMPARE(field->property("text").toString(),QString("ratio"));
+        QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier); typeText("2.5");
+        QCOMPARE(field->property("text").toString(),QString("2.5"));
+        auto *area=window->findChild<QQuickItem *>("testArea"); QVERIFY(area);
+        QVERIFY(area->findChild<QQuickItem *>("glassFieldSurface"));
+        area->forceActiveFocus(); typeText("first"); QTest::keyClick(window,Qt::Key_Return); typeText("second");
+        QCOMPARE(area->property("text").toString(),QString("first\nsecond"));
+        auto *combo=window->findChild<QQuickItem *>("testCombo"); QVERIFY(combo);
+        combo->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Down);
+        QCOMPARE(combo->property("currentIndex").toInt(),1);
+        auto *dialog=window->findChild<QObject *>("testDialog"); QVERIFY(dialog);
+        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        auto *footer=qvariant_cast<QObject *>(dialog->property("footer")); QVERIFY(footer);
+        QVERIFY(footer->findChild<QQuickItem *>("glassButtonSurface"));
+        QTest::keyClick(window,Qt::Key_Escape);
+        QTRY_COMPARE(window->property("rejectedCount").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(dialog,"focusOkay"));
+        QTest::keyClick(window,Qt::Key_Space);
+        QTRY_COMPARE(window->property("acceptedCount").toInt(),1);
+        QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));
+    }
     void realWindowAndGarageInteraction() {
         QTemporaryDir dir; Backend backend(dir.filePath("state.json")); backend.setDemo();
         Theme theme(dir.path()); Translator translator(dir.filePath("language")); QCoreApplication::installTranslator(&translator);
@@ -563,12 +648,25 @@ private slots:
         window->setProperty("page",1);
         auto *rpm=window->findChild<QQuickItem *>("rpmInput"); auto *rpmApply=window->findChild<QQuickItem *>("rpmApplyButton");
         QVERIFY(rpm && rpmApply && rpm->isEnabled()); QVERIFY(!rpmApply->isEnabled());
+        QVERIFY(rpmApply->findChild<QQuickItem *>("glassButtonSurface"));
+        QVERIFY(rpm->findChild<QQuickItem *>("glassFieldSurface"));
         rpm->setProperty("text","6000"); QTRY_VERIFY(rpmApply->isEnabled());
+        QVERIFY(!rpm->property("invalidInput").toBool());
         rpm->setProperty("text","9000"); QTRY_VERIFY(!rpmApply->isEnabled());
+        QVERIFY(rpm->property("invalidInput").toBool());
         QVERIFY(window->findChild<QQuickItem *>("clutchToggle")->isEnabled());
         auto *section=window->findChild<QQuickItem *>("carSection"); QVERIFY(section); QCOMPARE(section->property("count").toInt(),5);
         auto *engineToggle=window->findChild<QQuickItem *>("engineToggle"); auto *strength=window->findChild<QQuickItem *>("strengthSlider");
-        QVERIFY(engineToggle && strength); QVERIFY(strength->isEnabled()); engineToggle->setProperty("checked",true); QTRY_VERIFY(!strength->isEnabled());
+        QVERIFY(engineToggle && strength); QVERIFY(strength->isEnabled());
+        QVERIFY(strength->findChild<QQuickItem *>("glassSliderTrack"));
+        QVERIFY(strength->findChild<QQuickItem *>("glassSliderHandle"));
+        const auto oldStrength = strength->property("value").toDouble();
+        strength->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Right);
+        QVERIFY(strength->property("value").toDouble() > oldStrength);
+        engineToggle->setProperty("checked",true); QTRY_VERIFY(!strength->isEnabled());
+        const auto disabledStrength = strength->property("value").toDouble();
+        QTest::keyClick(window,Qt::Key_Right);
+        QCOMPARE(strength->property("value").toDouble(),disabledStrength);
         section->setProperty("currentIndex",1);
         auto *ratios=window->findChild<QQuickItem *>("ratiosInput"); auto *add=window->findChild<QQuickItem *>("addGearButton");
         auto *apply=window->findChild<QQuickItem *>("gearsApplyButton"); QVERIFY(ratios && add && apply);
@@ -585,6 +683,58 @@ private slots:
             window->resize(dimensions); QTest::qWait(100); QVERIFY(grid->width()>0);
         }
         window->setProperty("page",3); QTest::qWait(100);
+        const auto player = backend.players().first().toMap();
+        // Repeater delegates are visual children, not necessarily QObject descendants.
+        const auto rowName = "playerRow_" + player.value("rowKey").toString();
+        QList<QQuickItem *> rowPending{window->contentItem()};
+        QQuickItem *playerRow = nullptr;
+        while (!rowPending.isEmpty()) {
+            auto *item = rowPending.takeLast();
+            if (item->objectName() == rowName) { playerRow = item; break; }
+            rowPending.append(item->childItems());
+        }
+        QVERIFY(playerRow);
+        QCOMPARE(playerRow->property("player").toMap().value("rawName"), player.value("rawName"));
+        auto *copyName = playerRow->findChild<QQuickItem *>("copyPlayerName");
+        auto *copyDetails = playerRow->findChild<QQuickItem *>("copyPlayerDetails");
+        auto *copySession = playerRow->findChild<QQuickItem *>("copyPlayerSessionId");
+        QVERIFY(copyName && copyName->isEnabled() && copyDetails && copyDetails->isEnabled() && copySession && copySession->isEnabled());
+        QVERIFY(QMetaObject::invokeMethod(copyName,"clicked"));
+        QCOMPARE(QGuiApplication::clipboard()->text(),player.value("rawName").toString());
+        QVERIFY(QMetaObject::invokeMethod(copyDetails,"clicked"));
+        QVERIFY(QGuiApplication::clipboard()->text().contains(player.value("rawName").toString()));
+        QVERIFY(QGuiApplication::clipboard()->text().contains("Session ID:"));
+        QVERIFY(QMetaObject::invokeMethod(copySession,"clicked"));
+        QCOMPARE(QGuiApplication::clipboard()->text(),player.value("sessionPlayerId").toString());
+        // A telemetry refresh between press and release must not replace the
+        // delegate and swallow the activation.
+        QPointer<QQuickItem> persistentCopy = copyName;
+        QGuiApplication::clipboard()->setText("before refresh");
+        for (auto *ancestor = copyName->parentItem(); ancestor; ancestor = ancestor->parentItem()) {
+            if (ancestor->metaObject()->indexOfProperty("contentY") >= 0) {
+                const auto y = copyName->mapToItem(ancestor,QPointF()).y();
+                ancestor->setProperty("contentY",ancestor->property("contentY").toDouble() + y - ancestor->height()/2);
+                break;
+            }
+        }
+        QTest::qWait(50);
+        const auto buttonCenter = copyName->mapToScene(QPointF(copyName->width()/2,copyName->height()/2)).toPoint();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,buttonCenter);
+        QVERIFY(persistentCopy);
+        QVERIFY(persistentCopy->property("pressed").toBool());
+        for (int refresh = 0; refresh < 12; ++refresh) {
+            QVERIFY(QMetaObject::invokeMethod(&backend,"playersChanged"));
+            QTest::qWait(16);
+            QVERIFY(persistentCopy);
+            QVERIFY(persistentCopy->property("pressed").toBool());
+        }
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,buttonCenter);
+        QCOMPARE(QGuiApplication::clipboard()->text(),player.value("rawName").toString());
+        auto zeroId = player;
+        zeroId.insert("sessionPlayerId",0);
+        playerRow->setProperty("modelData",zeroId);
+        QVERIFY(copySession->isEnabled());
+        playerRow->setProperty("modelData",player);
         QList<QQuickItem *> pending{window->contentItem()}; int labels=0;
         while(!pending.isEmpty()) { auto *item=pending.takeLast(); pending.append(item->childItems()); if(item->property("abmPlainText").toBool()) {++labels; QCOMPARE(item->property("textFormat").toInt(),0);} }
         QVERIFY(labels>20);

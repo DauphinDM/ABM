@@ -158,7 +158,7 @@ local clutchCalls=0
 local clutchUpdate=function() clutchCalls=clutchCalls+1 end
 local clutchDamage=function() clutchCalls=clutchCalls+10 end
 local clutch={thermalEfficiency=1,clutchTemperature=20,damageLockTorqueCoef=1,wearLockTorqueCoef=1,frictionLossPerUpdate=100,
-  updateGFX=clutchUpdate,applyDeformGroupDamage=clutchDamage,clutchPermanentlyDamaged=false}
+  lockTorque=500,maxClutchAngle=.2,updateGFX=clutchUpdate,applyDeformGroupDamage=clutchDamage,clutchPermanentlyDamaged=false}
 local limits, friction, brakes={}, {}, 1
 local policyResets=0
 local hydro={inputSource='steering_input',inputFactor=2}
@@ -390,9 +390,11 @@ assert(not pcall(module.execute,'rpm',{maxRPM=8000}) and engine.revLimiterRPM==5
 assert(not pcall(module.execute,'rpm',{maxRPM=850}) and not pcall(module.execute,'rpm',{maxRPM=5000.5}))
 module.execute('clutch',{clutchIndestructible=true})
 clutch:updateGFX(.1); clutch:applyDeformGroupDamage(); assert(clutchCalls==0 and clutch.frictionLossPerUpdate==0)
+assert(clutch.lockTorque==10000 and clutch.maxClutchAngle==4)
 assert(module.readback().clutchProtected)
 module.execute('clutch',{clutchIndestructible=false})
 assert(clutch.updateGFX==clutchUpdate and clutch.applyDeformGroupDamage==clutchDamage)
+assert(clutch.lockTorque==500 and clutch.maxClutchAngle==.2)
 clutch.clutchPermanentlyDamaged=true; assert(not pcall(module.execute,'clutch',{clutchIndestructible=true})); clutch.clutchPermanentlyDamaged=false
 module.execute('clutch',{clutchIndestructible=true})
 shape={[5]={x=-1,y=-2,z=0},[6]={x=1,y=2,z=1}}; rest=math.sqrt(21)
@@ -414,7 +416,7 @@ module.updateGFX(1); module.updateGFX(1); assert(commits==oldCommits+1) -- Never
 module.onReset(); module.authorize(0,'test-single-player',false)
 module.updateGFX(1); assert(not module.readback().restoring and module.readback().restoreStatus=='policy blocked')
 module.restoreForPolicy()
-assert(not module.readback().clutchProtected and clutch.updateGFX==clutchUpdate and engine.revLimiterRPM==7200 and engine.torqueCurve[1000]==200)
+assert(not module.readback().clutchProtected and clutch.updateGFX==clutchUpdate and clutch.lockTorque==500 and clutch.maxClutchAngle==.2 and engine.revLimiterRPM==7200 and engine.torqueCurve[1000]==200)
 module.execute('persistence',{enabled=false})
 local originalToken=module.target()
 local report=module.readback()
@@ -444,4 +446,69 @@ getPlayerVehicle=function() return nil end
 MPCoreNetwork.isMPSession=function() return false end
 m.onUpdate(2);assert(not last.multiplayer and next(last.telemetry)==nil and last.players==nil)
 m.onExtensionUnloaded();assert(closed)
-print('Game bridge tests passed (configs, exact spawn options, sessions, ownership, mod activation, chunks, socket contract)')
+
+-- Non-manual and CVT ratio adapters, loaded in isolated vehicle environments.
+local function gearboxEnv(kind)
+  local gb,points,controller
+  if kind=='cvtGearbox' then
+    gb={name='cvtTest',minGearRatio=.5,maxGearRatio=2.5,gearRatio=1,
+      setGearRatio=function(self,ratio) self.gearRatio=ratio end}
+  else
+    gb={name=kind..'Test',maxGearIndex=3,minGearIndex=-1,gearCount=4,
+      gearRatios={[-1]=-3,[0]=0,[1]=3,[2]=2,[3]=1.5},
+      minGearRatio=1.5,maxGearRatio=3,gearRatio=3,desiredGearRatio=3,gearIndex=1,
+      gearRatio1=3,gearRatio2=2,gearIndex1=1,gearIndex2=2,
+      setGearIndex=function(self,index) self.gearIndex=index end,
+      setGearIndex1=function(self,index) self.gearIndex1=index end,
+      setGearIndex2=function(self,index) self.gearIndex2=index end}
+    for _,field in ipairs({'gearWhineCoefsOutput','gearWhineCoefsInput'}) do
+      gb[field]={[-1]=1,[0]=1,[1]=1,[2]=1,[3]=1}
+    end
+    points={}
+    for i=-1,3 do points[i]={lowShiftDownAV=100,highShiftDownAV=150,lowShiftUpAV=400,highShiftUpAV=600} end
+    local sharedFunctions={getShiftPoints=function() return points end}
+    local gearbox=gb
+    local function init() return sharedFunctions,gearbox end
+    local controlLogicModule={init=init}
+    local function updateGFX() return controlLogicModule end
+    controller={mainController={updateGFX=updateGFX}}
+  end
+  local env2={powertrain={getDevicesByType=function(name) return name==kind and {gb} or {} end,
+      getDevicesByCategory=function() return {} end,calculateTreeInertia=function() end},
+    obj={getID=function() return 99 end},v={data={}},wheels={},hydros={},controller=controller or {},
+    extensions={load=function() end}}
+  setmetatable(env2,{__index=_G})
+  local chunk=assert(loadfile('game/lua/vehicle/extensions/abmTuning.lua'))
+  setfenv(chunk,env2)
+  return chunk(),gb,points
+end
+for _,kind in ipairs({'automaticGearbox','dctGearbox','sequentialGearbox'}) do
+  local mod,gb,points=gearboxEnv(kind)
+  assert(mod.capabilities().gears)
+  assert(mod.execute('gears',{ratios={2.5,1.8,1.2,.9}}):find('4 forward gears',1,true))
+  assert(gb.gearRatios[1]==2.5 and gb.gearRatios[2]==1.8 and gb.gearRatios[3]==1.2 and gb.gearRatios[4]==.9)
+  assert(gb.gearRatios[-1]==-3 and gb.gearRatios[0]==0 and gb.maxGearIndex==4 and gb.gearCount==5)
+  assert(gb.gearWhineCoefsOutput[4]==1 and gb.gearWhineCoefsInput[4]==1 and points[4]~=nil)
+  assert(mod.execute('gears',{ratios={2.3,1.5}}):find('2 forward gears',1,true))
+  assert(gb.gearRatios[1]==2.3 and gb.gearRatios[2]==1.5 and gb.gearRatios[3]==nil)
+  assert(gb.gearWhineCoefsOutput[3]==nil and points[3]==nil and gb.maxGearIndex==2 and gb.gearCount==3)
+  assert(not pcall(mod.execute,'gears',{ratios={}}))
+  local tooMany={} for i=1,257 do tooMany[i]=1 end
+  assert(not pcall(mod.execute,'gears',{ratios=tooMany}))
+  assert(mod.execute('gears',{ratios={2.5,1.8,1.2,.9}}):find('4 forward gears',1,true))
+  local report=mod.readback()
+  local labels={automaticGearbox='automatic',dctGearbox='dct',sequentialGearbox='sequential'}
+  assert(report.gearboxType==labels[kind] and report.gearCount==4 and #report.gears==6)
+  mod.onReset()
+  assert(gb.gearRatios[1]==3 and gb.gearRatios[2]==2 and gb.gearRatios[3]==1.5 and gb.gearRatios[4]==nil)
+  assert(gb.gearWhineCoefsOutput[4]==nil and points[4]==nil and gb.maxGearIndex==3 and gb.gearCount==4)
+end
+local cvt,gb=gearboxEnv('cvtGearbox')
+assert(cvt.capabilities().gears)
+assert(cvt.execute('gears',{ratios={1.25}}):find('fixed at',1,true))
+assert(gb.minGearRatio==1.25 and gb.maxGearRatio==1.25 and gb.gearRatio==1.25)
+assert(not pcall(cvt.execute,'gears',{ratios={1,2}}))
+cvt.onReset()
+assert(gb.minGearRatio==.5 and gb.maxGearRatio==2.5)
+assert(cvt.readback().cvt and cvt.readback().gearboxType=='cvt')
+print('Game bridge tests passed (configs, exact spawn options, sessions, ownership, mod activation, chunks, socket contract, transmission adapters)')

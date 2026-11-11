@@ -16,12 +16,15 @@ public:
     Q_INVOKABLE void openProfile(const QString &rawName);
     Q_INVOKABLE void copyAccount(const QString &rowKey);
     Q_INVOKABLE void copySessionId(const QString &rowKey);
+    Q_INVOKABLE void copyName(const QString &rowKey);
+    Q_INVOKABLE void copyDetails(const QString &rowKey);
     static QUrl profileUrl(const QString &name, bool json = false);
     static QString accountId(const QByteArray &bytes, const QString &name);
 signals:
     void changed();
 private:
     void tell(const QString &message);
+    void copyText(const QString &text, const QString &message);
     QVariantMap row(const QString &key) const;
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_reply;
