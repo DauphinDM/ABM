@@ -7,8 +7,9 @@ are separate host installations, not bundled or downloaded by ABM.
 
 ## AppImage — preferred portable format
 
-Download `ABM-<version>-x86_64.AppImage` from a successful **Portable Linux**
-Actions run in this private repository. Check its SHA256SUMS-linux file, then:
+Download `ABM-<version>-x86_64.AppImage` from
+[GitHub Releases](https://github.com/DauphinDM/ABM/releases). Check its matching
+entry in `SHA256SUMS`, then:
 
 ```sh
 chmod +x ABM-<version>-x86_64.AppImage

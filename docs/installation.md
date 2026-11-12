@@ -4,9 +4,9 @@
 
 | Platform | Installation | Status |
 | --- | --- | --- |
-| Arch / Omarchy, x86_64 | Private release package or `bin/install` | Primary development target |
+| Arch / Omarchy, x86_64 | Release package or `bin/install` | Primary development target |
 | Other Linux desktops | [AppImage/bundled archive](portable-linux.md) or source build | Portable CI recipe experimental; standalone mode, no Omarchy widget |
-| Windows x64 | Qt/MSVC build or authorized CI artifact | Experimental; see [Windows guide](windows.md) |
+| Windows x64 | Standalone release ZIP or Qt/MSVC build | Experimental; see [Windows guide](windows.md) |
 | Linux aarch64 | PKGBUILD declares architecture | No prebuilt asset or hardware validation |
 
 BeamNG and (optionally) BeamMP must already be installed. ABM is not a game or
@@ -15,13 +15,13 @@ through its Steam URI.
 
 ## Arch package
 
-Download from the private repository with an authorized GitHub account:
+Download from [GitHub Releases](https://github.com/DauphinDM/ABM/releases/tag/v0.12.0):
 
 ```sh
-gh release download v0.4.0 --repo DauphinDM/ABM --pattern '*.pkg.tar.zst'
-gh release download v0.4.0 --repo DauphinDM/ABM --pattern SHA256SUMS
+gh release download v0.12.0 --repo DauphinDM/ABM --pattern 'abm-*.pkg.tar.zst'
+gh release download v0.12.0 --repo DauphinDM/ABM --pattern SHA256SUMS
 sha256sum -c SHA256SUMS
-sudo pacman -U abm-0.4.0-1-x86_64.pkg.tar.zst
+sudo pacman -U abm-0.12.0-1-x86_64.pkg.tar.zst
 ```
 
 If only a subset of assets is downloaded, the checksum command may report

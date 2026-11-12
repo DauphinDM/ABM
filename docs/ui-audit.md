@@ -1,5 +1,71 @@
 # ABM visual audit
 
+## Unreleased — Session actions
+
+- Inspected demo Session at 560×840 and 320×440, the owned-vehicle disabled-reason
+  dialog, and the live-mode fixture's on-card forum-copy result. Evidence is in
+  `/tmp/opencode/abm-session-review/`; fixture names/endpoints are synthetic.
+  All three demo capture commands exited successfully without console warnings.
+- Final `./bin/test`: **46 Qt checks passed**, plus Lua, Node, headless CLI and
+  standalone lifecycle suites. The real-window Session test holds button presses
+  across changing telemetry, clicks every player action (forum networking mocked),
+  checks clipboard/browser dispatch, resets local trip statistics and confirms a
+  vehicle-selection request. Copying is also exercised at the minimum viewport.
+  No Session QML warnings; malformed-image fixtures intentionally warn elsewhere.
+- No live BeamNG/BeamMP session or real browser/forum request was used. See
+  [Session action review](session-actions.md) for documented contracts and limits.
+
+## Unreleased — dashboard redesign
+
+The default window is 560×840; the minimum remains 320×440. Compact windows use
+tabs, wide windows (760 px onward) a sidebar. Short windows omit page headings;
+the Garage's extra filters now live in a scrollable dialog. The custom
+`MotorsportGlass` style identifier remains, with a new solid-surface appearance.
+
+Reproduce a particular viewport without changing saved preferences:
+
+```sh
+QT_QUICK_BACKEND=software build/abm open --demo --tab garage --dev-size 1040x860 --screenshot /tmp/opencode/garage-wide.png
+QT_QUICK_BACKEND=software build/abm open --demo --dev-open facets --dev-size 320x440 --screenshot /tmp/opencode/filters-small.png
+```
+
+`--dev-size` is accepted only with `--demo --screenshot`, from 320×440 to
+2560×1600. The new layout test checks actual card placement (not just a column
+count), gallery height with and without a selected model, filter-dialog bounds,
+Escape dismissal and unchanged demo action restrictions at four viewport sizes.
+
+- Inspected all four pages at 560×840, 320×440, 380×600 and 1040×860,
+  plus configurations, Workshop groups, policy-locked controls, Help,
+  diagnostics, setup, owned vehicles, trip/vehicle confirmations, menus,
+  filters and the command palette. Extra compact-dialog checks cover setup,
+  confirmations, filters, dimensions, palette and Help. Small pages scroll;
+  the minimum-height configuration view intentionally shows only part of a card.
+- Review fixes include actual multi-column placement, reclaiming short-window
+  gallery space, keyboard-only focus outlines, dark menus and readable checkboxes.
+  Confirmations name their action; replace/reset actions have a warning accent.
+- Demo captures and logs: `/tmp/opencode/abm-dashboard-audit/`. All app capture
+  commands exited successfully without console warnings. `docs/screenshot.png`
+  now shows the wide Drive view with sample data, not private session data or
+  bundled game artwork.
+- Final `./bin/test`: **44 Qt checks passed**, plus Lua, Node, headless CLI and
+  standalone lifecycle suites. Coverage includes real QML layout, keyboard
+  menus/checkboxes/dialogs, preview reuse and existing action restrictions.
+  Corrupt/missing-image fixtures intentionally emit decoder/image warnings.
+- No installed app, game state or desktop configuration changed. Live-game,
+  Windows, non-English and GPU-renderer visual checks were not performed.
+
+## Unreleased — preview reliability
+
+- Inspected demo Garage and configurations at 440×700, including loaded photos,
+  missing previews and a correctly labeled custom configuration's model fallback.
+  Captures: `/tmp/opencode/abm-preview-review/{garage,configs}.png`; neither
+  command emitted console warnings. No game actions or live-game checks.
+- `./bin/test` passed 43 Qt checks and the Lua, Node, CLI and standalone suites.
+  New corruption fixtures intentionally emit decode/missing-image warnings.
+  Card-reuse and broken-fallback transitions are covered by real QML tests.
+- Tested working-tree code is based on `182458a`; only documentation changed
+  afterward. See [design review](design-review.md) for reasoning and limits.
+
 ## 0.8 — selector facets and grouped workshop
 
 - Inspected ten demo captures in `/tmp/opencode/abm-08-audit`: four workshop
@@ -77,7 +143,7 @@ QT_QUICK_BACKEND=software build/abm open --demo --tab garage --pick etk800 --scr
 
 Capture targets: `drive`, `car`, `garage`, `session`, `help`, `diagnostics`,
 `paths`, `owned`, `trip`, `spawn`, `replace`, `switch`, `garage-menu`,
-`settings-menu`, `filters`, `handling`, `gears`, `fun`, and `engine`. These hooks require
+`settings-menu`, `filters`, `facets`, `palette`, `handling`, `gears`, `fun`, `dimensions`, `blocked`, and `engine`. These hooks require
 demo screenshot mode.
 
 Generated tuning Lua is executed in tests to verify non-compounding torque

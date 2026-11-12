@@ -1,14 +1,13 @@
 import QtQuick
 
-// Restrained glass for chrome and floating surfaces. Dense data stays on solid
-// tiles; this avoids stacking blur across the whole window.
+// Shared quiet surface. Accent is reserved for actions and live readings.
 Rectangle {
     id: panel
-    property color fillColor: "#cc12141a"
-    property color strokeColor: "#2effffff"
+    property color fillColor: "#171b22"
+    property color strokeColor: "#2b313c"
     property color highlightColor: theme.accent
-    property bool highlightTop: true
-    property real corner: 10
+    property bool highlightTop: false
+    property real corner: Math.min(8, theme.radius)
 
     color: fillColor
     radius: corner

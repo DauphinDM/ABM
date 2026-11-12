@@ -10,7 +10,7 @@ T.TextField {
     implicitHeight: Math.max(implicitBackgroundHeight, contentHeight + topPadding + bottomPadding)
     padding: 7
     leftPadding: 9; rightPadding: 9
-    font.pixelSize: 11
+    font.pixelSize: 12
     color: enabled ? "#eef0f6" : "#737885"
     placeholderTextColor: enabled ? "#929bad" : "#656d7d"
     selectionColor: Qt.alpha(theme.accent, .35)

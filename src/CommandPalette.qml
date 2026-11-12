@@ -22,16 +22,15 @@ Popup {
 
     width: Math.min(420, parent ? parent.width - 24 : 420)
     x: parent ? Math.round((parent.width - width) / 2) : 0
-    y: parent ? Math.round(parent.height * .16) : 40
+    y: parent ? Math.min(80, Math.round(parent.height * .1)) : 40
     modal: true
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     padding: 0
 
     background: GlassPanel {
-        corner: 14
-        fillColor: "#f20c0d12"
-        strokeColor: Qt.alpha(palette.accentColor, .32)
+        fillColor: "#191e27"
+        strokeColor: "#465162"
     }
 
     contentItem: ColumnLayout {
@@ -41,14 +40,14 @@ Popup {
             Layout.margins: 10
             spacing: 8
             PlainLabel {
-                text: "⌘"
+                text: "›"
                 color: palette.accentColor
                 font.pixelSize: 15
             }
             TextField {
                 id: query
                 Layout.fillWidth: true
-                placeholderText: qsTr("Jump to a page, car, preset or action")
+                placeholderText: qsTr("Search commands…")
                 font.pixelSize: 12
                 padding: 6
                 onTextChanged: palette.selectedIndex = 0
@@ -57,13 +56,13 @@ Popup {
                 Keys.onReturnPressed: palette.choose()
                 Keys.onEnterPressed: palette.choose()
             }
-            PlainLabel { text: "ESC"; color: "#777b88"; font.pixelSize: 8 }
+            PlainLabel { text: "ESC"; color: "#a0aabb"; font.pixelSize: 10 }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: "#22ffffff" }
         ListView {
             id: list
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(300, Math.max(42, palette.filtered.length * 38))
+            Layout.preferredHeight: Math.min(300, palette.parent ? palette.parent.height - palette.y - 90 : 300, Math.max(42, palette.filtered.length * 42))
             clip: true
             model: palette.filtered
             currentIndex: palette.selectedIndex
@@ -72,11 +71,11 @@ Popup {
                 required property int index
                 required property var modelData
                 width: list.width
-                height: 38
+                height: 42
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 3
-                    radius: 7
+                    radius: Math.min(6, theme.radius)
                     color: row.ListView.isCurrentItem ? Qt.alpha(palette.accentColor, .18) : (mouse.containsMouse ? "#12ffffff" : "transparent")
                 }
                 RowLayout {
@@ -87,7 +86,7 @@ Popup {
                         Layout.fillWidth: true
                         text: row.modelData.label || ""
                         color: "#e8e8ed"
-                        font.pixelSize: 11
+                        font.pixelSize: 13
                         elide: Text.ElideRight
                         maximumLineCount: 1
                     }
@@ -95,7 +94,7 @@ Popup {
                         visible: !!row.modelData.hint
                         text: row.modelData.hint || ""
                         color: "#858997"
-                        font.pixelSize: 8
+                        font.pixelSize: 10
                     }
                 }
                 MouseArea {

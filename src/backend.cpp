@@ -78,9 +78,13 @@ void Backend::accept(const QJsonObject &data) {
         m_integration->setUserFolder(data.value("userFolder").toString());
     const bool gameSeen = data.value("gameSeen").toBool();
     if (gameSeen != m_gameSeen) { m_gameSeen = gameSeen; emit gameSeenChanged(); }
-    const auto players = data.value("players").toArray().toVariantList();
+    const auto players = data.value("connected").toBool() ? data.value("players").toArray().toVariantList() : QVariantList{};
+    // Session IDs are reused on each BeamMP server, even while the bridge
+    // process stays loaded. Bind asynchronous profile work before UI signals.
+    const auto profileSession = QString::fromUtf8(QJsonDocument(QJsonArray{
+        data.value("sessionId"), data.value("serverIp"), data.value("serverPort"), data.value("server")}).toJson(QJsonDocument::Compact));
+    m_profiles->setPlayers(profileSession, data.value("connected").toBool() ? players : QVariantList{});
     if (players != m_players) { m_players = players; emit playersChanged(); }
-    m_profiles->setPlayers(m_state.value("sessionId").toString(), m_players);
     const auto vehicles = data.value("activeVehicles").toArray().toVariantList();
     if (vehicles != m_activeVehicles) { m_activeVehicles = vehicles; emit activeVehiclesChanged(); }
     if (data.value("connected").toBool() && (!m_historyAge.isValid() || m_historyAge.elapsed() >= 100)) {
@@ -181,6 +185,7 @@ void Backend::refresh() {
         else { accept(data); return; }
     }
     if (!connected()) {
+        m_profiles->setPlayers({}, {});
         if (!m_players.isEmpty()) { m_players.clear(); emit playersChanged(); }
         if (!m_activeVehicles.isEmpty()) { m_activeVehicles.clear(); emit activeVehiclesChanged(); }
         if (!m_configs.isEmpty()) { m_configs.clear(); emit configsChanged(); }
@@ -519,7 +524,7 @@ QVariantMap Backend::randomTune(const QString &seed) const {
 }
 QString Backend::supportBundle() const {
     QJsonObject data;
-    data.insert("app", "ABM"); data.insert("version", "0.11.0");
+    data.insert("app", "ABM"); data.insert("version", QCoreApplication::applicationVersion());
     data.insert("bridge", m_state.value("bridgeVersion").toString());
     data.insert("connected", connected());
     data.insert("multiplayer", m_state.value("multiplayer").toBool());
@@ -539,7 +544,9 @@ bool Backend::copyServerAddress() {
     }
     auto *clipboard = QGuiApplication::clipboard();
     if (!clipboard) { m_actionMessage = tr("Clipboard is unavailable."); emit actionChanged(); return false; }
-    clipboard->setText(ip + ':' + QString::number(port));
+    const auto address = (ip.contains(':') ? '[' + ip + ']' : ip) + ':' + QString::number(port);
+    clipboard->setText(address);
+    if (clipboard->text()!=address) { m_actionMessage=tr("Clipboard did not retain the server address."); emit actionChanged(); return false; }
     m_actionMessage = tr("Copied server address only. No password, chat or invented invite link."); emit actionChanged();
     return true;
 }

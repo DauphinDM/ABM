@@ -19,6 +19,20 @@ bouncing remain available. Permission loss stops reapply and requests cleanup,
 which **can reset your car while moving**. See [policy, privacy and important
 limitations](server-policy.md); this is not anti-cheat or staff protection.
 
+## Dashboard layout
+
+The window opens at 560×840 and can shrink to 320×440. The four page tabs become
+a left sidebar on wide windows. **Car** opens the Workshop; its section selector
+keeps related controls together. Short windows hide large page headings to leave
+more room for content. Pages scroll when needed.
+
+Garage cards adapt from one to four columns. **Filters** opens a scrollable
+dialog; at the smallest height it also contains content, type and favorites.
+Use Tab to focus a card, Enter or Space to open it, and the separate star button
+to favorite it. Ctrl+K opens the command palette; `?` shows keyboard shortcuts.
+Appearance changes do not grant permission to change the game: ownership,
+movement, bridge capability and server-policy checks still apply.
+
 ## Launch and connection state
 
 The main button starts BeamNG through Steam when the game is closed. When the
@@ -206,9 +220,17 @@ individual configurations. Models can contain both stock and custom/mod configs,
 so content categories can overlap. Missing metadata is never guessed. The updated
 bridge files are required for full metadata even though the wire version is unchanged.
 
-Photos come from loose game files or installed archives. A configuration without
-its own photo uses a labeled model fallback, or **No preview**. Custom part
-editing and creating new configuration files are not included.
+Photos come from loose game files or installed archives. Missing, corrupt,
+unreadable or oversized images advance to another local candidate for the same
+image, then the configuration's model fallback, or **No preview**. **Model preview**
+appears only when that fallback actually loads. No images are downloaded and
+opening Garage does not alter the simulation.
+
+Decoded thumbnails and failures use a bounded memory-only cache. Refresh the
+catalog/configurations after replacing an image: registering it again checks the
+candidate files' paths, sizes and modification times. Restart ABM if an external
+tool replaced an image while preserving all of that metadata. Custom part editing
+and creating new configuration files are not included.
 
 Vehicle switching/spawning/replacing needs a loaded map and speed ≤1 m/s,
 checked by both the receiver and game bridge. An acknowledgement means the
@@ -225,6 +247,29 @@ Multiplayer shows cleaned server titles, searchable players, available pings
 and counts. BeamMP being loaded does not mean you are connected. **Your vehicles**
 only lists locally owned entries; selection is confirmed and movement-guarded.
 **Reset trip** affects ABM's counters, not your game save.
+
+Player buttons have distinct purposes:
+
+- **Copy name / Copy details** copy the current session row, with results shown
+  on the card. **Session ID** is a connection-local ID, not a permanent account ID.
+- **Profile** opens the public BeamMP forum username page in your browser.
+  **Forum ID** explicitly requests that username's public forum JSON record;
+  it needs internet access and a matching forum username. This is not proof of
+  in-game identity. Guests with explicit guest status have neither action.
+- A server/player change, unavailable telemetry or another clipboard write
+  cancels a pending forum-ID copy. Errors are shown without substituting a
+  session ID. Missing session IDs alone do not establish guest status.
+- **Copy server address** copies only the reported endpoint, with brackets for
+  IPv6. It does not create an invitation or copy a password.
+
+In `--demo`, name/details/session-ID copying uses sample data and local dialogs
+still open; public-profile requests, switching and trip reset are disabled.
+The owned-vehicles dialog explains why selection is disabled in a real session.
+These source fixes require updating the installed GE bridge and restarting the
+game before they can affect live BeamMP ownership/roster behavior.
+
+API references and the isolated verification scope are recorded in
+[Session action review](session-actions.md).
 
 ## Omarchy popup
 

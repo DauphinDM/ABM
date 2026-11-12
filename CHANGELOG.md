@@ -1,4 +1,30 @@
 # Changelog
+## 0.12.0 — Dashboard and Session actions (preview)
+
+- Publish public Linux and Windows preview downloads with SHA256 checksums and dependency notices. Keep bridge compatibility at 0.11.0; update/install the bundled bridge files for Session fixes.
+- Fix the preset backend self-binding detected by Windows Qt 6.8 CI; explicitly bind the application backend and assert it in real-window tests.
+
+### Session action fixes
+
+- Resolve BeamMP's documented `extensions` APIs consistently for roster telemetry, ownership and command authorization; retain legacy global fallback. Read session player IDs from the documented `getPlayers()` map keys and stop inferring guest authentication from missing IDs.
+- Bind public-profile lookups to bridge/server/row/name identity, cancel on stale or changed rosters, and clear profile state when telemetry is unavailable. Show per-player action results and lookup state; sample players do not open real profiles or trigger network lookups.
+- Check clipboard retention, format IPv6 server addresses correctly, explain disabled vehicle selection and report switching as a request rather than confirmed game acceptance.
+- Add real-window button/outcome tests during changing telemetry, isolated browser/forum-response tests, and strict extension-only BeamMP ownership/policy mocks. Preserve movement, ownership and server-policy restrictions.
+
+### Dashboard redesign
+
+- Replace the decorative glass shell with a quieter dark dashboard, clearer hierarchy, larger instruments, consistent controls and stronger text contrast.
+- Add adaptive tabs/sidebar navigation, a spacious default window, grouped Workshop panels and player cards. Short windows prioritize content over page headings.
+- Give the Garage larger photo cards, an adaptive one-to-four-column grid, separate scrollable filters and keyboard-accessible card/favorite actions. Keep preview provenance and all game-action guards.
+- Refresh the command palette, dialogs, menus and checkboxes; give confirmations explicit action labels. Add a bounded demo-only `--dev-size WIDTHxHEIGHT` screenshot option and responsive layout/keyboard regression coverage.
+
+### Garage preview reliability
+
+- Try decoding each approved same-image candidate before falling back, including corrupt mounted/archive images and unreadable or oversized loose files.
+- Preserve image bindings when Garage cards change configuration; show **Model preview** only for a successfully loaded model fallback.
+- Add a bounded memory-only thumbnail/failure cache with source-metadata revision IDs, serialized cache misses and read-time path checks. Existing 8 MiB encoded-image and 16-million-pixel limits remain.
+- Add deterministic image/fallback/card-reuse regression tests and a design-to-code review. Native mounted precedence and the game's default placeholder remain unverified; no game files or simulation state were changed.
+
 ## 0.11.1 — Ratio editing beyond manual gearboxes
 
 - Apply ratios and add or remove forward gears on manual, automatic, DCT and sequential transmissions while preserving reverse and neutral.

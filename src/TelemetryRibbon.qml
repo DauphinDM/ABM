@@ -26,14 +26,14 @@ Item {
     Canvas {
         id: chart
         anchors.fill: parent
-        anchors.topMargin: 16
+        anchors.topMargin: 24
         onPaint: {
             var ctx = getContext("2d")
             ctx.reset()
             var vals = ribbon.values()
             var maxValue = Math.max(ribbon.ceiling, 0.0001)
             for (var i = 0; i < vals.length; ++i) maxValue = Math.max(maxValue, vals[i])
-            ctx.strokeStyle = "#241c1f26"
+            ctx.strokeStyle = "#303846"
             ctx.lineWidth = 1
             for (var g = 1; g <= 2; ++g) {
                 var gy = height - 3 - (g / 3) * (height - 8)
@@ -79,15 +79,15 @@ Item {
         anchors.top: parent.top
         text: ribbon.caption
         color: "#9b9ca9"
-        font.pixelSize: 8
-        font.letterSpacing: 1.6
+        font.pixelSize: 10
+        font.letterSpacing: .5
     }
     PlainLabel {
         anchors.right: parent.right
         anchors.top: parent.top
-        text: ribbon.live ? qsTr("LIVE · 20 HZ") : qsTr("STALE / NO DATA")
+        text: ribbon.live ? qsTr("LIVE") : qsTr("NO DATA")
         color: ribbon.live ? "#7fb98e" : "#9b9ca9"
-        font.pixelSize: 8
+        font.pixelSize: 10
     }
     PlainLabel {
         anchors.horizontalCenter: parent.horizontalCenter

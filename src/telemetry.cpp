@@ -170,7 +170,7 @@ QJsonObject Telemetry::sanitize(const QByteArray &bytes) {
             const auto raw = bounded(p.value("rawName").toString().isEmpty() ? p.value("name").toString() : p.value("rawName").toString(), 64);
             const bool identified = Protocol::playerId(p.value("sessionPlayerId"));
             QJsonObject player{{"name", cleanName(raw)}, {"rawName", raw}, {"local", p.value("local").toBool()},
-                               {"guest", p.value("guest").toBool() || !identified}, {"role", bounded(p.value("role"), 32)}};
+                               {"guest", p.value("guest").toBool()}, {"role", bounded(p.value("role"), 32)}};
             if (identified) player.insert("sessionPlayerId", p.value("sessionPlayerId"));
             number(player, p, "ping", 0, 60000);
             number(player, p, "pingAgeMs", 0, 3600000);

@@ -31,5 +31,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ABM-Windows-x64
-          path: dist/ABM/
+          path: |
+            dist/ABM-*-Windows-x64.zip
+            dist/SHA256SUMS-windows
           if-no-files-found: error

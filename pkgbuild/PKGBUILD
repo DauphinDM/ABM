@@ -1,6 +1,6 @@
 pkgname=abm
-pkgver=0.11.1
-pkgrel=4
+pkgver=0.12.0
+pkgrel=1
 pkgdesc='ABM (Advanced BeamNG.Drive Manager): tuning, garage, telemetry and Omarchy integration'
 url='https://github.com/DauphinDM/ABM'
 conflicts=('beamdeck')

@@ -1,5 +1,6 @@
 #include <QDateTime>
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -7,6 +8,7 @@
 #include <QNetworkDatagram>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlComponent>
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QQuickStyle>
@@ -25,6 +27,51 @@
 #include "presetstore.h"
 
 namespace {
+class ProfileReply : public QNetworkReply {
+public:
+    ProfileReply(const QNetworkRequest &request, QObject *parent) : QNetworkReply(parent) {
+        setRequest(request); setUrl(request.url()); setOperation(QNetworkAccessManager::GetOperation); open(QIODevice::ReadOnly);
+    }
+    void complete(const QByteArray &body, int status=200) {
+        if (isFinished()) return;
+        m_body=body; setAttribute(QNetworkRequest::HttpStatusCodeAttribute,status);
+        setFinished(true); emit readyRead(); emit finished();
+    }
+    void abort() override {
+        if (isFinished()) return;
+        setError(OperationCanceledError,"Canceled"); setFinished(true); emit finished();
+    }
+    qint64 bytesAvailable() const override { return m_body.size()+QNetworkReply::bytesAvailable(); }
+protected:
+    qint64 readData(char *data,qint64 maximum) override {
+        const auto size=qMin(maximum,qint64(m_body.size()));
+        if (!size) return -1;
+        memcpy(data,m_body.constData(),size_t(size)); m_body.remove(0,size); return size;
+    }
+private:
+    QByteArray m_body;
+};
+class ProfileNetwork : public QNetworkAccessManager {
+public:
+    QPointer<ProfileReply> reply;
+    QNetworkRequest request;
+protected:
+    QNetworkReply *createRequest(Operation operation,const QNetworkRequest &r,QIODevice *) override {
+        Q_ASSERT(operation==GetOperation); request=r; reply=new ProfileReply(r,this); return reply;
+    }
+};
+class BrowserCapture : public QObject {
+    Q_OBJECT
+public:
+    QUrl url;
+public slots:
+    void open(const QUrl &value) { url=value; }
+};
+struct BrowserGuard {
+    BrowserCapture capture;
+    BrowserGuard() { QDesktopServices::setUrlHandler("https",&capture,"open"); }
+    ~BrowserGuard() { QDesktopServices::unsetUrlHandler("https"); }
+};
 QByteArray packet(const QString &session = "test") {
     return QJsonDocument(QJsonObject{{"schema",1},{"source","beamdeck"},{"sessionId",session},
         {"bridgeVersion","0.3.0"},{"controlsAvailable",true},{"multiplayer",true},
@@ -68,6 +115,15 @@ class AbmTests : public QObject {
     static void write(const QString &path,const QByteArray &bytes) {
         QDir().mkpath(QFileInfo(path).absolutePath()); QFile file(path);
         QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(bytes),bytes.size());
+    }
+    static void writeZip(const QString &path, const QByteArray &member, const QByteArray &bytes) {
+        auto *writer = archive_write_new(); archive_write_set_format_zip(writer);
+        QCOMPARE(archive_write_open_filename(writer,QFile::encodeName(path).constData()),ARCHIVE_OK);
+        auto *entry = archive_entry_new(); archive_entry_set_pathname(entry,member.constData());
+        archive_entry_set_size(entry,bytes.size()); archive_entry_set_filetype(entry,AE_IFREG); archive_entry_set_perm(entry,0644);
+        QCOMPARE(archive_write_header(writer,entry),ARCHIVE_OK);
+        QCOMPARE(archive_write_data(writer,bytes.constData(),bytes.size()),bytes.size());
+        archive_entry_free(entry); archive_write_close(writer); archive_write_free(writer);
     }
 private slots:
     void initTestCase() {
@@ -297,6 +353,39 @@ private slots:
         profiles.copyDetails("id:0");
         QCOMPARE(QGuiApplication::clipboard()->text(),QString("0"));
     }
+    void playerProfileActionsCompleteOrCancelWithoutExternalRequests() {
+        ProfileNetwork network; PlayerProfiles profiles(nullptr,&network); BrowserGuard browser;
+        QVariantMap player{{"rowKey","id:0"},{"rawName","TestDriver"},{"sessionPlayerId",0}};
+        profiles.setPlayers("server-a",{player}); profiles.openProfile("TestDriver");
+        QCOMPARE(browser.capture.url,PlayerProfiles::profileUrl("TestDriver"));
+        const QByteArray body=R"({"user":{"username":"TestDriver","id":73}})";
+        QGuiApplication::clipboard()->setText("before"); profiles.copyAccount("id:0");
+        QVERIFY(profiles.resolving()); QCOMPARE(network.request.url(),PlayerProfiles::profileUrl("TestDriver",true));
+        QCOMPARE(network.request.transferTimeout(),10000);
+        QCOMPARE(network.request.attribute(QNetworkRequest::RedirectPolicyAttribute).toInt(),int(QNetworkRequest::ManualRedirectPolicy));
+        network.reply->complete(body); QVERIFY(!profiles.resolving());
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("73"));
+        profiles.copyAccount("id:0"); QGuiApplication::clipboard()->setText("new clipboard"); network.reply->complete(body);
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("new clipboard")); QVERIFY(!profiles.resolving());
+        profiles.copyAccount("id:0"); profiles.setPlayers("server-b",{player});
+        QVERIFY(!profiles.resolving()); network.reply->complete(body);
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("new clipboard"));
+        profiles.copyAccount("id:0"); player.insert("rawName","Replacement"); profiles.setPlayers("server-b",{player});
+        QVERIFY(!profiles.resolving()); network.reply->complete(body);
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("new clipboard"));
+        player.insert("rawName","TestDriver"); profiles.setPlayers("server-b",{player});
+        for (const auto &response : {QByteArray(R"({"user":{"username":"Other","id":73}})"),QByteArray("invalid"),QByteArray(262145,'x')}) {
+            profiles.copyAccount("id:0"); network.reply->complete(response);
+            QCOMPARE(QGuiApplication::clipboard()->text(),QString("new clipboard")); QVERIFY(!profiles.resolving());
+        }
+        profiles.copyAccount("id:0"); network.reply->complete(body,302);
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("new clipboard"));
+        profiles.copyAccount("id:0"); profiles.copySessionId("id:0"); network.reply->complete(body);
+        QCOMPARE(QGuiApplication::clipboard()->text(),QString("0"));
+        player.insert("guest",true); profiles.setPlayers("server-b",{player}); browser.capture.url=QUrl();
+        profiles.openProfile("TestDriver"); QVERIFY(browser.capture.url.isEmpty());
+        profiles.copyAccount("id:0"); QVERIFY(!profiles.resolving()); QCOMPARE(QGuiApplication::clipboard()->text(),QString("0"));
+    }
     void playerTelemetryKeepsStableIdentityAndProvenance() {
         auto input=QJsonDocument::fromJson(packet()).object();
         input.insert("players",QJsonArray{
@@ -315,7 +404,7 @@ private slots:
         QVERIFY(two.value("rowKey").toString().startsWith("name:"));
         QVERIFY(!two.contains("ping"));
         QCOMPARE(two.value("pingSource").toString(),QString("unavailable"));
-        QVERIFY(two.value("guest").toBool());
+        QVERIFY(!two.value("guest").toBool()); // Missing session ID does not prove guest status.
         const auto three=players[2].toObject();
         QCOMPARE(three.value("name").toString().size(),64);
         QVERIFY(!three.contains("sessionPlayerId"));
@@ -501,6 +590,14 @@ private slots:
         QTemporaryDir dir; Backend backend(dir.filePath("state.json")); QVERIFY(!backend.error().isEmpty());
         write(dir.filePath("state.json"),"{}"); backend.refresh(); QVERIFY(!backend.connected());
         write(dir.filePath("state.json"),R"({"connected":true,"updatedAt":1})"); backend.refresh(); QVERIFY(!backend.connected());
+        const QJsonObject snapshot{{"connected",true},{"updatedAt",QDateTime::currentMSecsSinceEpoch()},
+            {"sessionId","snapshot"},{"multiplayer",true},{"serverIp","2001:db8::7"},{"serverPort",30814},
+            {"players",QJsonArray{QJsonObject{{"rowKey","id:0"},{"rawName","SnapshotDriver"}}}}};
+        write(dir.filePath("state.json"),QJsonDocument(snapshot).toJson()); backend.refresh(); QVERIFY(backend.connected());
+        backend.profiles()->copyName("id:0"); QCOMPARE(QGuiApplication::clipboard()->text(),QString("SnapshotDriver"));
+        QVERIFY(backend.copyServerAddress()); QCOMPARE(QGuiApplication::clipboard()->text(),QString("[2001:db8::7]:30814"));
+        write(dir.filePath("state.json"),"invalid"); backend.refresh();
+        backend.profiles()->copyName("id:0"); QCOMPARE(QGuiApplication::clipboard()->text(),QString("[2001:db8::7]:30814"));
         backend.toggleMonitoring(); QVERIFY(!backend.monitoring()); backend.toggleMonitoring(); QVERIFY(backend.monitoring());
     }
     void launchPlansUseNoLaunchAndWorkingDirectory() {
@@ -547,6 +644,125 @@ private slots:
         const auto outside=provider.registerImage({{"path","/vehicles/etk800/no.jpg"},{"real",path}},{dir.filePath("other")});
         QVERIFY(provider.requestImage(outside.section('/',-1),&size,QSize(40,40)).isNull());
     }
+    void previewsDecodeEachCandidateAndRespectMountedPriority() {
+        QTemporaryDir dir;
+        const auto game = dir.filePath("game"), user = dir.filePath("user");
+        const auto key = QString("vehicles/etk800/Custom.png");
+        QDir().mkpath(game + "/vehicles/etk800"); QDir().mkpath(user + "/vehicles/etk800");
+        QImage red(80,50,QImage::Format_RGB32); red.fill(Qt::red);
+        QImage blue(80,50,QImage::Format_RGB32); blue.fill(Qt::blue);
+        QVERIFY(red.save(game + '/' + key)); QVERIFY(blue.save(user + '/' + key));
+        QByteArray data; QBuffer buffer(&data); buffer.open(QIODevice::WriteOnly); QVERIFY(red.save(&buffer,"PNG"));
+        const auto zip = dir.filePath("mounted.zip");
+        writeZip(zip,key.toUtf8(),data);
+        Previews provider; QSize size;
+        const auto mounted = provider.registerImage({{"path",'/' + key},{"archive",zip}}, {game,user,dir.path()});
+        auto image = provider.requestImage(mounted.section('/',-1),&size,QSize(40,40));
+        QVERIFY(!image.isNull()); QCOMPARE(image.pixelColor(0,0),QColor(Qt::red));
+
+        // A corrupt mounted image must not mask a decodable loose candidate.
+        writeZip(zip,key.toUtf8(),"not a PNG");
+        const auto fallback = provider.registerImage({{"path",'/' + key},{"archive",zip}}, {game,user,dir.path()});
+        QVERIFY(fallback != mounted);
+        image = provider.requestImage(fallback.section('/',-1),&size,QSize(40,40));
+        QVERIFY(!image.isNull()); QCOMPARE(image.pixelColor(0,0),QColor(Qt::blue));
+
+        // Nonempty corrupt loose data must also advance to the next same-path image.
+        write(user + '/' + key,"corrupt loose image");
+        const auto loose = provider.registerImage({{"path",'/' + key}}, {game,user});
+        image = provider.requestImage(loose.section('/',-1),&size,QSize(40,40));
+        QVERIFY(!image.isNull()); QCOMPARE(image.pixelColor(0,0),QColor(Qt::red));
+        QCOMPARE(size,QSize(80,50));
+    }
+    void previewsCacheResultsAndInvalidateChangedSources() {
+        QTemporaryDir dir; const auto path = dir.filePath("vehicles/etk800/Custom.png");
+        write(path,"corrupt"); Previews provider; QSize size(99,99);
+        const QJsonObject descriptor{{"path","/vehicles/etk800/Custom.png"}};
+        const auto bad = provider.registerImage(descriptor,{dir.path()});
+        QVERIFY(!bad.isEmpty());
+        QVERIFY(provider.requestImage(bad.section('/',-1),&size,QSize(40,40)).isNull());
+        QCOMPARE(size,QSize());
+        QImage photo(80,50,QImage::Format_RGB32); photo.fill(Qt::red); QVERIFY(photo.save(path));
+        // Failed decodes stay cached for their revision; registration sees repairs.
+        QVERIFY(provider.requestImage(bad.section('/',-1),&size,QSize(40,40)).isNull());
+        const auto repaired = provider.registerImage(descriptor,{dir.path()}); QVERIFY(repaired != bad);
+        auto image = provider.requestImage(repaired.section('/',-1),&size,QSize(40,40));
+        QVERIFY(!image.isNull()); QCOMPARE(size,QSize(80,50));
+        QCOMPARE(image.size(),QSize(40,25));
+        QVERIFY(QFile::remove(path));
+        // Successful decodes are reused without reopening the source.
+        QVERIFY(!provider.requestImage(repaired.section('/',-1),&size,QSize(40,40)).isNull());
+        QCOMPARE(size,QSize(80,50));
+        QVERIFY(provider.registerImage(descriptor,{dir.path()}).isEmpty());
+        QVERIFY(provider.requestImage(repaired.section('/',-1),&size,QSize(20,20)).isNull());
+        QCOMPARE(size,QSize());
+
+        QImage replacement(90,60,QImage::Format_RGB32); replacement.fill(Qt::blue); QVERIFY(replacement.save(path));
+        const auto changed = provider.registerImage(descriptor,{dir.path()}); QVERIFY(changed != repaired);
+        image = provider.requestImage(changed.section('/',-1),&size,QSize(4000,4000));
+        QVERIFY(!image.isNull()); QCOMPARE(image.pixelColor(0,0),QColor(Qt::blue));
+        QVERIFY(image.width() <= 960 && image.height() <= 640); QCOMPARE(size,QSize(90,60));
+    }
+    void previewsRejectOversizeAndSourceEscapes() {
+        QTemporaryDir dir, outside;
+        const auto game = dir.filePath("game"), user = dir.filePath("user");
+        const auto key = QString("vehicles/etk800/Custom.png");
+        QDir().mkpath(game + "/vehicles/etk800"); QDir().mkpath(user + "/vehicles/etk800");
+        QImage photo(80,50,QImage::Format_RGB32); photo.fill(Qt::red); QVERIFY(photo.save(game + '/' + key));
+        QImage wide(9000,1,QImage::Format_RGB32); wide.fill(Qt::blue); QVERIFY(wide.save(user + '/' + key));
+        Previews provider; QSize size;
+        const QJsonObject descriptor{{"path",'/' + key}};
+        auto url = provider.registerImage(descriptor,{game,user});
+        QVERIFY(!provider.requestImage(url.section('/',-1),&size,QSize(40,40)).isNull());
+        QCOMPARE(size,QSize(80,50)); // Oversized dimensions fall through, not just corrupt headers.
+        write(user + '/' + key,QByteArray(8*1024*1024+1,'x'));
+        url = provider.registerImage(descriptor,{game,user});
+        QVERIFY(!provider.requestImage(url.section('/',-1),&size,QSize(40,40)).isNull());
+        QCOMPARE(size,QSize(80,50));
+#ifdef Q_OS_UNIX
+        const auto secret = outside.filePath("private.png"); QVERIFY(photo.save(secret));
+        const auto link = user + '/' + key; QVERIFY(QFile::remove(link)); QVERIFY(QFile::link(secret,link));
+        QVERIFY(provider.registerImage(descriptor,{user}).isEmpty());
+        QVERIFY(QFile::remove(link)); QVERIFY(photo.save(link));
+        url = provider.registerImage(descriptor,{user});
+        QVERIFY(QFile::remove(link)); QVERIFY(QFile::link(secret,link));
+        QVERIFY(provider.requestImage(url.section('/',-1),&size,QSize(40,40)).isNull());
+        QCOMPARE(size,QSize());
+#endif
+    }
+    void variantPreviewFallbackSurvivesCardReuse() {
+        QTemporaryDir dir; Theme theme(dir.path());
+        QImage photo(80,50,QImage::Format_RGB32); photo.fill(Qt::red);
+        const auto model = dir.filePath("model.png"), exact = dir.filePath("exact.png");
+        QVERIFY(photo.save(model)); photo.fill(Qt::blue); QVERIFY(photo.save(exact));
+        const auto modelUrl = QUrl::fromLocalFile(model).toString(), exactUrl = QUrl::fromLocalFile(exact).toString();
+        const auto missingUrl = QUrl::fromLocalFile(dir.filePath("missing.png")).toString();
+        QQmlEngine engine; engine.rootContext()->setContextProperty("theme",&theme);
+        QQmlComponent component(&engine,QUrl("qrc:/VariantCard.qml"));
+        QVERIFY2(component.isReady(),qPrintable(component.errorString()));
+        QScopedPointer<QObject> card(component.createWithInitialProperties({{"modelData",QVariantMap{
+            {"id","first"},{"thumbnail",missingUrl},{"modelThumbnail",modelUrl}}}}));
+        QVERIFY(card);
+        auto *image = card->findChild<QObject *>("variantPhoto"); QVERIFY(image);
+        QTRY_COMPARE(card->property("previewKind").toString(),QString("model"));
+        QCOMPARE(image->property("source").toUrl().toString(),modelUrl);
+        QVERIFY(card->property("exactPreviewFailed").toBool());
+        // Reusing the delegate must restore the exact-image binding, not retain
+        // the preceding vehicle's fallback or its provenance label.
+        card->setProperty("modelData",QVariantMap{{"id","second"},{"thumbnail",exactUrl},{"modelThumbnail",modelUrl}});
+        QTRY_COMPARE(card->property("previewKind").toString(),QString("exact"));
+        QCOMPARE(image->property("source").toUrl().toString(),exactUrl);
+        QVERIFY(!card->property("exactPreviewFailed").toBool());
+        card->setProperty("modelData",QVariantMap{{"id","empty"}});
+        QTRY_COMPARE(card->property("previewKind").toString(),QString("unavailable"));
+        QVERIFY(image->property("source").toUrl().isEmpty());
+        QVERIFY(!card->property("fallbackPreview").toBool());
+        card->setProperty("modelData",QVariantMap{{"id","broken"},{"thumbnail",missingUrl},{"modelThumbnail",missingUrl}});
+        QTRY_VERIFY(card->property("exactPreviewFailed").toBool());
+        QCOMPARE(card->property("previewKind").toString(),QString("unavailable"));
+        card->setProperty("modelData",QVariantMap{{"id","model-only"},{"modelThumbnail",modelUrl}});
+        QTRY_COMPARE(card->property("previewKind").toString(),QString("model"));
+    }
     void themeAndTranslatorReload() {
         QTemporaryDir dir; QDir().mkpath(dir.filePath("theme")); Theme theme(dir.path()); QCOMPARE(theme.accent(),QString("#FFD60A"));
         write(dir.filePath("theme/colors.toml"),"accent = \"#123456\"\n"); QTRY_COMPARE(theme.accent(),QString("#123456"));
@@ -569,11 +785,18 @@ private slots:
                 property int clicks: 0
                 property int acceptedCount: 0
                 property int rejectedCount: 0
+                property int menuCount: 0
                 Column {
                     Button { objectName: "testButton"; text: "Apply"; onClicked: root.clicks++ }
                     TextField { objectName: "testField"; width: 200; placeholderText: "Search" }
                     TextArea { objectName: "testArea"; width: 200; height: 80; placeholderText: "Notes" }
                     ComboBox { objectName: "testCombo"; model: ["Engine", "Handling", "World"] }
+                    CheckBox { objectName: "testCheck"; text: "Favorites only" }
+                }
+                Menu {
+                    objectName: "testMenu"
+                    function focusFirst() { first.forceActiveFocus() }
+                    MenuItem { id: first; text: "Refresh"; onTriggered: root.menuCount++ }
                 }
                 Dialog {
                     objectName: "testDialog"; width: 300; title: "Confirm"
@@ -605,6 +828,20 @@ private slots:
         auto *combo=window->findChild<QQuickItem *>("testCombo"); QVERIFY(combo);
         combo->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Down);
         QCOMPARE(combo->property("currentIndex").toInt(),1);
+        auto *check=window->findChild<QQuickItem *>("testCheck"); QVERIFY(check);
+        check->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Space);
+        QVERIFY(check->property("checked").toBool());
+        check->setEnabled(false); QTest::keyClick(window,Qt::Key_Space);
+        QVERIFY(check->property("checked").toBool());
+        auto *menu=window->findChild<QObject *>("testMenu"); QVERIFY(menu);
+        auto *menuBackground=qvariant_cast<QObject *>(menu->property("background")); QVERIFY(menuBackground);
+        QCOMPARE(menuBackground->property("color").value<QColor>(),QColor("#1c222c"));
+        QVERIFY(QMetaObject::invokeMethod(menu,"open"));
+        QTRY_VERIFY(menu->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(menu,"focusFirst"));
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_COMPARE(window->property("menuCount").toInt(),1);
+        QTRY_VERIFY(!menu->property("visible").toBool());
         auto *dialog=window->findChild<QObject *>("testDialog"); QVERIFY(dialog);
         QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
         QTRY_VERIFY(dialog->property("visible").toBool());
@@ -617,6 +854,138 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(dialog,"focusOkay"));
         QTest::keyClick(window,Qt::Key_Space);
         QTRY_COMPARE(window->property("acceptedCount").toInt(),1);
+        QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));
+    }
+    void responsiveGarageKeepsColumnsAndFiltersUsable() {
+        QTemporaryDir dir; Backend backend(dir.filePath("state.json")); backend.setDemo();
+        Theme theme(dir.path()); Translator translator(dir.filePath("language"));
+        QQmlApplicationEngine engine; QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors) warnings<<e.toString();});
+        engine.rootContext()->setContextProperty("backend",&backend); engine.rootContext()->setContextProperty("theme",&theme);
+        engine.rootContext()->setContextProperty("translator",&translator); engine.rootContext()->setContextProperty("demoMode",true);
+        engine.load(QUrl("qrc:/Main.qml")); QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow *>(engine.rootObjects().first()); QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window)); window->requestActivate(); window->setProperty("page",2);
+        auto *grid=window->findChild<QQuickItem *>("garageGrid"); QVERIFY(grid);
+        auto *filters=window->findChild<QObject *>("garageFiltersDialog"); QVERIFY(filters);
+        for (const auto dimensions : {QSize(320,440),QSize(380,600),QSize(560,840),QSize(1040,860)}) {
+            window->resize(dimensions); window->setProperty("selectedModel",QVariantMap{}); QTest::qWait(100);
+            QCOMPARE(grid->property("count").toInt(),5);
+            const int columns=grid->property("columns").toInt();
+            QCOMPARE(columns,dimensions.width() < 400 ? 1 : dimensions.width() < 760 ? 2 : 4);
+            QVERIFY(grid->height()>=80);
+            QVERIFY(qAbs(grid->property("cellWidth").toDouble()*columns-grid->width())<0.1);
+            QQuickItem *first=nullptr, *second=nullptr;
+            QVERIFY(QMetaObject::invokeMethod(grid,"itemAtIndex",Q_RETURN_ARG(QQuickItem *,first),Q_ARG(int,0)));
+            QVERIFY(QMetaObject::invokeMethod(grid,"itemAtIndex",Q_RETURN_ARG(QQuickItem *,second),Q_ARG(int,1)));
+            QVERIFY(first && second);
+            QVERIFY(first->width()<=grid->property("cellWidth").toDouble());
+            if (columns>1) { QCOMPARE(first->y(),second->y()); QVERIFY(second->x()>first->x()); }
+            else QVERIFY(second->y()>first->y());
+            // Modal filters must never consume the gallery's layout space.
+            const auto galleryHeight=grid->height(); window->setProperty("extraFilters",true);
+            QTRY_VERIFY(filters->property("visible").toBool()); QCOMPARE(grid->height(),galleryHeight);
+            QVERIFY(filters->property("height").toDouble()<=window->height());
+            QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(!filters->property("visible").toBool());
+            QVERIFY(!window->property("extraFilters").toBool());
+            backend.requestConfigs("etk800");
+            window->setProperty("selectedModel",QVariantMap{{"id","etk800"},{"name","800 Series"}});
+            QTest::qWait(80); QCOMPARE(grid->property("count").toInt(),2); QVERIFY(grid->height()>=60);
+            // Browsing and resizing never acquires authority to act in a demo.
+            QVERIFY(!window->property("canDriveAction").toBool());
+        }
+        QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));
+    }
+    void sessionButtonsSurviveChangingTelemetry() {
+        Fixture f; QVERIFY(f.start()); Backend backend(f.path); QTRY_VERIFY(backend.connected());
+        BrowserGuard browser;
+        Theme theme(f.dir.filePath("theme")); Translator translator(f.dir.filePath("language"));
+        auto data=QJsonDocument::fromJson(packet()).object();
+        data.insert("server","Session test"); data.insert("serverIp","203.0.113.7"); data.insert("serverPort",30814);
+        data.insert("players",QJsonArray{QJsonObject{{"rawName","TestDriver"},{"sessionPlayerId",0},{"local",true},{"ping",25}}});
+        data.insert("activeVehicles",QJsonArray{QJsonObject{{"id",42},{"name","Test vehicle"},{"owned",true}}});
+        data.insert("telemetry",QJsonObject{{"speed",10}});
+        QTimer updates; updates.setInterval(50);
+        connect(&updates,&QTimer::timeout,this,[&]{
+            auto rows=data.value("players").toArray(); auto p=rows[0].toObject();
+            p.insert("pingAgeMs",p.value("pingAgeMs").toInt()+50); rows[0]=p; data.insert("players",rows); f.send(data);
+        });
+        updates.start(); f.send(data); QTRY_COMPARE(backend.players().size(),1);
+        QQmlApplicationEngine engine; QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors) warnings<<error.toString();});
+        engine.rootContext()->setContextProperty("backend",&backend); engine.rootContext()->setContextProperty("theme",&theme);
+        engine.rootContext()->setContextProperty("translator",&translator); engine.rootContext()->setContextProperty("demoMode",false);
+        engine.load(QUrl("qrc:/Main.qml")); QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow *>(engine.rootObjects().first()); QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window)); window->requestActivate(); window->setProperty("page",3); QTest::qWait(100);
+        auto find=[&](const QString &name)->QQuickItem * {
+            QList<QQuickItem *> pending{window->contentItem()};
+            while(!pending.isEmpty()) { auto *item=pending.takeLast(); if(item->objectName()==name) return item; pending.append(item->childItems()); }
+            return nullptr;
+        };
+        auto click=[&](QQuickItem *button) {
+            QVERIFY(button); QVERIFY(button->isEnabled());
+            for(auto *ancestor=button->parentItem();ancestor;ancestor=ancestor->parentItem()) {
+                if(ancestor->metaObject()->indexOfProperty("contentY")<0) continue;
+                const auto y=button->mapToItem(ancestor,QPointF()).y();
+                ancestor->setProperty("contentY",qBound(0.,ancestor->property("contentY").toDouble()+y-ancestor->height()/2,
+                    qMax(0.,ancestor->property("contentHeight").toDouble()-ancestor->height()))); break;
+            }
+            QTest::qWait(60);
+            const auto center=button->mapToScene(QPointF(button->width()/2,button->height()/2)).toPoint();
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,center);
+            QVERIFY(button->property("pressed").toBool()); QTest::qWait(180);
+            QVERIFY(button->property("pressed").toBool());
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,center); QTest::qWait(30);
+        };
+        for(const auto &name:{"copyPlayerName","copyPlayerDetails","copyPlayerSessionId"}) {
+            QGuiApplication::clipboard()->setText("unchanged"); click(find(name));
+            QVERIFY2(QGuiApplication::clipboard()->text()!="unchanged",name);
+        }
+        click(find("openPlayerProfile")); QCOMPARE(browser.capture.url,PlayerProfiles::profileUrl("TestDriver"));
+        {
+            ProfileNetwork network; PlayerProfiles profiles(nullptr,&network);
+            profiles.setPlayers("test-server",backend.players());
+            auto *row=find("playerRow_id:0"); QVERIFY(row);
+            row->setProperty("profiles",QVariant::fromValue(static_cast<QObject *>(&profiles)));
+            click(find("copyPlayerForumId")); QVERIFY(profiles.resolving()); QVERIFY(network.reply);
+            network.reply->complete(R"({"user":{"username":"TestDriver","id":73}})");
+            QCOMPARE(QGuiApplication::clipboard()->text(),QString("73"));
+            QVERIFY(row->property("actionMessage").toString().contains("73"));
+            const auto screenshot=qEnvironmentVariable("BEAMSIDE_SESSION_SCREENSHOT");
+            if (!screenshot.isEmpty()) QVERIFY(window->grabWindow().save(screenshot));
+            row->setProperty("profiles",QVariant::fromValue(static_cast<QObject *>(backend.profiles())));
+        }
+        window->resize(320,440); QTest::qWait(100);
+        click(find("copyPlayerName")); QCOMPARE(QGuiApplication::clipboard()->text(),QString("TestDriver"));
+        window->resize(560,840); QTest::qWait(100);
+        click(find("copyServerAddress")); QCOMPARE(QGuiApplication::clipboard()->text(),QString("203.0.113.7:30814"));
+        click(find("sessionVehicles")); auto *owned=window->findChild<QObject *>("ownedDialog"); QVERIFY(owned && owned->property("visible").toBool());
+        QTest::keyClick(window,Qt::Key_Escape); QTest::qWait(100);
+        click(find("sessionDiagnostics")); auto *diagnostics=window->findChild<QObject *>("diagnosticsDialog"); QVERIFY(diagnostics && diagnostics->property("visible").toBool());
+        QTest::keyClick(window,Qt::Key_Escape); QTest::qWait(100);
+        click(find("sessionResetTrip")); auto *trip=window->findChild<QObject *>("tripDialog"); QVERIFY(trip && trip->property("visible").toBool());
+        QVERIFY(backend.state().value("distance").toDouble()>0);
+        data.insert("telemetry",QJsonObject{{"speed",0}}); f.send(data);
+        QTRY_COMPARE(backend.state().value("telemetry").toMap().value("speed").toInt(),0);
+        QVERIFY(QMetaObject::invokeMethod(trip,"accept")); QTRY_VERIFY(!backend.busy());
+        QTRY_COMPARE(backend.actionMessage(),QString("Trip reset."));
+        QCOMPARE(backend.state().value("distance").toDouble(),0.);
+        // A verified multiplayer policy is deliberately not fabricated for
+        // this UI test. Exercise selection in SP, then leave MP policy to the
+        // strict bridge mocks and receiver policy tests.
+        data.insert("multiplayer",false); data.insert("map","west_coast_usa"); f.send(data);
+        QTRY_VERIFY(window->property("canDriveAction").toBool());
+        click(find("sessionVehicles")); click(find("selectOwnedVehicle_42"));
+        auto *confirmation=window->findChild<QObject *>("vehicleConfirmDialog"); QVERIFY(confirmation);
+        QVERIFY(confirmation->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(confirmation,"accept"));
+        QJsonObject command;
+        QTRY_VERIFY(f.game.hasPendingDatagrams());
+        while(f.game.hasPendingDatagrams()) { const auto next=f.command(); if(next.value("action")=="switch") command=next; }
+        QCOMPARE(command.value("vehicleId").toInt(),42);
+        f.send({{"kind","result"},{"requestId",command.value("requestId")},{"ok",true},{"message","Selection requested"}});
+        QTRY_VERIFY(!backend.busy()); QCOMPARE(backend.actionMessage(),QString("Selection requested"));
         QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));
     }
     void realWindowAndGarageInteraction() {
@@ -655,6 +1024,8 @@ private slots:
         rpm->setProperty("text","9000"); QTRY_VERIFY(!rpmApply->isEnabled());
         QVERIFY(rpm->property("invalidInput").toBool());
         QVERIFY(window->findChild<QQuickItem *>("clutchToggle")->isEnabled());
+        auto *presetPanel = window->findChild<QQuickItem *>("presetPanel"); QVERIFY(presetPanel);
+        QCOMPARE(presetPanel->property("backend").value<QObject *>(), static_cast<QObject *>(&backend));
         auto *section=window->findChild<QQuickItem *>("carSection"); QVERIFY(section); QCOMPARE(section->property("count").toInt(),5);
         auto *engineToggle=window->findChild<QQuickItem *>("engineToggle"); auto *strength=window->findChild<QQuickItem *>("strengthSlider");
         QVERIFY(engineToggle && strength); QVERIFY(strength->isEnabled());

@@ -6,8 +6,10 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest release: 0.8.0 · Development: 0.10.0.** The repository and its releases
-are private. This is an independent project, not affiliated with BeamNG or BeamMP.
+**Latest preview: [0.12.0](https://github.com/DauphinDM/ABM/releases/tag/v0.12.0).**
+Public, MIT-licensed source with Linux and Windows downloads. This is an
+independent project, not affiliated with BeamNG or BeamMP. Gameplay integration
+and Windows desktop support remain experimental; passing CI is not live-game certification.
 
 ## What it does
 
@@ -22,8 +24,10 @@ Diagnostics adds temperature, pedals, steering, G forces, frame times and timing
 estimates where the game supplies them. Missing readings remain unavailable,
 not invented. Photos are read from your own installation, not downloaded.
 
-The UI uses compact, square **Qt Quick Basic** controls, translucent surfaces,
-opaque text, and the live Omarchy accent. English is included. The standalone
+The dashboard uses calm dark surfaces, larger instruments and photo cards, and
+the live Omarchy accent. Tabs become a sidebar on wide windows; Garage filters
+open separately so the vehicle grid stays usable. Theme-aware square corners,
+plain text and keyboard navigation remain. English is included. The standalone
 app works without Omarchy; Windows support remains experimental.
 
 The Car workshop groups related controls into **Engine & protection**,
@@ -38,8 +42,7 @@ for compatibility and safety limits. These features are experimental, not whole-
 
 ## Documentation
 
-The 0.9–0.10 workshop additions are development features, not part of the published
-0.8 preview. See the [changelog](CHANGELOG.md) for limits and validation status.
+See the [changelog](CHANGELOG.md) for features, limits and validation status.
 
 - [Installation and migration](docs/installation.md)
 - [User guide, tuning behavior and shortcuts](docs/user-guide.md)
@@ -50,17 +53,18 @@ The 0.9–0.10 workshop additions are development features, not part of the publ
 - [Portable Linux: AppImage and bundled archive](docs/portable-linux.md)
 - [Sandbox feature research and roadmap](docs/sandbox-research.md)
 - [Official-server allowlist, cleanup and limitations](docs/server-policy.md)
-- [Development, tests and private releases](docs/development.md)
+- [Development, tests and releases](docs/development.md)
 - [Visual audit](docs/ui-audit.md)
+- [Design-to-code review and preview reliability](docs/design-review.md)
 - [Security and privacy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 
 ## Quick start — Arch Linux / Omarchy
 
-Install the private release's `abm-0.8.0-1-x86_64.pkg.tar.zst` asset:
+Install the release's `abm-0.12.0-1-x86_64.pkg.tar.zst` asset:
 
 ```sh
-sudo pacman -U abm-0.8.0-1-x86_64.pkg.tar.zst
+sudo pacman -U abm-0.12.0-1-x86_64.pkg.tar.zst
 abm-enable --json
 abm open
 ```
@@ -91,7 +95,8 @@ cd ABM
 ./bin/install
 ```
 
-The private repository requires an authorized GitHub account.
+Other Linux desktops can use the [AppImage or portable archive](docs/portable-linux.md).
+Windows users can extract the [standalone ZIP](docs/windows.md); keep its DLLs beside `ABM.exe`.
 
 ## Tuning is deliberately a sandbox
 

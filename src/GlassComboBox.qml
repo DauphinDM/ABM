@@ -6,21 +6,21 @@ import QtQuick.Controls.Basic.impl
 T.ComboBox {
     id: control
     implicitWidth: Math.max(140, implicitContentWidth + leftPadding + rightPadding)
-    implicitHeight: Math.max(32, implicitContentHeight + topPadding + bottomPadding)
+    implicitHeight: Math.max(36, implicitContentHeight + topPadding + bottomPadding)
     padding: 7
     spacing: 8
     leftPadding: mirrored ? 29 : 9
     rightPadding: mirrored ? 9 : 29
-    font.pixelSize: 11
+    font.pixelSize: 12
     hoverEnabled: true
     opacity: enabled ? 1 : .65
     background: FieldSurface { field: control }
     indicator: Text {
         x: control.mirrored ? 9 : control.width - width - 9
         y: (control.height - height) / 2
-        text: control.popup.visible ? "−" : "+"
+        text: control.popup.visible ? "⌃" : "⌄"
         textFormat: Text.PlainText
-        color: theme.accent
+        color: "#a6afbd"
         font.pixelSize: 15
     }
     contentItem: T.TextField {
@@ -38,6 +38,7 @@ T.ComboBox {
         inputMethodHints: control.inputMethodHints
         validator: control.validator
         selectByMouse: control.selectTextByMouse
+        clip: true
         Basic.ContextMenu.menu: TextEditingContextMenu { editor: parent }
     }
     delegate: Basic.ItemDelegate {
@@ -45,7 +46,7 @@ T.ComboBox {
         required property var model
         required property int index
         width: ListView.view.width
-        implicitHeight: 32
+        implicitHeight: 36
         text: model[control.textRole]
         highlighted: control.highlightedIndex === index
         hoverEnabled: true
@@ -76,9 +77,9 @@ T.ComboBox {
             Basic.ScrollIndicator.vertical: Basic.ScrollIndicator { }
         }
         background: Rectangle {
-            color: "#f50e131c"
+            color: "#1c222c"
             radius: Math.min(8, theme.radius)
-            border.width: 1; border.color: Qt.alpha(theme.accent, .5)
+            border.width: 1; border.color: "#465162"
         }
     }
 }

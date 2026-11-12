@@ -5,16 +5,18 @@ import "Garage.js" as Garage
 
 ApplicationWindow {
     id: win
-    width: 440; height: 700; minimumWidth: 320; minimumHeight: 440
+    width: 560; height: 840; minimumWidth: 320; minimumHeight: 440
     visible: true; title: "ABM"
-    color: "#d90d0e12" // Translucent Omarchy window: desktop shows through.
+    color: "#10141b"
+    font.family: "Noto Sans"
+    font.pixelSize: 13
 
     property color accent: theme.accent
-    property color surface: "#d016171c"
-    property color textMain: "#e8e8ed"
-    property color textDim: "#9b9ca9"
-    property int pad: 10
-    property int gap: 8
+    property color surface: "#171c24"
+    property color textMain: "#edf1f7"
+    property color textDim: "#a0aabb"
+    property int pad: width < 380 ? 12 : wide ? 24 : 20
+    property int gap: 12
 
     property bool metric: backend.metric
     onMetricChanged: backend.metric = metric
@@ -52,6 +54,7 @@ ApplicationWindow {
         if (id === "help") { helpVisible = true; return }
     }
     readonly property var game: backend.state
+    readonly property var appBackend: backend
     readonly property var telemetry: game.telemetry || ({})
     readonly property bool live: backend.connected
     readonly property var launcher: backend.launcher
@@ -192,6 +195,7 @@ ApplicationWindow {
         else if (devOpen === "diagnostics") diagnostics.open()
         else if (devOpen === "paths") settingsDialog.open()
         else if (devOpen === "help") win.helpVisible = true
+        else if (devOpen === "palette") commandPalette.openPalette()
         else if (devOpen === "filters") { win.page = 2; filterBox.popup.open() }
         else if (devOpen === "facets") { win.page = 2; win.extraFilters = true }
         else if (["spawn", "replace", "switch"].indexOf(devOpen) >= 0) {
@@ -292,6 +296,8 @@ ApplicationWindow {
         sequence: "Escape"; context: Qt.ApplicationShortcut
         onActivated: {
             if (commandPalette.visible) commandPalette.close()
+            else if (facetsDialog.visible) facetsDialog.close()
+            else if (resetVehicleDialog.visible) resetVehicleDialog.close()
             else if (confirmDialog.visible) confirmDialog.close()
             else if (settingsDialog.visible) settingsDialog.close()
             else if (diagnostics.visible) diagnostics.close()
@@ -319,47 +325,32 @@ ApplicationWindow {
         anchors.fill: parent
         LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
         LayoutMirroring.childrenInherit: true
-        Rectangle {
-            anchors.fill: parent
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#08090c" }
-                GradientStop { position: 1.0; color: "#10141b" }
-            }
-        }
-        Rectangle {
-            width: parent.width * .9; height: width; radius: width / 2
-            x: parent.width - width * .55; y: -height * .62
-            color: Qt.alpha(win.accent, .09)
-        }
-        Rectangle { anchors.fill: parent; color: "#05000000" }
         ColumnLayout {
             anchors.fill: parent; anchors.margins: pad; spacing: gap
-            // Glass chrome: brand, live capsule and launch action.
-            GlassPanel {
+            // One quiet application bar, with connection state below it.
+            Item {
                 visible: !win.focusMode
-                Layout.fillWidth: true; implicitHeight: 50; corner: 12
-                fillColor: "#c90b0c11"; strokeColor: Qt.alpha(win.accent, .24)
+                Layout.fillWidth: true; implicitHeight: 44
                 RowLayout {
-                    anchors.fill: parent; anchors.leftMargin: 11; anchors.rightMargin: 8; spacing: win.gap
-                    Rectangle { width: 4; height: 22; radius: 2; color: win.accent }
-                    ColumnLayout { Layout.fillWidth: true; spacing: 0
-                        PlainLabel { text: "ABM"; font.pixelSize: 14; font.weight: Font.DemiBold; color: win.textMain; font.letterSpacing: .4 }
-                        PlainLabel { visible: !win.wide; text: qsTr("MOTORSPORT GLASS"); font.pixelSize: 7; color: Qt.alpha(win.accent, .9); font.letterSpacing: 1.5 }
+                    anchors.fill: parent; spacing: win.gap
+                    Rectangle {
+                        Layout.preferredWidth: 34; Layout.preferredHeight: 34; color: win.accent; radius: Math.min(5, theme.radius)
+                        PlainLabel { anchors.centerIn: parent; text: "A"; font.pixelSize: 22; font.weight: Font.Black; color: win.accent.r * .299 + win.accent.g * .587 + win.accent.b * .114 > .55 ? "#10141b" : "#ffffff" }
                     }
-                    StatusPill {
-                        visible: win.wide
-                        text: win.live ? (win.game.multiplayer ? qsTr("LIVE · MULTIPLAYER") : qsTr("LIVE · SOLO")) : (win.launcher.gameRunning ? qsTr("WAITING FOR BRIDGE") : qsTr("OFFLINE"))
-                        active: win.live; warning: !win.live && win.launcher.gameRunning
+                    ColumnLayout { Layout.fillWidth: true; spacing: 2
+                        PlainLabel { Layout.fillWidth: true; text: "ABM"; font.pixelSize: 16; font.weight: Font.Bold; color: win.textMain; font.letterSpacing: 1 }
+                        PlainLabel { Layout.fillWidth: true; visible: win.width >= 400; text: qsTr("BeamNG companion"); font.pixelSize: 11; color: win.textDim }
                     }
                     Button {
-                        text: "⌘K"; font.pixelSize: 10; padding: 6; implicitHeight: 28; flat: true
+                        text: win.width >= 460 ? "Ctrl K" : "⌕"; font.pixelSize: 11; padding: 8; implicitHeight: 34; flat: true
+                        Accessible.name: qsTr("Open command palette")
                         onClicked: commandPalette.openPalette()
                         ToolTip.visible: hovered; ToolTip.text: qsTr("Command palette · Ctrl+K")
                     }
                     Button {
                         text: win.launcher.launching ? qsTr("Starting…") : win.launcher.gameRunning ? (win.launcher.beammpRunning ? qsTr("BeamMP running") : qsTr("Start BeamMP")) : qsTr("Start BeamNG")
                         highlighted: true
-                        font.pixelSize: 10; padding: 6; implicitHeight: 28
+                        font.pixelSize: 11; padding: 8; implicitHeight: 34
                         enabled: !demoMode && !backend.busy && !win.launcher.launching && (!win.launcher.gameRunning || !win.launcher.beammpRunning)
                         onClicked: backend.launchAuto()
                         ToolTip.visible: hovered
@@ -372,13 +363,12 @@ ApplicationWindow {
                 visible: !win.focusMode
                 Layout.fillWidth: true; spacing: gap
                 StatusPill {
-                    visible: !win.wide
-                    text: win.live ? (win.game.multiplayer ? qsTr("LIVE") : qsTr("SOLO")) : (win.launcher.gameRunning ? qsTr("WAITING") : qsTr("OFFLINE"))
-                    active: win.live; warning: !win.live && win.launcher.gameRunning
+                    text: demoMode ? qsTr("DEMO") : win.live ? qsTr("CONNECTED") : (win.launcher.gameRunning ? qsTr("WAITING") : qsTr("OFFLINE"))
+                    active: win.live && !demoMode; warning: !win.live && win.launcher.gameRunning
                 }
                 PlainLabel {
-                    Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideRight; color: textDim; font.pixelSize: 10
-                    text: demoMode ? qsTr("DEMO · Sample data") : !backend.monitoring ? qsTr("Display paused") : win.live
+                    Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideRight; color: textDim; font.pixelSize: 11
+                    text: demoMode ? qsTr("Sample session · game actions disabled") : !backend.monitoring ? qsTr("Display paused") : win.live
                         ? (win.game.multiplayer ? win.game.server || "BeamMP" : qsTr("Single player"))
                         : win.launcher.gameRunning ? qsTr("Game running · waiting for bridge") : qsTr("Game closed")
                 }
@@ -391,7 +381,7 @@ ApplicationWindow {
                     text: qsTr("Gameplay locked · %1").arg(win.game.policyReason || qsTr("Install bridge 0.7 and restart BeamNG for server verification."))
                     color: "#f0d3a0"; wrapMode: Text.Wrap; font.pixelSize: 10 }
             }
-            // Docked navigation: bottom/side glass rail.
+            // Tabs on compact windows, a navigation rail when space allows.
             NavDock {
                 visible: !win.wide
                 Layout.fillWidth: true
@@ -406,6 +396,18 @@ ApplicationWindow {
                     currentPage: win.page; accentColor: win.accent
                     onSelected: win.page = page
                 }
+                ColumnLayout {
+                Layout.fillWidth: true; Layout.fillHeight: true; spacing: 16
+                RowLayout {
+                    visible: !win.focusMode && win.height >= 620
+                    Layout.fillWidth: true; Layout.topMargin: 6; spacing: 8
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 4
+                        PlainLabel { text: [qsTr("Drive"), qsTr("Workshop"), qsTr("Garage"), qsTr("Session")][win.page]; color: win.textMain; font.pixelSize: 26; font.weight: Font.DemiBold; font.letterSpacing: -.5 }
+                        PlainLabel { Layout.fillWidth: true; text: [qsTr("Your car, at a glance."), qsTr("Tune deliberately. Keep control."), qsTr("Find your next drive."), qsTr("The road so far.")][win.page]; color: win.textDim; font.pixelSize: 12; elide: Text.ElideRight }
+                    }
+                    Button { text: "⋯"; implicitWidth: 36; implicitHeight: 34; flat: true; font.pixelSize: 20; Accessible.name: qsTr("Settings and help"); onClicked: settingsMenu.popup(this, 0, height) }
+                }
                 StackLayout {
                 currentIndex: win.page; Layout.fillWidth: true; Layout.fillHeight: true
                 // DRIVE
@@ -414,8 +416,8 @@ ApplicationWindow {
                     ColumnLayout {
                         width: parent.width; spacing: gap
                         RowLayout { Layout.fillWidth: true
-                            PlainLabel { Layout.fillWidth: true; text: win.game.vehicleName || win.game.vehicle || qsTr("No active vehicle"); font.pixelSize: 12; color: win.textMain; font.letterSpacing: .3 }
-                            StatusPill { visible: win.live; text: win.telemetry.gear === 0 ? qsTr("NEUTRAL") : qsTr("LIVE TELEMETRY"); active: true }
+                            PlainLabel { Layout.fillWidth: true; text: win.game.vehicleName || win.game.vehicle || qsTr("No active vehicle"); font.pixelSize: 14; font.weight: Font.Medium; color: win.textMain; elide: Text.ElideRight }
+                            StatusPill { visible: win.live && win.width >= 400; text: qsTr("TELEMETRY"); active: true }
                         }
                         HeroCluster {
                             visible: win.live; Layout.fillWidth: true
@@ -425,19 +427,24 @@ ApplicationWindow {
                             gearText: win.telemetry.gear === undefined ? "—" : win.telemetry.gear === 0 ? "N" : win.telemetry.gear < 0 ? "R" : win.number(win.telemetry.gear)
                             live: win.live
                         }
-                        PlainLabel { visible: !win.live; Layout.fillWidth: true; text: win.launcher.gameRunning ? qsTr("The game is open, but its bridge is not connected.") : qsTr("Start BeamNG above."); color: textDim; font.pixelSize: 10 }
+                        SectionPanel {
+                            visible: !win.live; Layout.fillWidth: true
+                            PlainLabel { text: qsTr("Ready when you are"); color: textMain; font.pixelSize: 20; font.weight: Font.DemiBold }
+                            PlainLabel { Layout.fillWidth: true; text: win.launcher.gameRunning ? qsTr("BeamNG is running. Waiting for its bridge to connect.") : qsTr("Start BeamNG to see live instruments, browse your garage, and tune your vehicle."); color: textDim; font.pixelSize: 13; wrapMode: Text.Wrap }
+                            Button { text: qsTr("Connection setup"); onClicked: settingsDialog.open() }
+                        }
                         RowLayout { visible: win.live; Layout.fillWidth: true; spacing: gap
                             MetricCard { label: qsTr("FUEL"); value: win.number(win.telemetry.fuel === undefined ? undefined : win.telemetry.fuel*100); unit: "%" }
                             MetricCard { label: qsTr("ENGINE"); value: win.number(win.smoothRpm); unit: "RPM" }
                         }
                         PlainLabel { visible: (win.telemetry.fuel !== undefined && win.telemetry.fuel < .1) || (win.telemetry.coolant || 0) > 110; text: (win.telemetry.coolant || 0) > 110 ? qsTr("High coolant temperature") : qsTr("Low fuel"); color: "#cf8a4a"; font.pixelSize: 10 }
                         TelemetryRibbon {
-                            visible: win.live; Layout.fillWidth: true; Layout.preferredHeight: 92
+                            visible: win.live; Layout.fillWidth: true; Layout.preferredHeight: 104
                             samples: backend.history; field: "speed"; multiplier: win.metric ? 3.6 : 2.23694; ceiling: 60
                             lineColor: win.accent; live: win.live; caption: qsTr("SPEED · LAST 60 SECONDS")
                         }
                         RowLayout { visible: win.live; Layout.fillWidth: true; spacing: gap
-                            GMeter { Layout.preferredWidth: 116; Layout.preferredHeight: 82
+                            GMeter { Layout.preferredWidth: win.wide ? 220 : win.width < 380 ? 108 : 152; Layout.preferredHeight: 156
                                 lateral: win.telemetry.lateralG || 0; longitudinal: win.telemetry.longitudinalG || 0; accentColor: win.accent }
                             ColumnLayout { Layout.fillWidth: true; spacing: gap
                                 MetricCard { label: qsTr("COOLANT"); value: win.number(win.telemetry.coolant); unit: "°C" }
@@ -456,14 +463,14 @@ ApplicationWindow {
                     clip: true; contentWidth: availableWidth
                     ColumnLayout {
                         width: parent.width; spacing: gap
-                        PlainLabel { text: qsTr("Sandbox workshop"); font.pixelSize: 13; color: textMain }
+                        PlainLabel { text: qsTr("ACTIVE VEHICLE"); font.pixelSize: 10; font.letterSpacing: 1.2; color: textDim }
                         PlainLabel { visible: !win.controls; Layout.fillWidth: true; text: win.launcher.gameRunning ? qsTr("The game is open, but its bridge is not connected.") : qsTr("Connect the bridge (game or settings) to tune your vehicle."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
                         PlainLabel { visible: win.controls && win.sandboxAllowed && !win.tuningReady; Layout.fillWidth: true; text: qsTr("Restart BeamNG once so the bridge with tuning support loads."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
                         RowLayout { visible: win.controls; Layout.fillWidth: true; spacing: gap
                             MetricCard { Layout.fillWidth: true; label: qsTr("VEHICLE"); value: (win.game.vehicleName || win.game.vehicle || "—"); unit: (win.telemetry.speed !== undefined ? win.speed(win.telemetry.speed) + " " + (win.metric ? "km/h" : "mph") : "parked or unknown") }
                             MetricCard { Layout.fillWidth: true; label: qsTr("GEAR"); value: win.telemetry.gear === undefined ? "—" : win.telemetry.gear === 0 ? "N" : win.telemetry.gear < 0 ? "R" : win.number(win.telemetry.gear); unit: qsTr("RPM %1").arg(win.telemetry.rpm === undefined ? "—" : win.number(win.smoothRpm)) }
                         }
-                        ComboBox { id: carSection; objectName: "carSection"; Layout.fillWidth: true; visible: win.controls; font.pixelSize: 11
+                            ComboBox { id: carSection; objectName: "carSection"; Layout.fillWidth: true; visible: win.controls; font.pixelSize: 12
                             model: [qsTr("Engine & protection"), qsTr("Handling & gearbox"), qsTr("World & recovery"), qsTr("Body · experimental"), qsTr("Presets & recovery")] }
                         RowLayout { visible: win.controls && ["0.10.0","0.11.0"].indexOf(win.game.bridgeVersion)>=0; Layout.fillWidth: true
                             Button { objectName: "persistenceToggle"; text: win.workshop.persistence ? qsTr("Keep tuning on reset: ON") : qsTr("Keep tuning on reset: OFF"); font.pixelSize: 10; implicitHeight: 28
@@ -473,9 +480,9 @@ ApplicationWindow {
                         PlainLabel { visible: !!win.workshop.restoreError; Layout.fillWidth: true; text: win.workshop.restoreError || ""; color: "#df6b61"; font.pixelSize: 10; wrapMode: Text.Wrap }
                         PlainLabel { visible: win.controls && !win.ownVehicle; Layout.fillWidth: true; text: qsTr("Select your own vehicle to use the workshop."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
                         PlainLabel { visible: win.controls && win.ownVehicle && Object.keys(win.capabilities).length < 3; Layout.fillWidth: true; text: qsTr("Waiting for vehicle capabilities. Install the updated bridge and restart BeamNG if controls stay disabled."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; spacing: 2
+                        SectionPanel { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; spacing: 10
                             RowLayout { Layout.fillWidth: true
-                                PlainLabel { Layout.fillWidth: true; text: qsTr("Engine power"); font.pixelSize: 11; color: textMain }
+                                PlainLabel { Layout.fillWidth: true; text: qsTr("Engine power"); font.pixelSize: 16; font.weight: Font.DemiBold; color: textMain }
                                 TextField { id: powerInput; objectName: "powerInput"; Layout.preferredWidth: 112; implicitHeight: 30; font.pixelSize: 11; color: textMain
                                     text: String((win.workshop.enginePower !== undefined ? win.workshop.enginePower : 1) * 100)
                                     selectByMouse: true; enabled: win.livePowerReady
@@ -496,8 +503,8 @@ ApplicationWindow {
                                 onMoved: { powerInput.text = String(Math.round(value * 100)); win.submitLivePower() }
                                 enabled: powerInput.enabled
                             }
-                            PlainLabel { Layout.fillWidth: true; text: win.livePowerReady ? qsTr("Live power · drag or finish typing to apply. Latest value wins, at most 4 requests/s. No beam/gravity changes. Overflow rejected.") : !win.sandboxAllowed ? qsTr("Gameplay locked by server policy. Live power edits are canceled.") : qsTr("Live power needs a supported engine and bridge 0.9.0. Restart BeamNG after installing."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                            PlainLabel { Layout.fillWidth: true; text: win.workshop.enginePower===undefined ? qsTr("Accepted power: unknown until ABM applies a value.") : qsTr("Vehicle readback: %1% accepted torque scale").arg(win.number(win.workshop.enginePower*100)); font.pixelSize: 10; color: accent; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: win.livePowerReady ? qsTr("Live power · drag or finish typing to apply. Latest value wins, at most 4 requests/s. No beam/gravity changes. Overflow rejected.") : !win.sandboxAllowed ? qsTr("Gameplay locked by server policy. Live power edits are canceled.") : qsTr("Live power needs a supported engine and bridge 0.9.0. Restart BeamNG after installing."); font.pixelSize: 12; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: win.workshop.enginePower===undefined ? qsTr("Accepted power: unknown until ABM applies a value.") : qsTr("Vehicle readback: %1% accepted torque scale").arg(win.number(win.workshop.enginePower*100)); font.pixelSize: 12; color: accent; wrapMode: Text.Wrap }
                             Repeater { model: win.workshop.engines || []
                                 PlainLabel { required property var modelData; Layout.fillWidth: true; text: qsTr("%1 · max %2 RPM · limiter %3 RPM").arg(modelData.name).arg(win.number(modelData.maxRPM)).arg(win.number(modelData.revLimiterRPM)); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             }
@@ -507,7 +514,7 @@ ApplicationWindow {
                                 lineColor: accent }
                             PlainLabel { Layout.fillWidth: true; visible: (win.workshop.engines || []).length > 0 && (win.workshop.engines[0].torqueCurve || []).length > 1
                                 color: textDim; font.pixelSize: 9; wrapMode: Text.Wrap
-                                text: qsTr("Supported torque curve · peak %1 Nm at %2 RPM · peak %3 PS at %4 RPM. Read-only game data, not a dyno run.")
+                                text: !(win.workshop.engines || []).length ? "" : qsTr("Supported torque curve · peak %1 Nm at %2 RPM · peak %3 PS at %4 RPM. Read-only game data, not a dyno run.")
                                     .arg(win.number(win.workshop.engines[0].maxTorque,0)).arg(win.number(win.workshop.engines[0].maxTorqueRPM,0))
                                     .arg(win.number(win.workshop.engines[0].maxPower,0)).arg(win.number(win.workshop.engines[0].maxPowerRPM,0)) }
                             PlainLabel { Layout.fillWidth: true; visible: (win.workshop.clutches || []).length > 0; color: textDim; font.pixelSize: 9; wrapMode: Text.Wrap
@@ -522,15 +529,15 @@ ApplicationWindow {
                                     invalidInput: text.length > 0 && !validRPM }
                                 Button { text: qsTr("Set RPM"); objectName: "rpmApplyButton"; implicitHeight: 28; font.pixelSize: 10; enabled: rpmInput.enabled && rpmInput.validRPM; onClicked: backend.setMaxRPM(rpmInput.rpm) }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: win.supports("rpm") ? qsTr("Existing-curve ceiling: %1 RPM. No synthetic power, raised damage threshold or ESC/launch override.").arg(win.number(win.rpmCeiling)) : qsTr("RPM editing requires a supported combustion limiter and bridge 0.10."); color: textDim; font.pixelSize: 10; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: win.supports("rpm") ? qsTr("Existing-curve ceiling: %1 RPM. No synthetic power, raised damage threshold or ESC/launch override.").arg(win.number(win.rpmCeiling)) : qsTr("RPM editing requires a supported combustion limiter and bridge 0.10."); color: textDim; font.pixelSize: 12; wrapMode: Text.Wrap }
                             Button { objectName: "clutchToggle"; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11
                                 text: win.workshop.clutchProtected ? qsTr("Clutch heat/wear protection: ON") : qsTr("Clutch heat/wear protection: OFF")
                                 enabled: win.resetRecipeReady && !win.workshop.restoring && win.supports("clutch"); onClicked: backend.setClutchProtection(win.workshop.clutchProtected!==true) }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("Friction clutches only. Freezes clutch heat and wear, blocks deformation damage and raises clamp capacity 20×. Other drivetrain shock/damage remains possible; no repair or DCT/automatic protection."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("Friction clutches only. Freezes clutch heat and wear, blocks deformation damage and raises clamp capacity 20×. Other drivetrain shock/damage remains possible; no repair or DCT/automatic protection."); font.pixelSize: 12; color: textDim; wrapMode: Text.Wrap }
                         }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 2; Layout.fillWidth: true; spacing: 2
+                        SectionPanel { visible: win.controls && carSection.currentIndex === 2; Layout.fillWidth: true; spacing: 10
                             RowLayout { Layout.fillWidth: true
-                                PlainLabel { Layout.fillWidth: true; text: qsTr("Gravity"); font.pixelSize: 11; color: textMain }
+                                PlainLabel { Layout.fillWidth: true; text: qsTr("World gravity"); font.pixelSize: 16; font.weight: Font.DemiBold; color: textMain }
                                 PlainLabel { text: gravitySlider.value.toFixed(2) + " m/s²"; font.pixelSize: 11; color: accent }
                             }
                             Slider {
@@ -560,8 +567,8 @@ ApplicationWindow {
                         Button { text: qsTr("Apply beam limits"); visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11
                               enabled: win.tuningReady && !backend.busy && win.ownVehicle && win.supports("deformation") && (["0.9.0","0.10.0","0.11.0"].indexOf(win.game.bridgeVersion)<0 || win.workshop.enginePower!==undefined)
                               onClicked: backend.applyTuning({enginePower:win.workshop.enginePower===undefined ? 1 : win.workshop.enginePower,gravity:win.tuning.gravity===undefined ? -9.81 : win.tuning.gravity,damageImmunity:damageToggle.checked}) }
-                         ColumnLayout { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: 4
-                            PlainLabel { text: qsTr("Grip & handling"); font.pixelSize: 12; color: accent }
+                         SectionPanel { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: 12
+                            PlainLabel { text: qsTr("Grip & handling"); font.pixelSize: 16; font.weight: Font.DemiBold; color: textMain }
                              GridLayout { Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: 4
                                 PlainLabel { text: qsTr("Tire grip ×"); color: textMain; font.pixelSize: 11 }
                                  TextField { id: gripInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11; implicitHeight: 28; padding: 4; enabled: win.sandboxReady && win.supports("grip") }
@@ -572,14 +579,14 @@ ApplicationWindow {
                                 PlainLabel { text: qsTr("Steering response ×"); color: textMain; font.pixelSize: 11 }
                                  TextField { id: steeringInput; Layout.fillWidth: true; text: "1"; selectByMouse: true; font.pixelSize: 11; implicitHeight: 28; padding: 4; enabled: win.sandboxReady && win.supports("steering") }
                             }
-                             PlainLabel { Layout.fillWidth: true; text: qsTr("1 = stock. Grip/brakes 0–10×; steering 0.1–3× within physical limits. Skips damaged tires; other controllers may override."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                             PlainLabel { Layout.fillWidth: true; text: qsTr("1 = stock. Grip/brakes 0–10×; steering 0.1–3× within physical limits. Skips damaged tires; other controllers may override."); font.pixelSize: 12; color: textDim; wrapMode: Text.Wrap }
                             Button { text: qsTr("Apply handling"); objectName: "handlingApplyButton"; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: win.sandboxReady && win.validHandling && (win.supports("grip") || win.supports("brakes") || win.supports("steering"))
                                 onClicked: backend.applyHandling({tireGrip:win.supports("grip") ? win.inputNumber(gripInput.text) : 1, slidingGrip:win.supports("grip") ? win.inputNumber(slidingInput.text) : 1, brakePower:win.supports("brakes") ? win.inputNumber(brakeInput.text) : 1, steeringResponse:win.supports("steering") ? win.inputNumber(steeringInput.text) : 1}) }
                             Button { text: qsTr("Cycle ESC / traction mode"); objectName: "stabilityButton"; Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: win.sandboxReady && win.supports("stability"); onClicked: backend.carAction("stability") }
                              PlainLabel { Layout.fillWidth: true; text: qsTr("ESC uses the car's own mode cycle. Reset keeps accepted handling when persistence is ON."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
-                         ColumnLayout { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: 4
-                            PlainLabel { text: qsTr("Actual gearbox & edited ratios"); font.pixelSize: 12; color: accent }
+                         SectionPanel { visible: win.controls && carSection.currentIndex === 1; Layout.fillWidth: true; spacing: 12
+                            PlainLabel { text: qsTr("Gearbox & ratios"); font.pixelSize: 16; font.weight: Font.DemiBold; color: textMain }
                             GearEditor { id: ratiosInput; objectName: "ratiosInput"; Layout.fillWidth: true; current: win.workshop.gears || []; generation: win.workshopIdentity; referenceRPM: (win.workshop.engines || []).length ? (win.workshop.engines[0].revLimiterRPM || 0) : 0; gearboxType: win.workshop.gearboxType || ""; enabled: win.gearsReady && win.supports("gears") && !!win.workshop.generation && current.length>0; foreground: textMain; muted: textDim; surface: win.surface }
                             PlainLabel { visible: !ratiosInput.current.length; Layout.fillWidth: true; text: qsTr("No supported transmission readback. CVT/manual/automatic/DCT/sequential are supported; unsupported data is never replaced with sample ratios."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             RowLayout { Layout.fillWidth: true
@@ -590,8 +597,8 @@ ApplicationWindow {
                                 Button { text: qsTr("Read actual"); font.pixelSize: 10; enabled: ratiosInput.enabled; onClicked: ratiosInput.loadCurrent() }
                                 Button { text: qsTr("Remove last"); font.pixelSize: 10; enabled: ratiosInput.enabled && ratiosInput.forward.length>1; onClicked: ratiosInput.text=ratiosInput.forward.slice(0,-1).join(", ") }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("+ Gear suggests the median of the last three valid ratio gaps—not a guaranteed optimum. Edit before applying. 24 KB command budget; ratios 0.01–100."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                             PlainLabel { Layout.fillWidth: true; text: qsTr("Stop first. Manual, automatic, DCT and sequential can add or remove forward gears while preserving reverse/neutral; indexed tables and shift points are extended together. CVT accepts one fixed ratio. Reset restores stock ratios and gear count with persistence ON."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("+ Gear suggests the median of the last three valid ratio gaps—not a guaranteed optimum. Edit before applying. 24 KB command budget; ratios 0.01–100."); font.pixelSize: 12; color: textDim; wrapMode: Text.Wrap }
+                             PlainLabel { Layout.fillWidth: true; text: qsTr("Stop first. Manual, automatic, DCT and sequential can add or remove forward gears while preserving reverse/neutral; indexed tables and shift points are extended together. CVT accepts one fixed ratio. Reset restores stock ratios and gear count with persistence ON."); font.pixelSize: 12; color: textDim; wrapMode: Text.Wrap }
                         }
                         GridLayout { visible: win.controls && carSection.currentIndex === 2; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: gap
                             Button { text: qsTr("Why This Dealer?"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 32; enabled: win.sandboxReady && win.supports("dealer"); onClicked: backend.carAction("dealer") }
@@ -602,9 +609,9 @@ ApplicationWindow {
                             Button { text: qsTr("Extinguish"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("extinguish"); onClicked: backend.carAction("extinguish") }
                             Button { text: qsTr("Deflate tires"); Layout.fillWidth: true; font.pixelSize: 11; implicitHeight: 30; enabled: win.tuningReady && !backend.busy && win.supports("deflate"); onClicked: backend.carAction("deflate") }
                         }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; spacing: 4
+                        SectionPanel { visible: win.controls && carSection.currentIndex === 0; Layout.fillWidth: true; spacing: 12
                             RowLayout { Layout.fillWidth: true
-                                PlainLabel { Layout.fillWidth: true; text: qsTr("Engine strength"); font.pixelSize: 12; color: accent }
+                                PlainLabel { Layout.fillWidth: true; text: qsTr("Engine durability"); font.pixelSize: 16; font.weight: Font.DemiBold; color: textMain }
                                 PlainLabel { text: strengthSlider.value.toFixed(1) + "×"; font.pixelSize: 13; color: textMain }
                             }
                             Slider { id: strengthSlider; objectName: "strengthSlider"; Layout.fillWidth: true; implicitHeight: 24
@@ -616,7 +623,7 @@ ApplicationWindow {
                                 font.pixelSize: 11; implicitHeight: 32
                                 onClicked: backend.applyEngine({engineStrength:strengthSlider.value, engineIndestructible:checked})
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("Protection blocks supported engine damage and hydrolocking; freezes heat simulation. No repair or tire/mount/turbo/drivetrain protection."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("Protection blocks supported engine damage and hydrolocking; freezes heat simulation. No repair or tire/mount/turbo/drivetrain protection."); font.pixelSize: 12; color: textDim; wrapMode: Text.Wrap }
                              RowLayout { Layout.fillWidth: true; spacing: gap
                                  Button { text: qsTr("Apply strength"); Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: 11; enabled: strengthSlider.enabled
                                      onClicked: backend.applyEngine({engineStrength:strengthSlider.value, engineIndestructible:engineToggle.checked}) }
@@ -639,8 +646,8 @@ ApplicationWindow {
                                 onClicked: win.applyRandomTune() }
                             PlainLabel { Layout.fillWidth: true; text: qsTr("Preview first. Values stay inside supported adapter ranges; no hidden retry, no stock restore and no random vehicle spawn."); font.pixelSize: 9; color: textDim; wrapMode: Text.Wrap }
                         }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 3; Layout.fillWidth: true; spacing: gap
-                            PlainLabel { text: qsTr("Physical dimensions · experimental"); font.pixelSize: 12; color: accent }
+                        SectionPanel { visible: win.controls && carSection.currentIndex === 3; Layout.fillWidth: true; spacing: gap
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("Physical dimensions · experimental"); font.pixelSize: 16; font.weight: Font.DemiBold; color: textMain; wrapMode: Text.Wrap }
                             PlainLabel { Layout.fillWidth: true; text: qsTr("Width, length and height relative to the first captured shape. 1× = captured size. Nodes and beam rest lengths change together; this is not a visual-only stretch."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                             Repeater { id: dimensionSliders; model: [qsTr("Width"), qsTr("Length"), qsTr("Height")]
                                 ColumnLayout { required property string modelData; Layout.fillWidth: true; spacing: 2
@@ -653,19 +660,19 @@ ApplicationWindow {
                                     }
                                 }
                             }
-                            PlainLabel { Layout.fillWidth: true; text: qsTr("0.5–2× per axis. Stop; repair broken beams first. BeamMP resizing is local, NOT synchronized to peers. Suspension/wheels/props may fight resizing; mass and tires stay unchanged. Persistence ON reapplies once to clean reset geometry; failures suspend."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
-                            CheckBox { id: dimensionConsent; text: qsTr("I accept unstable physics and vehicle damage"); font.pixelSize: 10; Layout.fillWidth: true; enabled: win.dimensionsReady && win.supports("dimensions") && win.stopped }
+                            PlainLabel { Layout.fillWidth: true; text: qsTr("0.5–2× per axis. Stop; repair broken beams first. BeamMP resizing is local, NOT synchronized to peers. Suspension/wheels/props may fight resizing; mass and tires stay unchanged. Persistence ON reapplies once to clean reset geometry; failures suspend."); font.pixelSize: 12; color: textDim; wrapMode: Text.Wrap }
+                            CheckBox { id: dimensionConsent; text: qsTr("I accept unstable physics and vehicle damage"); font.pixelSize: 12; Layout.fillWidth: true; enabled: win.dimensionsReady && win.supports("dimensions") && win.stopped }
                             Button { text: qsTr("Apply physical dimensions"); objectName: "dimensionsApplyButton"; Layout.fillWidth: true; implicitHeight: 32; font.pixelSize: 11
                                 enabled: dimensionConsent.enabled && (win.game.multiplayer !== true || ["0.6.2", "0.7.0", "0.7.1","0.9.0","0.10.0","0.11.0"].indexOf(win.game.bridgeVersion) >= 0) && dimensionConsent.checked
                                 onClicked: backend.applyDimensions({width:dimensionSliders.itemAt(0).factor,length:dimensionSliders.itemAt(1).factor,height:dimensionSliders.itemAt(2).factor}) }
                             PlainLabel { visible: !win.dimensionsReady; Layout.fillWidth: true; text: qsTr("Multiplayer changes require bridge 0.7 and server permission. Restart BeamNG after installing the bridge."); font.pixelSize: 10; color: textDim; wrapMode: Text.Wrap }
                         }
-                        ColumnLayout { visible: win.controls && carSection.currentIndex === 4; Layout.fillWidth: true; spacing: gap
-                            PresetPanel { backend: backend; Layout.fillWidth: true; foreground: textMain; muted: textDim; accentColor: accent; surfaceColor: surface }
-                            PlainLabel { Layout.fillWidth: true; color: textDim; font.pixelSize: 9; wrapMode: Text.Wrap
+                        SectionPanel { visible: win.controls && carSection.currentIndex === 4; Layout.fillWidth: true; spacing: gap
+                            PresetPanel { objectName: "presetPanel"; backend: win.appBackend; Layout.fillWidth: true; foreground: textMain; muted: textDim; accentColor: accent; surfaceColor: surface }
+                            PlainLabel { Layout.fillWidth: true; color: textDim; font.pixelSize: 12; wrapMode: Text.Wrap
                                 text: qsTr("Preset apply needs bridge 0.11, your own stopped vehicle, sandbox permission and no restore in progress. Older bridges keep the workshop read-only. A failed later step does not roll back earlier accepted steps.") }
                         }
-                        PlainLabel { visible: win.controls; Layout.fillWidth: true; text: qsTr("Engine/gear readback is labeled separately; other controls show drafts, not measured settings. Saved configs are unchanged. Servers or other mods may override changes."); font.pixelSize: 9; color: textDim; wrapMode: Text.Wrap }
+                        PlainLabel { visible: win.controls; Layout.fillWidth: true; text: qsTr("Engine/gear readback is labeled separately; other controls show drafts, not measured settings. Saved configs are unchanged. Servers or other mods may override changes."); font.pixelSize: 12; color: textDim; wrapMode: Text.Wrap }
                         RowLayout { visible: win.controls && carSection.currentIndex === 0 && win.tuning.enginePower !== undefined; Layout.fillWidth: true; spacing: gap
                             Button { text: qsTr("Engine 100%"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true
                                 enabled: win.tuningReady && !backend.busy && win.supports("power") && powerInput.multiplier !== 1
@@ -679,55 +686,50 @@ ApplicationWindow {
                 // GARAGE
                 ColumnLayout { spacing: gap
                     RowLayout {
+                        visible: win.height >= 500 || !!win.selectedModel.id
                         Layout.fillWidth: true
                         Button { visible: !!win.selectedModel.id; text: qsTr("‹ Models"); font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: win.backToModels() }
-                        PlainLabel { Layout.fillWidth: true; text: win.selectedModel.id ? ((win.selectedModel.brand || "") + " " + win.selectedModel.name).trim() : qsTr("Choose a model"); font.pixelSize: 13; maximumLineCount: 1; elide: Text.ElideRight; color: textMain }
+                        PlainLabel { Layout.fillWidth: true; text: win.selectedModel.id ? ((win.selectedModel.brand || "") + " " + win.selectedModel.name).trim() : qsTr("VEHICLE LIBRARY"); font.pixelSize: win.selectedModel.id ? 16 : 10; font.letterSpacing: win.selectedModel.id ? 0 : 1.4; maximumLineCount: 1; elide: Text.ElideRight; color: win.selectedModel.id ? textMain : textDim }
                         Button { id: garageOptions; text: "⋯"; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: garageMenu.popup(garageOptions, 0, height) }
                     }
                     TextField {
                         id: garageInput; objectName: "garageSearch"; Layout.fillWidth: true
                         placeholderText: win.selectedModel.id ? qsTr("Search configurations") : qsTr("Search models")
                         text: win.garageQuery; onTextEdited: win.garageQuery = text
-                        font.pixelSize: 11; padding: 6; implicitHeight: 32; rightPadding: 30
+                        font.pixelSize: 13; padding: 10; implicitHeight: 40; rightPadding: 36
                         Button { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: "×"; font.pixelSize: 11; width: 28; height: 28; visible: !!garageInput.text; flat: true; onClicked: win.garageQuery = "" }
                     }
                     RowLayout {
+                        visible: win.height >= 500
                         Layout.fillWidth: true; spacing: gap
                         ComboBox {
                             id: filterBox; objectName: "garageView"; Layout.fillWidth: true; Layout.minimumWidth: 0; textRole: "label"; valueRole: "value"
                             model: [{label:qsTr("All content"),value:"all"},{label:qsTr("Custom configs"),value:"custom"},{label:qsTr("Mod content"),value:"mods"},{label:qsTr("Stock content"),value:"stock"}]
                             currentIndex: { var filter=win.selectedModel.id ? win.configFilter : win.modelFilter; for(var i=0;i<model.length;i++) if(model[i].value===filter) return i; return 0 }
                             onActivated: { if(win.selectedModel.id) win.configFilter=currentValue; else win.modelFilter=currentValue }
-                            font.pixelSize: 10; padding: 4; implicitHeight: 28
+                            font.pixelSize: 12; padding: 8; implicitHeight: 36
                         }
                         GarageFilter { objectName: "garageType"; Layout.fillWidth: true; Layout.minimumWidth: 0; entries: win.garageEntries; field: "type"; allLabel: qsTr("All vehicle types"); selectedValue: win.activeFacets.type || ""; onChosen: function(value) { win.setFacet("type",value) } }
-                        Button { text: "★"; checkable: true; checked: win.favoriteOnly; onClicked: win.favoriteOnly = checked; implicitHeight: 28; implicitWidth: 30; padding: 4; font.pixelSize: 12; ToolTip.visible: hovered; ToolTip.text: qsTr("Favorites only") }
+                        Button { text: "★"; checkable: true; checked: win.favoriteOnly; onClicked: win.favoriteOnly = checked; implicitHeight: 36; implicitWidth: 36; padding: 6; font.pixelSize: 14; Accessible.name: qsTr("Favorites only"); ToolTip.visible: hovered; ToolTip.text: qsTr("Favorites only") }
                     }
                     RowLayout { Layout.fillWidth: true; spacing: gap
-                        Button { text: win.extraFilters ? qsTr("Less filters") : qsTr("More filters"); checked: win.extraFilters; checkable: true; font.pixelSize: 10; implicitHeight: 26; padding: 4; onClicked: win.extraFilters = checked }
-                        Button { text: qsTr("Clear"); font.pixelSize: 10; implicitHeight: 26; padding: 4; enabled: !!win.garageQuery || win.favoriteOnly || (win.selectedModel.id ? win.configFilter : win.modelFilter) !== "all" || Object.keys(win.activeFacets).some(function(k) { return !!win.activeFacets[k] })
+                        Button { text: qsTr("Filters"); checked: win.extraFilters; checkable: true; flat: true; font.pixelSize: 11; implicitHeight: 30; padding: 6; onClicked: win.extraFilters = checked }
+                        Button { text: qsTr("Clear"); flat: true; font.pixelSize: 11; implicitHeight: 30; padding: 6; enabled: !!win.garageQuery || win.favoriteOnly || (win.selectedModel.id ? win.configFilter : win.modelFilter) !== "all" || Object.keys(win.activeFacets).some(function(k) { return !!win.activeFacets[k] })
                              onClicked: win.clearGarageFilters() }
                         Item { Layout.fillWidth: true }
-                        PlainLabel { text: qsTr("%1 / %2").arg(win.number(win.garageItems.length)).arg(win.number(win.garageEntries.length)); color: textDim; font.pixelSize: 10 }
-                        ComboBox { objectName: "garageSort"; textRole: "label"; valueRole: "value"; font.pixelSize: 10; implicitHeight: 26; padding: 4; Layout.preferredWidth: 108
+                        PlainLabel { text: qsTr("%1 / %2").arg(win.number(win.garageItems.length)).arg(win.number(win.garageEntries.length)); color: textDim; font.pixelSize: 11 }
+                        ComboBox { objectName: "garageSort"; textRole: "label"; valueRole: "value"; font.pixelSize: 11; implicitHeight: 30; padding: 6; Layout.preferredWidth: win.width < 380 ? 92 : 128
                             model: [{label:qsTr("Name A–Z"),value:"name"},{label:qsTr("Name Z–A"),value:"reverse"},{label:qsTr("Brand"),value:"brand"},{label:qsTr("Type"),value:"type"},{label:qsTr("Source"),value:"source"},{label:qsTr("Favorites first"),value:"favorites"}]
                             onActivated: win.garageOrder = currentValue }
                     }
-                    GridLayout { visible: win.extraFilters; Layout.fillWidth: true; columns: 2; columnSpacing: gap; rowSpacing: 4
-                        Repeater { model: [{field:"brand",label:qsTr("All brands")},{field:"bodyStyle",label:qsTr("All body styles")},{field:"configType",label:qsTr("All config types")},{field:"drivetrain",label:qsTr("All drivetrains")},{field:"transmission",label:qsTr("All transmissions")},{field:"source",label:qsTr("All sources / mods")},{field:"country",label:qsTr("All countries")},{field:"fuelType",label:qsTr("All fuel types")},{field:"propulsion",label:qsTr("All propulsion")}]
-                            GarageFilter { required property var modelData; Layout.fillWidth: true; Layout.minimumWidth: 0; entries: win.garageEntries; field: modelData.field; allLabel: modelData.label; selectedValue: win.activeFacets[field] || ""; onChosen: function(value) { win.setFacet(field,value) } }
-                        }
-                    }
-                    PlainLabel { visible: win.extraFilters; Layout.fillWidth: true; text: win.selectedModel.id ? qsTr("Only metadata supplied by the game is listed. Missing metadata is not guessed.") : qsTr("Model filters match any of its configs. Open a model to filter individual variants."); color: textDim; font.pixelSize: 9; wrapMode: Text.Wrap
-                    }
                     GridView {
                         id: garageGrid; objectName: "garageGrid"
-                        Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                        Layout.fillWidth: true; Layout.fillHeight: true; Layout.rightMargin: -win.gap; clip: true
                         model: win.garageItems; focus: win.page === 2
-                        readonly property int columns: Math.max(1, Math.min(3, Math.floor((width + win.gap) / 156)))
-                        readonly property int tileW: Math.max(96, Math.floor(width / columns) - win.gap)
-                        readonly property int tileH: Math.round(tileW * 0.7)
-                        cellWidth: Math.max(96 + win.gap, Math.floor(width / columns))
+                        readonly property int columns: Math.max(1, Math.min(4, Math.floor(width / 196)))
+                        readonly property int tileW: Math.max(96, Math.floor(cellWidth) - win.gap)
+                        readonly property int tileH: Math.round(tileW * .61) + 64
+                        cellWidth: width / columns
                         cellHeight: tileH + win.gap
 
                         delegate: VariantCard {
@@ -747,18 +749,19 @@ ApplicationWindow {
                         }
                         BusyIndicator { anchors.centerIn: parent; running: backend.busy && (backend.pendingAction === "catalog" || backend.pendingAction === "configs") }
                     }
-                    ColumnLayout { visible: !!win.selectedModel.id; Layout.fillWidth: true; spacing: gap
-                        PlainLabel { text: win.selectedConfig.name || qsTr("Select a configuration"); Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideRight; color: textMain; font.pixelSize: 12 }
+                    SectionPanel { visible: !!win.selectedModel.id; Layout.fillWidth: true; spacing: gap; padding: win.height < 500 ? 10 : 16
+                        PlainLabel { visible: win.height >= 500; text: win.selectedConfig.name || qsTr("Select a configuration"); Layout.fillWidth: true; maximumLineCount: 1; elide: Text.ElideRight; color: textMain; font.pixelSize: 12 }
                         RowLayout {
                             Layout.fillWidth: true; spacing: gap
-                            Button { text: qsTr("Spawn"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; enabled: !!win.selectedConfig.id && win.canDriveAction; onClicked: win.confirmVehicle("spawn", win.selectedConfig) }
-                            Button { text: qsTr("Replace"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; enabled: !!win.selectedConfig.id && win.canDriveAction; onClicked: win.confirmVehicle("replace", win.selectedConfig) }
+                            Button { text: qsTr("Spawn new"); highlighted: true; Layout.fillWidth: true; font.pixelSize: 12; padding: 8; implicitHeight: 36; enabled: !!win.selectedConfig.id && win.canDriveAction; onClicked: win.confirmVehicle("spawn", win.selectedConfig) }
+                            Button { text: qsTr("Replace current"); Layout.fillWidth: true; font.pixelSize: 12; padding: 8; implicitHeight: 36; enabled: !!win.selectedConfig.id && win.canDriveAction; onClicked: win.confirmVehicle("replace", win.selectedConfig) }
                         }
-                        PlainLabel { visible: !win.canDriveAction; text: demoMode ? qsTr("Demo mode: game actions are disabled.") : !win.controls ? qsTr("Connect the bridge first.") : !win.game.map ? qsTr("Load a map before spawning.") : qsTr("Stop before changing vehicles."); font.pixelSize: 10; color: textDim }
+                        PlainLabel { visible: !win.canDriveAction && win.height >= 500; text: demoMode ? qsTr("Demo mode: game actions are disabled.") : !win.controls ? qsTr("Connect the bridge first.") : !win.game.map ? qsTr("Load a map before spawning.") : qsTr("Stop before changing vehicles."); font.pixelSize: 11; color: textDim }
                     }
                 }
                 // SESSION
                 ScrollView {
+                    objectName: "sessionView"
                     clip: true; contentWidth: availableWidth
                     ColumnLayout {
                         width: parent.width; spacing: gap
@@ -770,14 +773,14 @@ ApplicationWindow {
                             MetricCard { label: qsTr("TOP SPEED"); value: win.speed(win.game.topSpeed); unit: win.metric ? "km/h":"mph" }
                             MetricCard { label: qsTr("AVERAGE SPEED"); value: win.speed(win.game.averageSpeed); unit: win.metric ? "km/h":"mph" }
                         }
-                        PlainLabel { text: qsTr("FRAME RATE · LAST 60 SECONDS"); color: textDim; font.pixelSize: 9 }
+                        PlainLabel { text: qsTr("FRAME RATE · LAST 60 SECONDS"); color: textDim; font.pixelSize: 10; font.letterSpacing: .6 }
                         TrendChart { Layout.fillWidth: true; Layout.preferredHeight: 40; samples: backend.history; field: "fps"; ceiling: 60 }
                         GlassPanel {
                             visible: !!win.game.multiplayer; Layout.fillWidth: true
-                            implicitHeight: serverColumn.implicitHeight + 20
+                            implicitHeight: serverColumn.implicitHeight + 32
                             ColumnLayout {
                                 id: serverColumn
-                                anchors.fill: parent; anchors.margins: 10; spacing: 3
+                                anchors.fill: parent; anchors.margins: 16; spacing: 10
                                 RowLayout { Layout.fillWidth: true; spacing: gap
                                     PlainLabel { Layout.fillWidth: true; text: win.game.server || qsTr("Unnamed server"); font.pixelSize: 13; color: textMain; elide: Text.ElideRight; maximumLineCount: 1 }
                                     StatusPill { text: qsTr("PING %1 MS").arg(win.number(win.game.ping)); active: win.live }
@@ -785,7 +788,7 @@ ApplicationWindow {
                                 PlainLabel { Layout.fillWidth: true; text: qsTr("Players %1 · Vehicles %2").arg(win.number(win.game.playerCount)).arg(win.number(win.game.mpVehicleCount)); color: textDim; font.pixelSize: 10 }
                                 PlainLabel { text: qsTr("LOCAL LATENCY · LAST 60 SECONDS"); color: textDim; font.pixelSize: 9; font.letterSpacing: 1.2 }
                                 TrendChart { Layout.fillWidth: true; Layout.preferredHeight: 40; samples: backend.history; field: "ping"; ceiling: 300 }
-                                PlainLabel { Layout.fillWidth: true; color: textDim; font.pixelSize: 9; wrapMode: Text.Wrap
+                                PlainLabel { Layout.fillWidth: true; color: textDim; font.pixelSize: 12; wrapMode: Text.Wrap
                                     text: qsTr("Latency is the latency BeamMP reports, not packet loss or a formal jitter measurement. Remote values are session-only. Unavailable values are not replaced with a guess.") }
                             }
                         }
@@ -799,6 +802,8 @@ ApplicationWindow {
                         }
                         PlainLabel { visible: !!win.game.multiplayer; Layout.fillWidth: true; color: textDim; font.pixelSize: 9
                             text: qsTr("%1 of %2 shown · rows are keyed by session player ID, not display name").arg(win.playerRows.length).arg(backend.players.length) }
+                        PlainLabel { visible: demoMode; Layout.fillWidth: true; color: textDim; font.pixelSize: 12; wrapMode: Text.Wrap
+                            text: qsTr("Sample players: copy buttons copy sample data. Public profiles, forum lookups, vehicle switching and trip reset need a real session.") }
                         Repeater {
                             id: playerRepeater
                             model: playerRoster
@@ -806,26 +811,28 @@ ApplicationWindow {
                                 required property var playerData
                                 modelData: playerData
                                 onActionPressedChanged: if (!actionPressed) Qt.callLater(win.syncPlayerRoster)
-                                profiles: backend.profiles
+                                 profiles: backend.profiles
+                                 publicProfilesEnabled: !demoMode
                                 foreground: textMain; muted: textDim; accentColor: accent
                             }
                         }
                         PlainLabel { visible: !!win.game.multiplayer && win.playerRows.length === 0; Layout.fillWidth: true; color: textDim; font.pixelSize: 10
                             text: backend.players.length ? qsTr("No player matches this search.") : qsTr("No player rows are available yet.") }
                         RowLayout { visible: !!win.game.multiplayer; Layout.fillWidth: true; spacing: gap
-                            Button { text: qsTr("Copy server address"); Layout.fillWidth: true; font.pixelSize: 10; padding: 5; implicitHeight: 28; flat: true
+                            Button { objectName: "copyServerAddress"; text: qsTr("Copy server address"); Layout.fillWidth: true; font.pixelSize: 10; padding: 5; implicitHeight: 28; flat: true
                                 enabled: !!win.game.serverIp && !!win.game.serverPort; onClicked: backend.copyServerAddress() }
                             PlainLabel { Layout.fillWidth: true; text: qsTr("%1:%2").arg(win.game.serverIp || "—").arg(win.game.serverPort || "—"); color: textDim; font.pixelSize: 9; elide: Text.ElideRight }
                         }
-                        PlainLabel { visible: !!win.game.multiplayer; Layout.fillWidth: true; color: textDim; font.pixelSize: 9; wrapMode: Text.Wrap
+                        PlainLabel { visible: !!win.game.multiplayer; Layout.fillWidth: true; color: textDim; font.pixelSize: 12; wrapMode: Text.Wrap
                             text: qsTr("Server policy verifies the server, not an administrator's approval of your tunes. Player rows are a roster, not anti-cheat evidence. No password, chat or invented invite link is copied.") }
                         TextField { visible: !!win.game.multiplayer; Layout.fillWidth: true; placeholderText: qsTr("Local convoy note (session helper, max 2048)"); font.pixelSize: 10; padding: 6; implicitHeight: 30
                             text: backend.convoyNotes; maximumLength: 2048; onTextEdited: backend.setConvoyNotes(text) }
-                        Button { text: qsTr("Your vehicles"); visible: backend.activeVehicles.length > 0; Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: ownedDialog.open() }
-                        Button { text: qsTr("Reset trip"); enabled: !demoMode && !backend.busy; Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: tripDialog.open() }
-                        Button { text: qsTr("Diagnostics"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: diagnostics.open() }
+                        Button { objectName: "sessionVehicles"; text: qsTr("Your vehicles"); visible: backend.activeVehicles.length > 0; Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: ownedDialog.open() }
+                        Button { objectName: "sessionResetTrip"; text: qsTr("Reset trip"); enabled: !demoMode && !backend.busy; Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: tripDialog.open() }
+                        Button { objectName: "sessionDiagnostics"; text: qsTr("Diagnostics"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: diagnostics.open() }
                     }
                 }
+            }
             }
             }
             RowLayout {
@@ -843,58 +850,90 @@ ApplicationWindow {
             accentColor: win.accent
             onChosen: win.runPaletteCommand(commandId)
         }
-        Menu { id: settingsMenu; margins: win.pad; font.pixelSize: 11
+        Menu { id: settingsMenu; margins: win.pad
             MenuItem { text: win.metric ? qsTr("Units: km/h") : qsTr("Units: mph"); onTriggered: win.metric = !win.metric }
             MenuItem { text: qsTr("Paths & bridge setup"); onTriggered: settingsDialog.open() }
             MenuItem { text: backend.monitoring ? qsTr("Pause display") : qsTr("Resume display"); enabled: !demoMode; onTriggered: backend.toggleMonitoring() }
             MenuItem { text: qsTr("Help & diagnostics"); onTriggered: diagnostics.open() }
         }
-        Menu { id: garageMenu; margins: win.pad; font.pixelSize: 11
+        Menu { id: garageMenu; margins: win.pad
             MenuItem { text: qsTr("Refresh"); enabled: (win.controls || demoMode) && !backend.busy; onTriggered: { if(win.selectedModel.id) backend.requestConfigs(win.selectedModel.id); else backend.requestCatalog() } }
              MenuItem { text: qsTr("Clear search and filters"); onTriggered: win.clearGarageFilters() }
+        }
+        Dialog {
+            id: facetsDialog; objectName: "garageFiltersDialog"
+            anchors.centerIn: parent; width: Math.min(parent.width - 24, 560)
+            height: Math.min(parent.height - 24, 420)
+            title: qsTr("Garage filters"); modal: true; standardButtons: Dialog.Close
+            visible: win.extraFilters
+            onClosed: win.extraFilters = false
+            contentItem: ScrollView {
+                clip: true; contentWidth: availableWidth
+                ColumnLayout {
+                    width: parent.width; spacing: win.gap
+                    PlainLabel { Layout.fillWidth: true; text: win.selectedModel.id ? qsTr("Only metadata supplied by the game is listed. Missing metadata is not guessed.") : qsTr("Model filters match any of its configs. Open a model to filter individual variants."); color: textDim; font.pixelSize: 12 }
+                    ComboBox {
+                        visible: win.height < 500; Layout.fillWidth: true; textRole: "label"; valueRole: "value"
+                        model: filterBox.model; currentIndex: filterBox.currentIndex
+                        onActivated: { if (win.selectedModel.id) win.configFilter = currentValue; else win.modelFilter = currentValue }
+                    }
+                    GarageFilter { visible: win.height < 500; Layout.fillWidth: true; entries: win.garageEntries; field: "type"; allLabel: qsTr("All vehicle types"); selectedValue: win.activeFacets.type || ""; onChosen: function(value) { win.setFacet("type", value) } }
+                    CheckBox { visible: win.height < 500; text: qsTr("Favorites only"); checked: win.favoriteOnly; onToggled: win.favoriteOnly = checked }
+                    GridLayout { Layout.fillWidth: true; columns: facetsDialog.width < 420 ? 1 : 2; columnSpacing: win.gap; rowSpacing: 8
+                        Repeater { model: [{field:"brand",label:qsTr("All brands")},{field:"bodyStyle",label:qsTr("All body styles")},{field:"configType",label:qsTr("All config types")},{field:"drivetrain",label:qsTr("All drivetrains")},{field:"transmission",label:qsTr("All transmissions")},{field:"source",label:qsTr("All sources / mods")},{field:"country",label:qsTr("All countries")},{field:"fuelType",label:qsTr("All fuel types")},{field:"propulsion",label:qsTr("All propulsion")}]
+                            GarageFilter { required property var modelData; Layout.fillWidth: true; Layout.minimumWidth: 0; entries: win.garageEntries; field: modelData.field; allLabel: modelData.label; selectedValue: win.activeFacets[field] || ""; onChosen: function(value) { win.setFacet(field,value) } }
+                        }
+                    }
+                }
+            }
         }
         Dialog { id: settingsDialog; anchors.centerIn: parent; width: Math.min(parent.width-20,460)
             onOpened: { userPath.text = demoMode ? "/home/player/BeamNG" : win.launcher.userFolder; gamePath.text = demoMode ? "/games/BeamNG.drive" : win.launcher.gameFolder; mpPath.text = demoMode ? "/games/BeamMP/BeamMP-Launcher" : win.launcher.launcherPath }
             title: qsTr("Paths & bridge setup"); modal: true; standardButtons: Dialog.Close
             contentItem: ColumnLayout { spacing: gap
-                TextField { id:userPath; Layout.fillWidth:true; placeholderText:qsTr("BeamNG user folder (contains beamng.log)"); font.pixelSize: 11; padding: 6; implicitHeight: 32 }
-                TextField { id:gamePath; Layout.fillWidth:true; placeholderText:qsTr("BeamNG installation folder"); font.pixelSize: 11; padding: 6; implicitHeight: 32 }
-                TextField { id:mpPath; Layout.fillWidth:true; placeholderText:qsTr("BeamMP launcher executable"); font.pixelSize: 11; padding: 6; implicitHeight: 32 }
-                PlainLabel { text:qsTr("The bridge loads automatically on the next game start. Updating it never restarts your game."); Layout.fillWidth:true; color:textDim; font.pixelSize: 10 }
-                Button { text:qsTr("Save & install bridge"); Layout.fillWidth:true; font.pixelSize: 11; padding: 6; implicitHeight: 32; enabled:!demoMode; onClicked: { win.launcher.userFolder=userPath.text; win.launcher.gameFolder=gamePath.text; win.launcher.launcherPath=mpPath.text; win.launcher.installBridge() } }
-                PlainLabel { text:win.launcher.message; Layout.fillWidth:true; color:accent; font.pixelSize: 10 }
+                TextField { id:userPath; Layout.fillWidth:true; placeholderText:qsTr("BeamNG user folder (contains beamng.log)") }
+                TextField { id:gamePath; Layout.fillWidth:true; placeholderText:qsTr("BeamNG installation folder") }
+                TextField { id:mpPath; Layout.fillWidth:true; placeholderText:qsTr("BeamMP launcher executable") }
+                PlainLabel { text:qsTr("The bridge loads automatically on the next game start. Updating it never restarts your game."); Layout.fillWidth:true; color:textDim; font.pixelSize: 12 }
+                Button { text:qsTr("Save & install bridge"); Layout.fillWidth:true; enabled:!demoMode; onClicked: { win.launcher.userFolder=userPath.text; win.launcher.gameFolder=gamePath.text; win.launcher.launcherPath=mpPath.text; win.launcher.installBridge() } }
+                PlainLabel { text:win.launcher.message; Layout.fillWidth:true; color:accent; font.pixelSize: 12 }
             }
         }
         Dialog { id: resetVehicleDialog; anchors.centerIn: parent; width: Math.min(parent.width-20,420); modal: true
             contentHeight: 180
             title: qsTr("Clear ABM vehicle tuning?"); standardButtons: Dialog.Ok | Dialog.Cancel
-            contentItem: PlainLabel { text: qsTr("Clears the reset recipe and pending live power BEFORE restoring ABM adapters and requesting a physics reset. Existing damage may be repaired. Loaded custom configs and saved preset files are not deleted. World gravity is unchanged. Stop first; partial failures are reported."); wrapMode: Text.Wrap; font.pixelSize: 11; color: textMain }
+            onOpened: { standardButton(Dialog.Ok).text = qsTr("Clear tuning"); standardButton(Dialog.Ok).destructive = true }
+            contentItem: PlainLabel { text: qsTr("Clears the reset recipe and pending live power BEFORE restoring ABM adapters and requesting a physics reset. Existing damage may be repaired. Loaded custom configs and saved preset files are not deleted. World gravity is unchanged. Stop first; partial failures are reported."); wrapMode: Text.Wrap; font.pixelSize: 12; color: textMain }
             onAccepted: if (win.stopped && win.sandboxAllowed) backend.fullReset()
         }
-        Dialog { id: confirmDialog; anchors.centerIn:parent; width:Math.min(parent.width-20,420); modal:true
+        Dialog { id: confirmDialog; objectName: "vehicleConfirmDialog"; anchors.centerIn:parent; width:Math.min(parent.width-20,420); modal:true
             title: win.pendingAction === "replace" ? qsTr("Replace current vehicle?") : win.pendingAction === "switch" ? qsTr("Switch vehicle?") : qsTr("Spawn configuration?")
             standardButtons:Dialog.Ok | Dialog.Cancel
+            onOpened: { standardButton(Dialog.Ok).text = win.pendingAction === "replace" ? qsTr("Replace") : win.pendingAction === "switch" ? qsTr("Switch") : qsTr("Spawn"); standardButton(Dialog.Ok).destructive = win.pendingAction === "replace" }
             contentHeight: 120
-            contentItem: PlainLabel { text: qsTr("%1\n\n%2").arg(win.actionTarget.name || win.actionTarget.id || qsTr("Selected vehicle")).arg(win.pendingAction === "replace" ? qsTr("The current vehicle will be discarded. Server restrictions still apply.") : qsTr("This changes the game session. Server restrictions still apply.")); font.pixelSize: 11 }
+            contentItem: PlainLabel { text: qsTr("%1\n\n%2").arg(win.actionTarget.name || win.actionTarget.id || qsTr("Selected vehicle")).arg(win.pendingAction === "replace" ? qsTr("The current vehicle will be discarded. Server restrictions still apply.") : qsTr("This changes the game session. Server restrictions still apply.")); font.pixelSize: 12 }
             onAccepted: { if(!win.canDriveAction) { win.tell(qsTr("The game state changed. Select the vehicle again.")); return }; if(win.pendingAction==="switch") backend.switchVehicle(win.actionTarget.vehicleId); else backend.requestVehicle(win.pendingAction,win.actionTarget.id) }
         }
-        Dialog { id:tripDialog; anchors.centerIn:parent; width:Math.min(parent.width-20,400); modal:true
+        Dialog { id:tripDialog; objectName: "tripDialog"; anchors.centerIn:parent; width:Math.min(parent.width-20,400); modal:true
             title:qsTr("Reset trip statistics?"); standardButtons:Dialog.Ok | Dialog.Cancel
+            onOpened: { standardButton(Dialog.Ok).text = qsTr("Reset trip"); standardButton(Dialog.Ok).destructive = true }
             contentHeight: 100
-            contentItem:PlainLabel { text:qsTr("Only ABM's estimated trip statistics are reset. Your game is not changed."); font.pixelSize: 11 }
+            contentItem:PlainLabel { text:qsTr("Only ABM's estimated trip statistics are reset. Your game is not changed."); font.pixelSize: 12 }
             onAccepted:backend.resetTrip()
         }
-        Dialog { id:ownedDialog; anchors.centerIn:parent; width:Math.min(parent.width-20,420); modal:true
+        Dialog { id:ownedDialog; objectName: "ownedDialog"; anchors.centerIn:parent; width:Math.min(parent.width-20,420); modal:true
             title:qsTr("Your vehicles"); standardButtons:Dialog.Close
             contentItem:ColumnLayout {
+                PlainLabel { visible: !win.canDriveAction; Layout.fillWidth: true; wrapMode: Text.Wrap; color: textDim; font.pixelSize: 12
+                    text: demoMode ? qsTr("Vehicle switching is disabled in demo mode.") : !win.controls ? qsTr("Connect the game bridge and load a map to switch vehicles.") : !win.sandboxAllowed ? (win.game.policyReason || qsTr("Server policy blocks vehicle switching.")) : backend.busy ? qsTr("Wait for the current request to finish.") : qsTr("Load a map and stop the current vehicle before switching.") }
                 PlainLabel { visible: backend.activeVehicles.filter(function(v){return v.owned===true}).length === 0; text: qsTr("No owned vehicles in this session."); Layout.fillWidth: true; color: textDim }
                 Repeater {
                     model:backend.activeVehicles.filter(function(v){return v.owned===true})
-                    delegate:Button { required property var modelData; text:modelData.name || modelData.model; Layout.fillWidth:true; font.pixelSize: 11; padding: 6; implicitHeight: 32; enabled:win.canDriveAction; onClicked:{ownedDialog.close();win.confirmVehicle("switch",{vehicleId:modelData.id,name:modelData.name})} }
+                    delegate:Button { required property var modelData; objectName: "selectOwnedVehicle_" + modelData.id; text:modelData.name || modelData.model; Layout.fillWidth:true; font.pixelSize: 11; padding: 6; implicitHeight: 32; enabled:win.canDriveAction; onClicked:{ownedDialog.close();win.confirmVehicle("switch",{vehicleId:modelData.id,name:modelData.name})} }
                 }
             }
         }
-        Dialog { id:diagnostics; anchors.centerIn:parent; width:Math.min(parent.width-20,480); height:Math.min(parent.height-40,410); modal:true
+        Dialog { id:diagnostics; objectName: "diagnosticsDialog"; anchors.centerIn:parent; width:Math.min(parent.width-20,480); height:Math.min(parent.height-40,410); modal:true
             title:qsTr("Vehicle details & diagnostics"); standardButtons:Dialog.Close
             contentItem:ScrollView { contentWidth:availableWidth; clip:true
                 ColumnLayout { width:parent.width; spacing: gap
@@ -921,7 +960,7 @@ ApplicationWindow {
             MouseArea { anchors.fill:parent; onClicked:win.helpVisible=false }
             ColumnLayout { anchors.centerIn:parent; width:parent.width-40; spacing: 16
                 PlainLabel { text:qsTr("Keyboard shortcuts"); font.pixelSize: 16; color: textMain }
-                PlainLabel { text:qsTr("1–4 — Drive, Car, Garage, Session\nSpace — Pause/resume display\nU — Change units\nEscape — Clear search, go back or close dialog\n? — Help\nQ — Close window"); Layout.fillWidth:true; lineHeight:1.6; color: textDim; font.pixelSize: 11 }
+                PlainLabel { text:qsTr("1–4 — Drive, Car, Garage, Session\nCtrl+K — Command palette\nCtrl+Shift+F — Focus mode\nSpace — Pause/resume display\nU — Change units\nEscape — Clear search, go back or close dialog\n? — Help\nQ — Close window"); Layout.fillWidth:true; lineHeight:1.6; color: textDim; font.pixelSize: 12 }
                 PlainLabel { text:qsTr("On Omarchy the receiver keeps running after this window closes. In standalone mode it runs while the app is open."); Layout.fillWidth:true; color:textDim; font.pixelSize: 10 }
             }
         }

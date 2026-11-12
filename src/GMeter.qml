@@ -9,10 +9,10 @@ Rectangle {
     property real longitudinal: 0
     property color accentColor: theme.accent
     implicitHeight: 82
-    radius: 8
-    color: "#d0101218"
+    radius: Math.min(6, theme.radius)
+    color: "#171c24"
     border.width: 1
-    border.color: "#22ffffff"
+    border.color: "#2c3440"
     clip: true
 
     readonly property real magnitude: Math.min(2.5, Math.sqrt(lateral * lateral + longitudinal * longitudinal))
@@ -25,11 +25,11 @@ Rectangle {
             var ctx = getContext("2d")
             ctx.reset()
             var cx = width / 2, cy = height / 2
-            ctx.strokeStyle = "#2d3a4152"
+            ctx.strokeStyle = "#354050"
             ctx.lineWidth = 1
             ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(width, cy); ctx.stroke()
             ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, height); ctx.stroke()
-            ctx.strokeStyle = "#243a4152"
+            ctx.strokeStyle = "#354050"
             ctx.beginPath(); ctx.arc(cx, cy, Math.min(width, height) * 0.38, 0, Math.PI * 2); ctx.stroke()
         }
         Component.onCompleted: requestPaint()
@@ -49,17 +49,17 @@ Rectangle {
     Column {
         anchors.left: parent.left
         anchors.top: parent.top
-        anchors.margins: 7
+        anchors.margins: 12
         spacing: 0
-        PlainLabel { text: qsTr("G METER"); color: "#9b9ca9"; font.pixelSize: 8; font.letterSpacing: 1.3 }
-        PlainLabel { text: meter.magnitude.toFixed(2) + " g"; color: "#e8e8ed"; font.pixelSize: 11; font.weight: Font.DemiBold }
+        PlainLabel { text: qsTr("G FORCE"); color: "#a0aabb"; font.pixelSize: 10; font.letterSpacing: 1 }
+        PlainLabel { text: meter.magnitude.toFixed(2) + " g"; color: "#edf1f7"; font.pixelSize: 14; font.weight: Font.DemiBold }
     }
     PlainLabel {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 7
-        text: qsTr("LAT %1 · LONG %2").arg(meter.lateral.toFixed(2)).arg(meter.longitudinal.toFixed(2))
-        color: "#777b88"
-        font.pixelSize: 7
+        text: qsTr("%1 / %2").arg(meter.lateral.toFixed(2)).arg(meter.longitudinal.toFixed(2))
+        color: "#a0aabb"
+        font.pixelSize: 10
     }
 }

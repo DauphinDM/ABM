@@ -66,9 +66,9 @@ Install BeamMP separately and select its real executable. ABM starts it with
 connected server. The bridge can enable an installed mod but cannot download
 missing BeamMP content or bypass server restrictions.
 
-## Reporting a problem privately
+## Reporting a problem
 
-Use the private repository's Issues tab. Include ABM/bridge/game version,
+Use the repository's Issues tab. Include ABM/bridge/game version,
 platform, installation method, steps, expected/actual behavior and redacted
 diagnostics. Avoid full home paths, credentials, chat logs, usernames/server
 addresses, and proprietary archives. Security-sensitive reports should follow

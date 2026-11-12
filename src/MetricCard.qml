@@ -7,17 +7,17 @@ Rectangle {
     required property string value
     property string unit: ""
     Layout.fillWidth: true
-    implicitHeight: 46
-    color: "#e60f1117"
+    implicitHeight: 72
+    color: "#171c24"
     border.width: 1
-    border.color: "#2effffff"
-    radius: 8
+    border.color: "#2c3440"
+    radius: Math.min(6, theme.radius)
     ColumnLayout {
-        anchors.fill: parent; anchors.margins: 8; spacing: 1
-        PlainLabel { text: card.label; color: "#9b9ca9"; font.pixelSize: 9; Layout.fillWidth: true }
+        anchors.fill: parent; anchors.margins: 12; spacing: 6
+        PlainLabel { text: card.label; color: "#a0aabb"; font.pixelSize: 10; font.letterSpacing: .8; Layout.fillWidth: true; elide: Text.ElideRight }
         RowLayout { Layout.fillWidth: true
-            PlainLabel { text: card.value; font.pixelSize: 13; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight; maximumLineCount: 1; color: "#e8e8ed" }
-            PlainLabel { text: card.unit; color: "#9b9ca9"; font.pixelSize: 9; Layout.alignment: Qt.AlignBottom | Qt.AlignRight }
+            PlainLabel { text: card.value; font.pixelSize: 20; font.weight: Font.Medium; Layout.fillWidth: true; elide: Text.ElideRight; maximumLineCount: 1; color: "#edf1f7" }
+            PlainLabel { text: card.unit; color: "#a0aabb"; font.pixelSize: 11; Layout.maximumWidth: card.width * .45; elide: Text.ElideRight; Layout.alignment: Qt.AlignBottom | Qt.AlignRight }
         }
     }
 }

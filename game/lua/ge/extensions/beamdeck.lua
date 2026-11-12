@@ -156,13 +156,23 @@ local function validConfig(key)
     and not key:find('[/\\%c]')
 end
 
+-- BeamMP documents these APIs under extensions. Older builds also provide
+-- globals; use the same resolution for telemetry and command authorization.
+local function mpModule(name)
+  return (extensions and extensions[name]) or _G[name]
+end
+
+local function inMultiplayer()
+  return call(mpModule('MPCoreNetwork'), 'isMPSession') == true
+end
+
 local function owned(id, multiplayer)
   if not multiplayer then return true end
-  return call(MPVehicleGE, 'isOwn', id) == true
+  return call(mpModule('MPVehicleGE'), 'isOwn', id) == true
 end
 
 local function currentServer()
-  local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
+  local mp = mpModule('MPCoreNetwork')
   local server = call(mp,'getCurrentServer')
   if type(server) ~= 'table' or type(server.ip) ~= 'string' or type(server.name) ~= 'string'
     or #server.ip > 64 or #server.name > 512 then return nil end
@@ -172,7 +182,7 @@ local function currentServer()
 end
 
 local function permission()
-  local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
+  local mp = mpModule('MPCoreNetwork')
   if call(mp,'isGoingMPSession') == true then return false,'Joining BeamMP: gameplay changes are locked.' end
   if next(cleanupPending) or gravityCleanup then return false,'Clearing previous ABM changes. Reset/reload if cleanup cannot finish.' end
   if call(mp,'isMPSession') ~= true then return true,'Single player: no server restriction.' end
@@ -211,7 +221,7 @@ end
 
 local function buildMetadata()
   local data = {activeVehicles = {}}
-  local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
+  local mp = mpModule('MPCoreNetwork')
   local multiplayer = call(mp, 'isMPSession') == true
   if be and be.getObject then
     for i = 0, math.min(be:getObjectCount(), 128) - 1 do
@@ -288,7 +298,7 @@ end
         gravityBase, gravityCleanup = nil, false
       end
     end
-    local mp = call(MPCoreNetwork,'isMPSession') == true
+    local mp = inMultiplayer()
     for id in pairs(dirtyVehicles) do
       local vehicle = be and be.getObjectByID and be:getObjectByID(id)
       if not vehicle or not owned(id,mp) then
@@ -310,7 +320,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
   end
 
   local function policyTick()
-    local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
+    local mp = mpModule('MPCoreNetwork')
     local server = currentServer()
     local identity = (call(mp,'isMPSession') == true or call(mp,'isGoingMPSession') == true)
       and (server and server.key..'\n'..server.name or 'joining') or 'single-player'
@@ -339,7 +349,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
   local function vehicleAction(command, result)
     local vehicle = getPlayerVehicle and getPlayerVehicle(0)
     if not vehicle then result(false,'Select a vehicle first.'); return end
-    if not owned(vehicle:getID(), call(MPCoreNetwork, 'isMPSession') == true) then
+    if not owned(vehicle:getID(), inMultiplayer()) then
       result(false,'Select your own vehicle first.'); return
     end
     local name = command.action
@@ -350,7 +360,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
         or type(command.expiresAt) ~= 'number' or os.time() >= command.expiresAt then
         result(false,'Workshop target changed or request expired.'); return
       end
-      if call(MPCoreNetwork,'isMPSession') == true then
+      if inMultiplayer() then
         command.expiresAt = math.min(command.expiresAt,os.time()+math.floor(policyLease.expires-clock))
       end
     elseif ({power=true,fullReset=true,rpm=true,clutch=true,persistence=true})[name] then result(false,'Target-bound workshop contract required.'); return end
@@ -406,7 +416,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveP
         end
       end
       if ok and name == 'power' and tuning.appliedTo == selected then tuning.power=settings.enginePower end
-      if ok and name == 'dimensions' and call(MPCoreNetwork, 'isMPSession') == true then
+      if ok and name == 'dimensions' and inMultiplayer() then
         message = 'Applied to your own car locally. Resized geometry is not synchronized to peers; server rules still apply.'
       end
       result(ok,message)
@@ -434,7 +444,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
     local vehicle = getPlayerVehicle and getPlayerVehicle(0)
     if (name == 'repair' or name == 'ignite' or name == 'extinguish' or name == 'deflate') then
       if not vehicle then result(false,'No vehicle selected.'); return end
-      if not owned(vehicle:getID(), call(MPCoreNetwork, 'isMPSession') == true) then
+      if not owned(vehicle:getID(), inMultiplayer()) then
         result(false,'Select your own vehicle first.'); return
       end
       if name == 'repair' and vehicle:getVelocity():length() > 1 then
@@ -518,7 +528,7 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
   local current = getPlayerVehicle and getPlayerVehicle(0)
   if current and current:getVelocity():length() > 1 then result(false,'Stop the vehicle before using garage actions.'); return end
   if not getMissionFilename or (getMissionFilename() or '') == '' then result(false,'Load a map before using the garage.'); return end
-  local multiplayer = call(MPCoreNetwork, 'isMPSession') == true
+  local multiplayer = inMultiplayer()
   if name == 'switch' then
     local targetId = command.vehicleId
     if type(targetId) ~= 'number' or targetId < 0 or targetId % 1 ~= 0 or not owned(targetId,multiplayer) then
@@ -526,8 +536,8 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
     end
     local vehicle = be:getObjectByID(targetId)
     if not vehicle then result(false,'Vehicle no longer exists.'); return end
-    be:enterVehicle(0,vehicle)
-    result(true,'Vehicle selected.'); return
+    local ok = pcall(function() be:enterVehicle(0,vehicle) end)
+    result(ok,ok and 'Vehicle selection requested. The game or server may still refuse it.' or 'The game could not select this vehicle.'); return
   end
   local model, key = command.model, command.config
   if type(model) ~= 'string' or not model:match('^[%w_-]+$') or #model > 80 or not validConfig(key) then
@@ -550,8 +560,8 @@ obj:queueGameEngineLua('if extensions.beamdeck then extensions.beamdeck.receiveC
 end
 
 local function snapshot()
-  local mp = MPCoreNetwork or (extensions and extensions.MPCoreNetwork)
-  local vehicles = MPVehicleGE or (extensions and extensions.MPVehicleGE)
+  local mp = mpModule('MPCoreNetwork')
+  local vehicles = mpModule('MPVehicleGE')
   local multiplayer = call(mp, 'isMPSession') == true
   local data = {
     schema = 1, source = 'beamdeck', sessionId = sessionId,
@@ -621,10 +631,12 @@ local function snapshot()
     local mpVehicles = call(vehicles, 'getVehicles')
     data.mpVehicleCount = type(mpVehicles) == 'table' and count(mpVehicles) or nil
     if type(players) == 'table' then
-      for _, p in pairs(players) do
+      for key, p in pairs(players) do
         if type(p) == 'table' and #data.players < 128 then
           local rawName = short(p.name, 64)
-          local playerID = tonumber(p.playerID)
+          -- getPlayers is keyed by the session player ID. Some builds also
+          -- repeat it in the player table; neither value is an account ID.
+          local playerID = tonumber(p.playerID) or tonumber(key)
           if not (playerID and playerID >= 0 and playerID <= 9007199254740991 and playerID == math.floor(playerID)) then
             playerID = nil
           end
@@ -636,7 +648,7 @@ local function snapshot()
           end
           data.players[#data.players + 1] = {
             name = rawName, rawName = rawName, ['local'] = p.isLocal == true,
-            guest = playerID == nil, sessionPlayerId = playerID,
+            guest = p.guest == true, sessionPlayerId = playerID,
             role = short(p.role and p.role.name, 32),
             ping = ping, pingSource = source or 'unavailable', pingAgeMs = pingAge,
             vehicles = p.vehicles and count(p.vehicles.IDs) or nil

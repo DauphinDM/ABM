@@ -21,6 +21,8 @@ BeamNG GE Lua bridge (game user folder)
 | `src/backend.*` | QML model, requests/replies, preferences, demo mode |
 | `src/integration.*` | Process detection, path discovery, bridge installation, launching |
 | `src/previews.*` | Bounded local image registration, loose/archive image reads |
+| `src/playerprofiles.*` | Explicit public-profile lookup, browser and clipboard actions |
+| `src/presetstore.*` | Validated ABM-only preset files, atomic writes and bounded history |
 | `src/Main.qml` and components | Basic-style dashboard, dialogs, keyboard/UI behavior |
 | `src/theme.*`, `src/translator.*` | Omarchy theme/language integration and fallback |
 | `game/` | User-folder GE bridge, startup script and vehicle tuning extension |
@@ -79,7 +81,32 @@ Gear arrays are limited by a 24 KB serialized budget, not a fixed gear count.
 Manual-gearbox indexed tables grow together; an extension reset hook restores
 their original dimensions before the game's own powertrain reset runs.
 
+## Session actions
+
+Session roster conversion uses BeamMP's documented extension modules, with legacy
+global aliases only as a fallback. Ownership checks use local game vehicle IDs.
+Session player IDs and explicit guest flags are separate; absent IDs are not
+authentication evidence. Profile lookup context includes bridge session, server
+endpoint/name, row key and raw username. Roster changes and clipboard writes
+cancel pending copies; unavailable snapshots clear profile state before UI
+notification. See [Session action review](session-actions.md) for API references
+and isolated verification limits.
+
 ## Files and persistence
+
+Preview registration builds up to eight approved local candidates, preserving
+the game's reported mounted origin before same-path loose/stock fallbacks. Each
+candidate must decode successfully; bytes existing is not sufficient. Paths,
+sizes and modification times contribute to opaque source-revision IDs when
+catalogs are decorated again. No game placeholder path is guessed.
+
+The provider retains the existing 8 MiB encoded-image limit, 8192-pixel axis limit,
+16-million-pixel decode limit and 100,000-entry archive scan limit. Thumbnails are
+bounded to 960×640 and use a 64 MiB-cost LRU cache (minimum 1 KiB per entry, including
+failures); cache bookkeeping and transient decoder allocations are additional.
+Misses are serialized to avoid concurrent duplicate decoding. No thumbnails are
+written to disk. QML's fallback selection keeps its source binding intact when
+a Garage card is reused for another configuration.
 
 Development 0.7 adds `ServerPolicy` and a bundled, frozen official-server roster.
 Since 0.7.1, approval checks exact raw names only, permitting host/port rotations.

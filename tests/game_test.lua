@@ -75,7 +75,7 @@ MPVehicleGE={getPlayers=function() return {
   getVehicles=function() return {a=true,b=true,c=true} end}
 m.onUpdate(.06)
 assert(last.multiplayer and last.playerCount==2 and last.mpVehicleCount==3 and last.ping==31)
-assert(last.players[1].pingSource=='local' and last.players[1].guest)
+assert(last.players[1].pingSource=='local' and not last.players[1].guest and last.players[1].sessionPlayerId==1)
 assert(last.players[2].ping==52 and last.players[2].pingSource=='remote')
 MPCoreNetwork.isMPSession=function() return false end
 local serial=0
@@ -86,7 +86,8 @@ local function lease(official,allowed)
   inbound[#inbound+1]='policy'; m.onUpdate(0)
 end
 local function request(action,values,session)
-  if autoPolicy and MPCoreNetwork.isMPSession() then lease(false,true) end
+  local mp=extensions.MPCoreNetwork or MPCoreNetwork
+  if autoPolicy and mp.isMPSession() then lease(false,true) end
   serial=serial+1
   local id='request'..serial
   local c=values or {}
@@ -139,6 +140,32 @@ assert(not request('switch',{vehicleId=42}).ok and entered==0)
 assert(not request('replace',{model='etk800',config='base'}).ok and replaces==1)
 MPVehicleGE.isOwn=function() return true end
 assert(request('switch',{vehicleId=42}).ok and entered==1)
+-- Exercise the documented namespace without legacy global aliases. Ownership
+-- checks and command policy must resolve exactly the same modules as telemetry.
+extensions.MPCoreNetwork,extensions.MPVehicleGE=MPCoreNetwork,MPVehicleGE
+MPCoreNetwork,MPVehicleGE=nil,nil
+local previousPlayers=extensions.MPVehicleGE.getPlayers
+extensions.MPVehicleGE.getPlayers=function() return {
+  [0]={name='Local',isLocal=true,vehicles={IDs={['0-0']=true}}},
+  [7]={name='Remote',vehicles={IDs={}},guest=true}} end
+be.getObject=function() return vehicle end
+m.onUpdate(.6)
+assert(last.multiplayer and last.vehicleOwned and last.activeVehicles[1].owned)
+assert(last.players[1].sessionPlayerId==0 and not last.players[1].guest)
+assert(last.players[2].sessionPlayerId==7 and last.players[2].guest)
+extensions.MPVehicleGE.isOwn=function() return false end
+assert(not request('switch',{vehicleId=42}).ok and entered==1)
+extensions.MPVehicleGE.isOwn=function() return true end
+autoPolicy=false; currentServer.name='Unverified server'
+assert(not request('switch',{vehicleId=42}).ok and entered==1)
+autoPolicy=true
+assert(request('switch',{vehicleId=42}).ok and entered==2)
+be.enterVehicle=function() error('API failed') end
+assert(not request('switch',{vehicleId=42}).ok)
+be.enterVehicle=function() entered=entered+1 end
+MPCoreNetwork,MPVehicleGE=extensions.MPCoreNetwork,extensions.MPVehicleGE
+extensions.MPCoreNetwork,extensions.MPVehicleGE=nil,nil
+MPVehicleGE.getPlayers=previousPlayers
 local mods={multiplayerbeammp={active=false}}
 core_modmanager={getMods=function() return mods end,activateMod=function(name) assert(name=='multiplayerbeammp');mods[name].active=true end}
 assert(request('enableBeamMP').ok and mods.multiplayerbeammp.active)

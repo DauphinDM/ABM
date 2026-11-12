@@ -6,9 +6,16 @@
 #include <QJsonObject>
 #include <cmath>
 
-PlayerProfiles::PlayerProfiles(QObject *parent) : QObject(parent) {
+PlayerProfiles::PlayerProfiles(QObject *parent, QNetworkAccessManager *network)
+    : QObject(parent), m_network(network ? network : new QNetworkAccessManager(this)) {
     if (auto *clipboard=QGuiApplication::clipboard())
-        connect(clipboard,&QClipboard::dataChanged,this,[this]{ ++m_clipboardRevision; });
+        connect(clipboard,&QClipboard::dataChanged,this,[this]{
+            ++m_clipboardRevision;
+            if (!m_intent.isEmpty()) {
+                ++m_lookupRevision; m_messageKey=m_intent; m_intent.clear(); if(m_reply) m_reply->abort();
+                tell(tr("Clipboard changed. Forum ID copy canceled."));
+            }
+        });
 }
 void PlayerProfiles::tell(const QString &message) { m_message=message; emit changed(); }
 QUrl PlayerProfiles::profileUrl(const QString &name, bool json) {
@@ -28,21 +35,28 @@ QVariantMap PlayerProfiles::row(const QString &key) const {
     return {};
 }
 void PlayerProfiles::setPlayers(const QString &session, const QVariantList &players) {
+    const bool sessionChanged = session != m_session;
     m_session=session; m_players=players;
-    if (!m_intent.isEmpty() && row(m_intent).isEmpty()) { ++m_lookupRevision; m_intent.clear(); if(m_reply) m_reply->abort(); }
+    if (!m_intent.isEmpty() && (sessionChanged || row(m_intent).value("rawName").toString()!=m_intentName || row(m_intent).value("guest").toBool())) {
+        ++m_lookupRevision; m_messageKey=m_intent; m_intent.clear(); if(m_reply) m_reply->abort();
+        tell(tr("Player or server changed. Forum ID lookup canceled."));
+    }
 }
 void PlayerProfiles::openProfile(const QString &rawName) {
     bool present=false;
-    for(const auto &p:m_players) present|=p.toMap().value("rawName").toString()==rawName;
+    m_messageKey.clear();
+    for(const auto &p:m_players) if (p.toMap().value("rawName").toString()==rawName && !p.toMap().value("guest").toBool()) {
+        present=true; m_messageKey=p.toMap().value("rowKey").toString(); break;
+    }
     const auto url=profileUrl(rawName);
     if (!present || !url.isValid() || url.isEmpty()) { tell(tr("Profile unavailable for this name.")); return; }
     tell(QDesktopServices::openUrl(url)?tr("Opened public username profile; account ownership is not verified."):tr("Browser could not open the profile."));
 }
 void PlayerProfiles::copySessionId(const QString &key) {
+    m_messageKey=key;
     const auto p=row(key); const auto id=p.value("sessionPlayerId");
     if (!id.isValid() || !QGuiApplication::clipboard()) { tell(tr("Session ID unavailable.")); return; }
-    ++m_lookupRevision; m_intent.clear(); if(m_reply) m_reply->abort();
-    QGuiApplication::clipboard()->setText(id.toString()); tell(tr("Copied session ID, not permanent account ID."));
+    copyText(id.toString(),tr("Copied session ID, not permanent account ID."));
 }
 void PlayerProfiles::copyText(const QString &text, const QString &message) {
     if (text.isEmpty() || !QGuiApplication::clipboard()) { tell(tr("Player information unavailable.")); return; }
@@ -52,9 +66,11 @@ void PlayerProfiles::copyText(const QString &text, const QString &message) {
     tell(clipboard->text() == text ? message : tr("Clipboard did not retain the player information."));
 }
 void PlayerProfiles::copyName(const QString &key) {
+    m_messageKey=key;
     copyText(row(key).value("rawName").toString(), tr("Copied player name."));
 }
 void PlayerProfiles::copyDetails(const QString &key) {
+    m_messageKey=key;
     const auto p = row(key);
     if (p.isEmpty()) { tell(tr("Player information unavailable.")); return; }
     QStringList lines;
@@ -66,22 +82,25 @@ void PlayerProfiles::copyDetails(const QString &key) {
     copyText(lines.join('\n'), tr("Copied session player details."));
 }
 void PlayerProfiles::copyAccount(const QString &key) {
-    ++m_lookupRevision; if(m_reply) m_reply->abort();
+    m_messageKey=key;
+    ++m_lookupRevision; m_intent.clear(); if(m_reply) m_reply->abort();
     const auto p=row(key); const auto name=p.value("rawName").toString(); const auto url=profileUrl(name,true);
     if (p.isEmpty() || p.value("guest").toBool() || url.isEmpty() || !QGuiApplication::clipboard()) { tell(tr("Public forum ID unavailable (guest or unknown identity).")); return; }
     const auto session=m_session; const auto revision=m_lookupRevision, clip=m_clipboardRevision;
-    m_intent=key;
+    m_intent=key; m_intentName=name;
     QNetworkRequest request(url); request.setTransferTimeout(10000);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);
     request.setRawHeader("User-Agent","ABM public-profile lookup");
-    auto *reply=m_network.get(request); m_reply=reply; reply->setReadBufferSize(262145);
+    auto *reply=m_network->get(request); m_reply=reply; reply->setReadBufferSize(262145);
     connect(reply,&QNetworkReply::readyRead,reply,[reply]{ if(reply->bytesAvailable()>262144) reply->abort(); });
     tell(tr("Resolving public username → forum ID. Clipboard changes cancel this copy."));
     connect(reply,&QNetworkReply::finished,this,[this,reply,key,name,session,revision,clip] {
         const auto bytes=reply->readAll();
         const bool valid=reply->error()==QNetworkReply::NoError && reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()==200;
         reply->deleteLater();
-        if (revision!=m_lookupRevision || session!=m_session || m_intent!=key || row(key).value("rawName").toString()!=name || clip!=m_clipboardRevision) return;
+        if (revision!=m_lookupRevision || session!=m_session || m_intent!=key || row(key).value("rawName").toString()!=name) return;
+        m_messageKey=key;
+        if (clip!=m_clipboardRevision) { m_intent.clear(); tell(tr("Clipboard changed. Forum ID copy canceled.")); return; }
         m_intent.clear(); const auto id=valid?accountId(bytes,name):QString();
         if (id.isEmpty()) { tell(tr("Account lookup failed or canonical name differs. No session ID was substituted.")); return; }
         auto *clipboard=QGuiApplication::clipboard(); clipboard->setText(id);

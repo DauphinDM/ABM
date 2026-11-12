@@ -7,7 +7,7 @@ development machine cannot certify Windows/Steam/BeamMP behavior.
 
 ## Using a build
 
-1. Extract the entire `ABM-Windows-x64` artifact to a folder. Keep its DLLs,
+1. Extract the entire `ABM-<version>-Windows-x64.zip` release to a folder. Keep its DLLs,
    platform plugins and QML files beside `ABM.exe`.
 2. Run `ABM.exe`. Omarchy, Hyprland, Python and systemd are not needed.
 3. In **Settings → Paths & bridge setup**, confirm the BeamNG installation
@@ -49,13 +49,13 @@ $env:VCPKG_ROOT = 'C:/vcpkg'
 `qmake`, `nmake` and `windeployqt` must be on PATH. The script builds the app,
 runs offscreen Qt tests, deploys the Qt/archive DLLs into `dist/ABM`, and
 tests the packaged CLI and standalone receiver lifecycle with isolated settings.
-The `.github/workflows/windows.yml` workflow uploads the folder as an artifact.
+The `.github/workflows/windows.yml` workflow uploads the ZIP and SHA256 manifest as an artifact.
 It does not publish a release or require a signing key.
 
 The portable folder is not code-signed yet, so Windows SmartScreen may warn.
-Do not disable Windows security globally. Public releases should add signing,
-third-party license notices and testing on a clean Windows machine before wider
-distribution. Never include proprietary vehicle assets in the ZIP: previews are
+Do not disable Windows security globally. Dependency notices and Qt license texts
+are bundled; signing and real-game testing on a clean Windows desktop remain
+outstanding. Never include proprietary vehicle assets in the ZIP: previews are
 read from the user's own game installation.
 
 ## Known boundaries

@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("abm");
     app.setApplicationDisplayName("ABM");
-    app.setApplicationVersion("0.11.1");
+    app.setApplicationVersion("0.12.0");
     app.setDesktopFileName("abm");
     app.setWindowIcon(QIcon::fromTheme("abm"));
     if (help) {
@@ -112,6 +112,16 @@ int main(int argc, char *argv[]) {
     if (capture && (!demo || args.indexOf("--screenshot")+1 >= args.size())) {
         fputs("Screenshots require --demo and an output path.\n",stderr); return 1;
     }
+    QSize captureSize;
+    if (args.contains("--dev-size")) {
+        const auto parts = args.value(args.indexOf("--dev-size")+1).split('x');
+        bool widthOk = false, heightOk = false;
+        const int width = parts.value(0).toInt(&widthOk), height = parts.value(1).toInt(&heightOk);
+        if (!capture || !demo || parts.size() != 2 || !widthOk || !heightOk || width < 320 || width > 2560 || height < 440 || height > 1600) {
+            fputs("--dev-size requires a demo screenshot and WIDTHxHEIGHT (320–2560 by 440–1600).\n",stderr); return 1;
+        }
+        captureSize = QSize(width,height);
+    }
     QDir().mkpath(QFileInfo(Telemetry::defaultPath()).absolutePath());
 #ifdef Q_OS_WIN
     const auto guiSocket = Telemetry::socketPath(Telemetry::defaultPath() + ".dashboard");
@@ -172,6 +182,7 @@ int main(int argc, char *argv[]) {
     app.setPalette(palette);
     engine.load(QUrl("qrc:/Main.qml")); if (engine.rootObjects().isEmpty()) return 1;
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+    if (captureSize.isValid()) window->resize(captureSize);
     window->setProperty("page",tabIndex);
     if (capture && demo && args.contains("--dev-open") && args.indexOf("--dev-open")+1 < args.size()) {
         // Development aid: --dev-open TARGET pre-opens dialogs and menus for screenshots.

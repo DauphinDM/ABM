@@ -16,7 +16,7 @@ ComboBox {
         return 0
     }
     enabled: model.length > 1
-    font.pixelSize: 10; implicitHeight: 28; padding: 4
+    font.pixelSize: 12; implicitHeight: 36; padding: 8
     onActivated: chosen(currentValue)
     ToolTip.visible: hovered
     ToolTip.text: allLabel

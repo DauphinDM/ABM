@@ -2,76 +2,68 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Compact floating navigation. Becomes a fixed left rail on wide windows.
+// The same keyboard-focusable navigation becomes a workspace rail when wide.
 Item {
     id: dock
     property int currentPage: 0
     property bool vertical: false
     property color accentColor: theme.accent
-    property var labels: [qsTr("DRIVE"), qsTr("CAR"), qsTr("GARAGE"), qsTr("SESSION")]
+    property var labels: [qsTr("Drive"), qsTr("Car"), qsTr("Garage"), qsTr("Session")]
     signal selected(int page)
+    implicitWidth: vertical ? 144 : 280
+    implicitHeight: vertical ? 208 : 44
 
-    implicitWidth: vertical ? 66 : 260
-    implicitHeight: vertical ? 4 * 52 + 12 : 46
-
-    GlassPanel {
-        anchors.fill: parent
-        corner: 12
-        fillColor: "#e6101116"
-        highlightTop: false
+    Rectangle {
+        visible: !dock.vertical
+        anchors.bottom: parent.bottom
+        width: parent.width; height: 1; color: "#303846"
     }
-
     GridLayout {
         anchors.fill: parent
-        anchors.margins: 6
         columns: dock.vertical ? 1 : 4
-        rowSpacing: 2
-        columnSpacing: 2
-
+        rowSpacing: 8; columnSpacing: 4
         Repeater {
             model: dock.labels.length
-            delegate: Item {
-                id: cell
+            Button {
+                id: tab
                 required property int index
-                Layout.fillWidth: true
-                Layout.fillHeight: true
                 readonly property bool active: dock.currentPage === index
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 8
-                    color: cell.active ? Qt.alpha(dock.accentColor, .18) : (hover.containsMouse ? "#18ffffff" : "transparent")
-                    border.width: cell.active ? 1 : 0
-                    border.color: Qt.alpha(dock.accentColor, .45)
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                Layout.fillWidth: true; Layout.fillHeight: true
+                padding: dock.vertical ? 12 : 4
+                text: dock.labels[index]
+                Accessible.role: Accessible.PageTab
+                Accessible.name: text
+                Accessible.description: qsTr("Keyboard shortcut %1").arg(index + 1)
+                onClicked: dock.selected(index)
+                contentItem: RowLayout {
+                    spacing: 10
+                    PlainLabel {
+                        visible: dock.vertical
+                        text: "0" + (tab.index + 1)
+                        color: tab.active ? dock.accentColor : "#747f91"
+                        font.pixelSize: 10
+                    }
+                    PlainLabel {
+                        Layout.fillWidth: true
+                        text: tab.text
+                        horizontalAlignment: dock.vertical ? Text.AlignLeft : Text.AlignHCenter
+                        color: tab.active ? "#f1f4f9" : "#a4adbd"
+                        font.pixelSize: 13; font.weight: tab.active ? Font.DemiBold : Font.Normal
+                    }
                 }
-                Rectangle {
-                    width: dock.vertical ? 3 : 16
-                    height: dock.vertical ? 16 : 3
-                    radius: 2
-                    color: dock.accentColor
-                    opacity: cell.active ? 1 : 0
-                    anchors.horizontalCenter: dock.vertical ? undefined : parent.horizontalCenter
-                    anchors.verticalCenter: dock.vertical ? parent.verticalCenter : undefined
-                    anchors.left: dock.vertical ? parent.left : undefined
-                    anchors.bottom: dock.vertical ? undefined : parent.bottom
-                    anchors.leftMargin: dock.vertical ? 2 : 0
-                    anchors.bottomMargin: dock.vertical ? 0 : 2
-                    Behavior on opacity { NumberAnimation { duration: 140 } }
-                }
-                PlainLabel {
-                    anchors.centerIn: parent
-                    text: dock.labels[index]
-                    color: cell.active ? dock.accentColor : "#9b9ca9"
-                    font.pixelSize: dock.vertical ? 8 : 9
-                    font.letterSpacing: 1.1
-                    font.bold: cell.active
-                }
-                MouseArea {
-                    id: hover
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: dock.selected(cell.index)
+                background: Rectangle {
+                    radius: Math.min(6, theme.radius)
+                    color: tab.active && dock.vertical ? "#232a35" : tab.hovered || tab.visualFocus ? "#1e2530" : "transparent"
+                    border.width: tab.visualFocus ? 1 : 0; border.color: dock.accentColor
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: dock.vertical ? undefined : parent.right
+                        anchors.top: dock.vertical ? parent.top : undefined
+                        width: dock.vertical ? 2 : parent.width
+                        height: dock.vertical ? parent.height : 2
+                        color: dock.accentColor; visible: tab.active
+                    }
                 }
             }
         }

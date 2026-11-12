@@ -12,6 +12,7 @@
   <file>TrendChart.qml</file>
   <file>VariantCard.qml</file>
   <file>GlassPanel.qml</file>
+  <file>SectionPanel.qml</file>
   <file>StatusPill.qml</file>
   <file>HeroCluster.qml</file>
   <file>TelemetryRibbon.qml</file>
@@ -35,4 +36,7 @@
   <file alias="DialogButtonBox.qml">GlassDialogButtonBox.qml</file>
   <file alias="Dialog.qml">GlassDialog.qml</file>
   <file alias="ComboBox.qml">GlassComboBox.qml</file>
+  <file alias="Menu.qml">GlassMenu.qml</file>
+  <file alias="MenuItem.qml">GlassMenuItem.qml</file>
+  <file alias="CheckBox.qml">GlassCheckBox.qml</file>
 </qresource></RCC>
