@@ -13,6 +13,12 @@ builds Qt tests offscreen, then runs LuaJIT bridge tests, Node plugin tests,
 Python CLI tests and standalone lifecycle tests. Tests isolate settings and
 use temporary sockets/ephemeral UDP ports, never the live game receiver.
 
+Headless tests set `BEAMSIDE_CONFIG_DIR`, `BEAMSIDE_RUNTIME_DIR` and
+`BEAMSIDE_SKILL_DIR` explicitly. The last variable selects the absolute directory
+containing the installed `SKILL.md`; without it, the normal destination remains
+`~/.agents/skills/abm/`. Setting `HOME` alone does not redirect Qt's native Windows
+profile lookup. Never let CLI tests install into the developer's real skill folder.
+
 Generated QML resources sometimes need an explicit timestamp update during
 incremental development: `touch src/resources.qrc src/main.cpp` before build.
 A clean CI checkout does not share stale objects.

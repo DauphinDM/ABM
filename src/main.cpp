@@ -54,7 +54,11 @@ int main(int argc, char *argv[]) {
     if (command == "skill") {
         if (args.value(1) != "install") { fputs("Expected: abm skill install --json\n", stderr); return 1; }
         QFile source(":/agent-skill.md"); if (!source.open(QIODevice::ReadOnly)) return 1;
-        const auto bytes = source.readAll(); const auto path = QDir::homePath() + "/.agents/skills/abm/SKILL.md";
+        const auto bytes = source.readAll();
+        // Qt resolves the native Windows profile even when a test overrides HOME.
+        const auto directory = qEnvironmentVariable("BEAMSIDE_SKILL_DIR", QDir::homePath() + "/.agents/skills/abm");
+        if (!QDir::isAbsolutePath(directory)) { fputs("BEAMSIDE_SKILL_DIR must be an absolute directory.\n", stderr); return 1; }
+        const auto path = QDir(directory).filePath("SKILL.md");
         QFile previous(path);
         if (previous.exists() && (!previous.open(QIODevice::ReadOnly) || previous.readAll() != bytes)) {
             fputs("Refusing to overwrite an existing, different agent skill.\n", stderr); return 1;

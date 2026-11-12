@@ -11,10 +11,11 @@ binary = Path(os.environ.get('BEAMSIDE_BINARY', Path(__file__).resolve().parent.
 scratch_parent = '/tmp/opencode' if Path('/tmp/opencode').is_dir() else None
 with tempfile.TemporaryDirectory(prefix='beamdeck-cli-', dir=scratch_parent) as scratch:
     # Windows temp paths may contain 8.3 aliases while Qt returns long names.
-    # Compare canonical paths, and still require the installed file inside HOME.
+    # Qt's native home ignores HOME/USERPROFILE, so isolate skill writes explicitly.
     root = Path(scratch).resolve()
     env = dict(os.environ, HOME=str(root), USERPROFILE=str(root), APPDATA=str(root / 'roaming'), LOCALAPPDATA=str(root / 'local'), XDG_CONFIG_HOME=str(root / 'config'), XDG_RUNTIME_DIR=str(root))
-    env.update(BEAMSIDE_CONFIG_DIR=str(root/'config'), BEAMSIDE_RUNTIME_DIR=str(root/'runtime'))
+    skill_dir = root / 'agent-skill'
+    env.update(BEAMSIDE_CONFIG_DIR=str(root/'config'), BEAMSIDE_RUNTIME_DIR=str(root/'runtime'), BEAMSIDE_SKILL_DIR=str(skill_dir))
     version = re.search(r'^pkgver=(.+)$', (Path(__file__).resolve().parent.parent / 'pkgbuild/PKGBUILD').read_text(), re.M)[1]
     for flag in ('--version', '--help'):
         result = subprocess.run([str(binary), flag], env=env, text=True, capture_output=True)
@@ -27,9 +28,11 @@ with tempfile.TemporaryDirectory(prefix='beamdeck-cli-', dir=scratch_parent) as 
     assert run('preferences', '--json')['metric'] is False
     run('preferences', '--units', 'bad', '--json', ok=False)
     run('preferences', '--favorite', '../bad', '--json', ok=False)
+    invalid = subprocess.run([str(binary), 'skill', 'install', '--json'], env=dict(env, BEAMSIDE_SKILL_DIR='relative-skill'), text=True, capture_output=True)
+    assert invalid.returncode != 0 and 'absolute directory' in invalid.stderr, (invalid.stdout, invalid.stderr)
     result = run('skill', 'install', '--json')
     target = Path(result['path']).resolve()
-    assert target.is_relative_to(root) and target.is_file(), (target, root)
+    assert target == (skill_dir / 'SKILL.md').resolve() and target.is_relative_to(root) and target.is_file(), (target, root)
     run('skill', 'install', '--json')
     target.write_text('Existing user content')
     run('skill', 'install', '--json', ok=False)
