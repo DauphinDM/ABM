@@ -37,7 +37,7 @@ location with the `abm` application ID. The legacy game extension ID remains
 
 ## Development: pairing a phone
 
-Newer development builds add **Connect**; the published 0.12.0 release does not
+ABM 0.13.0 adds **Connect**; the older 0.12.0 release does not
 include it. First-time TLS identity creation needs the `openssl` executable on
 PATH (the ZIP does not supply its CLI). Keep phone and PC on a trusted LAN,
 enable access, transfer the fresh private link and approve the phone on PC.

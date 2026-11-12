@@ -1,6 +1,6 @@
 # Mobile companions — development
 
-The separate public [ABM Mobile repository](https://github.com/DauphinDM/ABM-Mobile) adapts PC ABM's Qt Quick dashboard for Android and adds an independent native SwiftUI implementation for iOS 26+, with system Liquid Glass navigation and controls. Both use the same **Connect** protocol. **Released PC 0.12.0 does not contain this host.** Build the updated PC source before trying the mobile development builds. No existing release assets are replaced by this change.
+The separate public [ABM Mobile repository](https://github.com/DauphinDM/ABM-Mobile) adapts PC ABM's Qt Quick dashboard for Android and adds an independent native SwiftUI implementation for iOS 26+, with system Liquid Glass navigation and controls. Both use the same **Connect** protocol. **PC ABM 0.13.0 or newer is required.** The older 0.12.0 release does not contain this host. No existing release assets are replaced by this change.
 
 Android development APKs build in CI. iOS provides simulator artifacts and an unsigned arm64 device IPA requiring your own local signing/provisioning; a simulator app is not installable on an iPhone. See [native iOS notes](https://github.com/DauphinDM/ABM-Mobile/blob/main/docs/ios.md). An earlier locally re-signed iPhone build was installed over USB and paired over Wi-Fi. New USB transport and remembered-device operation still need physical-device testing; this is not general signing-tool or live-game certification.
 

@@ -15,13 +15,13 @@ through its Steam URI.
 
 ## Arch package
 
-Download from [GitHub Releases](https://github.com/DauphinDM/ABM/releases/tag/v0.12.0):
+Download from [GitHub Releases](https://github.com/DauphinDM/ABM/releases/tag/v0.13.0):
 
 ```sh
-gh release download v0.12.0 --repo DauphinDM/ABM --pattern 'abm-*.pkg.tar.zst'
-gh release download v0.12.0 --repo DauphinDM/ABM --pattern SHA256SUMS
+gh release download v0.13.0 --repo DauphinDM/ABM --pattern 'abm-*.pkg.tar.zst'
+gh release download v0.13.0 --repo DauphinDM/ABM --pattern SHA256SUMS
 sha256sum -c SHA256SUMS
-sudo pacman -U abm-0.12.0-1-x86_64.pkg.tar.zst
+sudo pacman -U abm-0.13.0-1-x86_64.pkg.tar.zst
 ```
 
 If only a subset of assets is downloaded, the checksum command may report

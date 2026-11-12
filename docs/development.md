@@ -60,9 +60,9 @@ must use demo data; previews may be read from a developer's installed game.
 3. Build the Arch package in `pkgbuild/` with `makepkg -f`.
 4. Verify the intended GitHub visibility before pushing or publishing:
    `gh repo view DauphinDM/ABM --json visibility`.
-5. Commit and push `main`, tag the tested commit (e.g. `v0.12.0`) and push the tag.
+5. Commit and push `main`, tag the tested commit (e.g. `v0.13.0`) and push the tag.
 6. Publish a **prerelease** with a clear limitations section after all workflows
-   pass. Public visibility was explicitly authorized for the 0.12.0 preview.
+   pass. Public visibility was explicitly authorized for preview releases.
 7. Attach the tested Arch package, optional built source archive and SHA256SUMS.
 8. Windows CI uploads a portable build artifact. Attach a Windows release ZIP
    only after the workflow succeeds; never claim clean-machine gameplay testing

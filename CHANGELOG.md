@@ -1,13 +1,16 @@
 # Changelog
 
-## Unreleased — opt-in app updates
+## 0.13.0 — App updates and mobile companions (preview)
+
+Ship PC 0.13.0 with the matching [ABM Mobile 0.2.0](https://github.com/DauphinDM/ABM-Mobile/releases) release. Previously published PC 0.12.0 assets remain available and are not replaced.
 
 - Add official-release checks and optional SHA-256 verified downloads on PC/Android, with preview selection, response/transfer bounds and safe cancellation. Default settings do not contact GitHub.
 - Add native iOS release notifications; sideloaded IPAs still require local re-signing or an Apple distribution channel. PC installation remains explicit, never an automatic game interruption.
-- Add a restricted Android APK-installer handoff and optional stable CI release signing through maintainer secrets; mobile packaging advances to build 4.
+- Add a restricted Android APK-installer handoff and optional stable CI release signing through maintainer secrets; mobile packaging advances to build 5.
 - Test release/asset selection, hostile URLs, digest/size failures, redirects, cancellation and opt-in preferences using synthetic network responses.
+- Fix a native iOS false disconnect when a long main-thread stall delayed snapshot delivery; commands still fail closed on stale telemetry, and the watchdog confirms a genuine outage before clearing the connection.
 
-## Unreleased — mobile usability and USB
+### Mobile usability and USB
 
 - Send bounded on-demand Garage thumbnails and retain unchanged libraries between 10 Hz telemetry updates; display phone-to-PC round-trip latency separately from game ping.
 - Permit validated spawning into a loaded empty map without requiring an existing car. Ownership, stopping, policy and target fences remain where relevant.
@@ -16,11 +19,11 @@
 - Mobile actions apply directly without redundant Send to PC confirmation; keyboards have explicit dismissal. Security approval and administrator firewall confirmation remain.
 - Add TLS/thumbnail/resume/revocation/empty-map and mocked-helper byte-bridge tests. Fix a Windows macro collision in firewall adapter lookup.
 
-## Unreleased — companion firewall setup
+### Companion firewall setup
 
 - PC Connect now explains stalled secure connections and offers explicit, administrator-approved LAN firewall setup for Linux UFW and Windows Private profiles. Rules use the selected interface's actual subnet and bound TCP address/port, never all networks or router forwards. Other firewalls/masks remain manual; persistent-rule scope and removal are explained before confirmation.
 - Added scope/command/PowerShell-encoding and real QML confirmation/cancellation/demo-safety tests; no test modifies the machine's firewall. Existing-window activation now honors the Connect tab too.
-## Unreleased — Android companion foundation
+### Android companion foundation
 
 - Add a fifth **Connect** screen and opt-in private-IPv4 TLS host for the separate [ABM Mobile](https://github.com/DauphinDM/ABM-Mobile) Android app. This is not included in the 0.12.0 release assets.
 - Require a short-lived random pairing link, certificate pinning and explicit PC approval; stop revokes access. No cloud relay, automatic firewall changes, saved approval or public listener.

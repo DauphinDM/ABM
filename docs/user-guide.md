@@ -33,9 +33,9 @@ to favorite it. Ctrl+K opens the command palette; `?` shows keyboard shortcuts.
 Appearance changes do not grant permission to change the game: ownership,
 movement, bridge capability and server-policy checks still apply.
 
-The development build adds a fifth **Connect** tab for [ABM Mobile pairing](mobile-companion.md).
+The 0.13.0 release adds a fifth **Connect** tab for [ABM Mobile pairing](mobile-companion.md).
 Phone access is off by default, unavailable in demo mode and requires explicit PC approval.
-This tab is not in the released 0.12.0 binaries.
+This tab is not in the older 0.12.0 binaries.
 
 ## Launch and connection state
 

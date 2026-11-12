@@ -86,7 +86,7 @@ known stopped speed; spawning into a loaded empty map does not require an existi
 Backend/receiver/bridge validation still applies. Receipts are not physics verification.
 The separate [ABM-Mobile repository](https://github.com/DauphinDM/ABM-Mobile) contains
 Android and native SwiftUI clients; see [mobile companion](mobile-companion.md) for setup,
-limitations and security details. This is not part of the published 0.12.0 binaries.
+limitations and security details. These features ship from 0.13.0; the older 0.12.0 binaries do not contain them.
 
 The receiver only forwards an explicit action allowlist. Commands carry a current
 session ID and request ID; replies route to their requester. Bridge-side bounds

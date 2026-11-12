@@ -1,6 +1,6 @@
 # App updates (development)
 
-**Connect → App updates** provides opt-in release checks on Linux, Windows, Android and native iOS. This is not in the published PC 0.12.0 binary; existing installations need one manual update to obtain it.
+**Connect → App updates** provides opt-in release checks on Linux, Windows, Android and native iOS. This is included from PC 0.13.0; older installations need one manual update to obtain it.
 
 All options default off. Enable startup/daily checks, preview releases, and optionally automatic verified downloads on PC/Android. Checks contact GitHub, exposing your IP, but send no pairing links, saved-device tokens, telemetry or signing credentials. Downloads never interrupt your game or install silently.
 

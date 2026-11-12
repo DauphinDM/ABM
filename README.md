@@ -6,15 +6,15 @@ A native, local-first manager for **BeamNG.drive and BeamMP**: launch the game,
 watch live telemetry, browse your garage, and experiment with sandbox tuning.
 Built with C++ and Qt Quick, with an optional Omarchy bar widget.
 
-**Latest preview: [0.12.0](https://github.com/DauphinDM/ABM/releases/tag/v0.12.0).**
+**Latest preview: [0.13.0](https://github.com/DauphinDM/ABM/releases/tag/v0.13.0).**
 Public, MIT-licensed source with Linux and Windows downloads. This is an
 independent project, not affiliated with BeamNG or BeamMP. Gameplay integration
 and Windows desktop support remain experimental; passing CI is not live-game certification.
 
-**In development, not in 0.12.0:** [ABM Mobile](https://github.com/DauphinDM/ABM-Mobile)
+**New in 0.13.0:** [ABM Mobile](https://github.com/DauphinDM/ABM-Mobile)
 and a fifth **Connect** screen for opt-in encrypted phone control over private Wi-Fi.
 See [pairing, requirements and limits](docs/mobile-companion.md).
-Development builds also offer [opt-in update checks and verified downloads](docs/updates.md); installation remains explicit and platform-specific.
+This release also offers [opt-in update checks and verified downloads](docs/updates.md); installation remains explicit and platform-specific.
 
 ## What it does
 
@@ -67,10 +67,10 @@ See the [changelog](CHANGELOG.md) for features, limits and validation status.
 
 ## Quick start — Arch Linux / Omarchy
 
-Install the release's `abm-0.12.0-1-x86_64.pkg.tar.zst` asset:
+Install the release's `abm-0.13.0-1-x86_64.pkg.tar.zst` asset:
 
 ```sh
-sudo pacman -U abm-0.12.0-1-x86_64.pkg.tar.zst
+sudo pacman -U abm-0.13.0-1-x86_64.pkg.tar.zst
 abm-enable --json
 abm open
 ```
