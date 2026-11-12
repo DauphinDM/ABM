@@ -342,7 +342,7 @@ private slots:
         send(phone,{{"kind","pair"},{"v",1},{"secret",invite().value("secret")},{"device","Remembered fixture"}});
         QTRY_VERIFY(!host.pendingDevice().isEmpty()); host.approveRemembered(true);
         QTRY_VERIFY(!find("trusted").isEmpty()); const auto credential=find("trusted"); QCOMPARE(host.rememberedCount(),1);
-        QFile saved(directory+"/devices.json"); QVERIFY(saved.open(QIODevice::ReadOnly)); const auto stored=saved.readAll();
+        QFile saved(directory+"/devices.json"); QVERIFY(saved.open(QIODevice::ReadOnly)); const auto stored=saved.readAll(); saved.close();
         QVERIFY(!stored.contains(credential.value("token").toString().toLatin1())); QVERIFY(stored.contains("hash"));
         const auto snapshot=host.snapshot(); const auto photo=snapshot.value("catalog").toArray().first().toObject().value("photo").toString(); QCOMPARE(photo.size(),64);
         QVERIFY(!QJsonDocument(snapshot).toJson().contains(root.toUtf8()));

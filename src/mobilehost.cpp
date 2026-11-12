@@ -81,7 +81,8 @@ bool MobileHost::saveDevices() {
     QSaveFile file(m_directory+"/devices.json");
     if (!file.open(QIODevice::WriteOnly)) return false;
     file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner);
-    return file.write(QJsonDocument(m_trusted).toJson(QJsonDocument::Compact))>=0 && file.commit();
+    const auto data=QJsonDocument(m_trusted).toJson(QJsonDocument::Compact);
+    return file.write(data)==data.size() && file.commit();
 }
 void MobileHost::forgetDevices() {
     const auto old=m_trusted; m_trusted={};
