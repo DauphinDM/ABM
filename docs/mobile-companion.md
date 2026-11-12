@@ -1,6 +1,8 @@
-# Android companion — development
+# Mobile companions — development
 
-The separate public [ABM Mobile repository](https://github.com/DauphinDM/ABM-Mobile) adapts PC ABM's Qt Quick dashboard for Android. Both apps now have a **Connect** screen in source. **Released PC 0.12.0 does not contain this host.** Build the updated PC source before trying the mobile development APK. No existing release assets are replaced by this change.
+The separate public [ABM Mobile repository](https://github.com/DauphinDM/ABM-Mobile) adapts PC ABM's Qt Quick dashboard for Android and adds an independent native SwiftUI implementation for iOS 26+, with system Liquid Glass navigation and controls. Both use the same **Connect** protocol. **Released PC 0.12.0 does not contain this host.** Build the updated PC source before trying the mobile development builds. No existing release assets are replaced by this change.
+
+Android development APKs build in CI; the iOS workflow targets the simulator without an Apple signing identity. A simulator app is not an installable iPhone IPA. See [native iOS build notes](https://github.com/DauphinDM/ABM-Mobile/blob/main/docs/ios.md) for Xcode/device-signing requirements. Physical-device and live-game validation remain pending.
 
 ## Pairing
 
@@ -18,7 +20,7 @@ If necessary, allow only private-network TCP access to the chosen PC interface o
 
 The phone currently offers telemetry, selected power/RPM/clutch/gear controls, recovery/reset actions, model/configuration browsing, confirmed spawn/replace, session copies and owned-vehicle switching. Mobile changes require a known stopped, owned car and permitted server, even for some actions less restricted on desktop. Existing backend, receiver and game checks remain in place. PC and phone share the same current vehicle and pending-action state; simultaneous edits can be rejected as busy. No command is queued offline.
 
-This is not a steering wheel or throttle controller. Initial mobile gaps include photos, full preset-file management, profile lookups, dimension experiments, full handling/engine editors and desktop setup. A dispatch receipt is not verified gameplay acceptance; readback/game result messages remain authoritative. Actual phone/Android lifecycle and live BeamNG/BeamMP validation are still required.
+This is not a steering wheel or throttle controller. Initial mobile gaps include photos, full preset-file management, profile lookups, dimension experiments, full handling/engine editors and desktop setup. A dispatch receipt is not verified gameplay acceptance; readback/game result messages remain authoritative. Actual Android/iPhone lifecycle and live BeamNG/BeamMP validation are still required.
 
 ## Security boundary
 

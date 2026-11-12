@@ -54,7 +54,7 @@ See the [changelog](CHANGELOG.md) for features, limits and validation status.
 - [Architecture and compatibility](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Windows build and limitations](docs/windows.md)
-- [Android companion and private-Wi-Fi pairing (development)](docs/mobile-companion.md)
+- [Android/iOS companions and private-Wi-Fi pairing (development)](docs/mobile-companion.md)
 - [Portable Linux: AppImage and bundled archive](docs/portable-linux.md)
 - [Sandbox feature research and roadmap](docs/sandbox-research.md)
 - [Official-server allowlist, cleanup and limitations](docs/server-policy.md)
