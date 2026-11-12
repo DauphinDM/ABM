@@ -3,6 +3,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QFontDatabase>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkDatagram>
@@ -874,6 +875,7 @@ private slots:
         QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));
     }
     void responsiveGarageKeepsColumnsAndFiltersUsable() {
+        QVERIFY2(!QFontDatabase::families().isEmpty(),"UI layout tests require an installed font; Linux CI installs noto-fonts.");
         QTemporaryDir dir; Backend backend(dir.filePath("state.json")); backend.setDemo();
         Theme theme(dir.path()); Translator translator(dir.filePath("language"));
         QQmlApplicationEngine engine; QStringList warnings;

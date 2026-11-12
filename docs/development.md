@@ -35,6 +35,11 @@ A clean CI checkout does not share stale objects.
 
 ## Visual tests
 
+The offscreen platform still needs installed fonts. Linux CI installs `noto-fonts`;
+a fontless container can render fallback glyphs with invalid layout metrics and
+fail the narrow-window checks. Keep the geometry assertions, rather than treating
+such a container as a representative desktop.
+
 See [ui-audit.md](ui-audit.md). Capture all pages/dialogs when changing shared
 styles. Test narrow and wide window sizes. Use software/offscreen rendering
 for reproducibility and inspect alpha separately from text legibility.
