@@ -3,6 +3,8 @@
 
 - Publish public Linux and Windows preview downloads with SHA256 checksums and dependency notices. Keep bridge compatibility at 0.11.0; update/install the bundled bridge files for Session fixes.
 - Fix the preset backend self-binding detected by Windows Qt 6.8 CI; explicitly bind the application backend and assert it in real-window tests.
+- Keep text-field, text-area and editable-combo context menus compatible with Qt 6.8; test right-click copying and keyboard opening. Explicitly constrain responsive content width and wait for settled layout geometry in CI tests.
+- Report the release version consistently in CLI help, `--version` and support bundles.
 
 ### Session action fixes
 

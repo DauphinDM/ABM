@@ -1,6 +1,7 @@
 """Exercise headless commands without touching the user's settings or skills."""
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,6 +15,10 @@ with tempfile.TemporaryDirectory(prefix='beamdeck-cli-', dir=scratch_parent) as 
     root = Path(scratch).resolve()
     env = dict(os.environ, HOME=str(root), USERPROFILE=str(root), APPDATA=str(root / 'roaming'), LOCALAPPDATA=str(root / 'local'), XDG_CONFIG_HOME=str(root / 'config'), XDG_RUNTIME_DIR=str(root))
     env.update(BEAMSIDE_CONFIG_DIR=str(root/'config'), BEAMSIDE_RUNTIME_DIR=str(root/'runtime'))
+    version = re.search(r'^pkgver=(.+)$', (Path(__file__).resolve().parent.parent / 'pkgbuild/PKGBUILD').read_text(), re.M)[1]
+    for flag in ('--version', '--help'):
+        result = subprocess.run([str(binary), flag], env=env, text=True, capture_output=True)
+        assert result.returncode == 0 and result.stdout.startswith(f'ABM {version}'), (flag, result.stdout, result.stderr)
     def run(*args, ok=True):
         result = subprocess.run([str(binary), *args], env=env, text=True, capture_output=True)
         assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)

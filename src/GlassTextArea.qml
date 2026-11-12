@@ -1,7 +1,5 @@
 import QtQuick
 import QtQuick.Templates as T
-import QtQuick.Controls.Basic as Basic
-import QtQuick.Controls.Basic.impl
 
 T.TextArea {
     id: control
@@ -16,7 +14,7 @@ T.TextArea {
     selectByMouse: true
     hoverEnabled: true
     opacity: enabled ? 1 : .65
-    Basic.ContextMenu.menu: TextEditingContextMenu { editor: control }
+    FieldEditMenu { editor: control }
     background: FieldSurface { field: control; implicitHeight: 80 }
     Text {
         x: control.leftPadding; y: control.topPadding

@@ -397,7 +397,7 @@ ApplicationWindow {
                     onSelected: win.page = page
                 }
                 ColumnLayout {
-                Layout.fillWidth: true; Layout.fillHeight: true; spacing: 16
+                Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumWidth: 0; spacing: 16
                 RowLayout {
                     visible: !win.focusMode && win.height >= 620
                     Layout.fillWidth: true; Layout.topMargin: 6; spacing: 8
@@ -409,7 +409,7 @@ ApplicationWindow {
                     Button { text: "⋯"; implicitWidth: 36; implicitHeight: 34; flat: true; font.pixelSize: 20; Accessible.name: qsTr("Settings and help"); onClicked: settingsMenu.popup(this, 0, height) }
                 }
                 StackLayout {
-                currentIndex: win.page; Layout.fillWidth: true; Layout.fillHeight: true
+                currentIndex: win.page; Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumWidth: 0
                 // DRIVE
                 ScrollView {
                     clip: true; contentWidth: availableWidth
@@ -684,7 +684,7 @@ ApplicationWindow {
                     }
                 }
                 // GARAGE
-                ColumnLayout { spacing: gap
+                ColumnLayout { spacing: gap; Layout.minimumWidth: 0
                     RowLayout {
                         visible: win.height >= 500 || !!win.selectedModel.id
                         Layout.fillWidth: true

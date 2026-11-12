@@ -30,16 +30,18 @@ int main(int argc, char *argv[]) {
     const auto command = args.value(0, "open");
     const bool capture = args.contains("--screenshot"), demo = args.contains("--demo");
     const bool help = args.contains("--help") || args.contains("-h");
+    const bool version = args.contains("--version");
     const QStringList commands{"open","serve","status","preferences","skill","setup","launch","launch-status"};
-    if (command != "open" || capture || help) qputenv("QT_QPA_PLATFORM", "offscreen");
+    if (command != "open" || capture || help || version) qputenv("QT_QPA_PLATFORM", "offscreen");
     QGuiApplication app(argc, argv);
     app.setApplicationName("abm");
     app.setApplicationDisplayName("ABM");
     app.setApplicationVersion("0.12.0");
     app.setDesktopFileName("abm");
     app.setWindowIcon(QIcon::fromTheme("abm"));
+    if (version) { printf("ABM %s\n", qPrintable(app.applicationVersion())); return 0; }
     if (help) {
-        puts("ABM 0.11 — Advanced BeamNG.Drive Manager\n\nabm open [--tab drive|car|garage|session]\nabm serve\nabm status --json\nabm launch --auto --json   Start BeamNG, or BeamMP with --no-launch\nabm launch-status --json\nabm setup --user-folder PATH [--game-folder PATH] [--launcher PATH] --json\nabm preferences --json [--units kmh|mph] [--favorite MODEL/CONFIG]\nabm skill install --json\nabm open --demo --screenshot PATH");
+        printf("ABM %s — Advanced BeamNG.Drive Manager\n\nabm open [--tab drive|car|garage|session]\nabm serve\nabm status --json\nabm launch --auto --json   Start BeamNG, or BeamMP with --no-launch\nabm launch-status --json\nabm setup --user-folder PATH [--game-folder PATH] [--launcher PATH] --json\nabm preferences --json [--units kmh|mph] [--favorite MODEL/CONFIG]\nabm skill install --json\nabm open --demo --screenshot PATH\n", qPrintable(app.applicationVersion()));
         return 0;
     }
     if (!commands.contains(command)) { fputs("Unknown command; use --help.\n", stderr); return 1; }

@@ -828,6 +828,23 @@ private slots:
         auto *combo=window->findChild<QQuickItem *>("testCombo"); QVERIFY(combo);
         combo->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Down);
         QCOMPARE(combo->property("currentIndex").toInt(),1);
+        combo->setProperty("editable",true);
+        auto *comboEditor=qvariant_cast<QQuickItem *>(combo->property("contentItem")); QVERIFY(comboEditor);
+        for (auto *editor : {field,area,comboEditor}) {
+            editor->setProperty("text","context copy"); editor->forceActiveFocus();
+            QVERIFY(QMetaObject::invokeMethod(editor,"selectAll"));
+            auto *editMenu=editor->findChild<QObject *>("fieldEditMenu"); QVERIFY(editMenu);
+            QGuiApplication::clipboard()->setText("before context menu");
+            QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,editor->mapToScene(QPointF(10,10)).toPoint());
+            QTRY_VERIFY(editMenu->property("visible").toBool());
+            auto *copy=editMenu->findChild<QQuickItem *>("fieldCopy"); QVERIFY(copy && copy->isEnabled());
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,copy->mapToScene(QPointF(copy->width()/2,copy->height()/2)).toPoint());
+            QTRY_COMPARE(QGuiApplication::clipboard()->text(),QString("context copy"));
+            QTRY_VERIFY(!editMenu->property("visible").toBool());
+            editor->forceActiveFocus(); QTest::keyClick(window,Qt::Key_F10,Qt::ShiftModifier);
+            QTRY_VERIFY(editMenu->property("visible").toBool());
+            QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(!editMenu->property("visible").toBool());
+        }
         auto *check=window->findChild<QQuickItem *>("testCheck"); QVERIFY(check);
         check->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Space);
         QVERIFY(check->property("checked").toBool());
@@ -869,10 +886,14 @@ private slots:
         auto *grid=window->findChild<QQuickItem *>("garageGrid"); QVERIFY(grid);
         auto *filters=window->findChild<QObject *>("garageFiltersDialog"); QVERIFY(filters);
         for (const auto dimensions : {QSize(320,440),QSize(380,600),QSize(560,840),QSize(1040,860)}) {
-            window->resize(dimensions); window->setProperty("selectedModel",QVariantMap{}); QTest::qWait(100);
+            window->resize(dimensions); window->setProperty("selectedModel",QVariantMap{});
+            QTRY_COMPARE(window->size(),dimensions);
+            const int expectedColumns=dimensions.width() < 400 ? 1 : dimensions.width() < 760 ? 2 : 4;
+            QTRY_COMPARE(grid->property("columns").toInt(),expectedColumns);
+            QTest::qWait(50);
             QCOMPARE(grid->property("count").toInt(),5);
             const int columns=grid->property("columns").toInt();
-            QCOMPARE(columns,dimensions.width() < 400 ? 1 : dimensions.width() < 760 ? 2 : 4);
+            QCOMPARE(columns,expectedColumns);
             QVERIFY(grid->height()>=80);
             QVERIFY(qAbs(grid->property("cellWidth").toDouble()*columns-grid->width())<0.1);
             QQuickItem *first=nullptr, *second=nullptr;

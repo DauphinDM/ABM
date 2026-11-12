@@ -24,6 +24,7 @@ T.ComboBox {
         font.pixelSize: 15
     }
     contentItem: T.TextField {
+        id: comboEditor
         implicitWidth: contentWidth
         implicitHeight: contentHeight
         text: control.editable ? control.editText : control.displayText
@@ -39,7 +40,7 @@ T.ComboBox {
         validator: control.validator
         selectByMouse: control.selectTextByMouse
         clip: true
-        Basic.ContextMenu.menu: TextEditingContextMenu { editor: parent }
+        FieldEditMenu { editor: comboEditor }
     }
     delegate: Basic.ItemDelegate {
         id: option

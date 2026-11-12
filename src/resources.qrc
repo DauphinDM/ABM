@@ -33,6 +33,7 @@
   <file alias="TextArea.qml">GlassTextArea.qml</file>
   <file alias="Slider.qml">GlassSlider.qml</file>
   <file alias="FieldSurface.qml">GlassFieldSurface.qml</file>
+  <file>FieldEditMenu.qml</file>
   <file alias="DialogButtonBox.qml">GlassDialogButtonBox.qml</file>
   <file alias="Dialog.qml">GlassDialog.qml</file>
   <file alias="ComboBox.qml">GlassComboBox.qml</file>

@@ -58,6 +58,9 @@ are bundled; signing and real-game testing on a clean Windows desktop remain
 outstanding. Never include proprietary vehicle assets in the ZIP: previews are
 read from the user's own game installation.
 
+Text-edit context menus support right-click and Shift+F10 on the bundled Qt 6.8
+runtime. They do not require the newer Qt 6.9 text-edit menu APIs.
+
 ## Known boundaries
 
 - Native Windows process detection and Steam lookup are implemented but need
