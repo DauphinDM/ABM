@@ -7,6 +7,7 @@ ScrollView {
     property var host: null
     property var firewall: null
     property var usb: null
+    property var updater: null
     readonly property string activeLink: transport.currentIndex>0 && usb ? usb.pairingLink : host ? host.pairingLink : ""
     property bool demo: false
     readonly property bool firewallConfirmationVisible: firewallConfirm.visible
@@ -76,6 +77,7 @@ ScrollView {
                 enabled: !pane.demo && !!pane.firewall && pane.firewall.supported && !pane.firewall.busy
                 onClicked: { firewallConfirm.confirmedScope=pane.firewall.scope; firewallConfirm.open() } }
         }
+        UpdatesPane { Layout.fillWidth: true; updater: pane.updater; disabled: pane.demo }
         SectionPanel {
             Layout.fillWidth: true
             PlainLabel { text: qsTr("Safe by default"); color: "#edf1f7"; font.pixelSize: 15 }

@@ -13,3 +13,5 @@ win32 {
 RESOURCES += ../src/resources.qrc
 HEADERS += ../src/mobilehost.h ../src/companionfirewall.h ../src/usbtunnel.h
 SOURCES += ../src/mobilehost.cpp ../src/companionfirewall.cpp ../src/usbtunnel.cpp
+HEADERS += ../src/appupdates.h
+SOURCES += ../src/appupdates.cpp

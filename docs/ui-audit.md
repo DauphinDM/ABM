@@ -1,5 +1,11 @@
 # ABM visual audit
 
+## Unreleased — update controls
+
+- Shared update controls default off and show the GitHub privacy disclosure, channel selection, verification status and platform installation limits. The real QML card's Check now button is exercised against a synthetic network manager, not public network traffic or a real installer.
+- PC/Android-host fixtures cover release/asset scope, hash/size rejection, redirect restrictions, cancellation and preference persistence. Native iOS policy/preferences are tested separately in its simulator suite.
+- Inspected the isolated 400×680 update-card capture (`/tmp/opencode/abm-updates-panel.png`) and normal demo Connect startup; text and controls fit without QML warnings. Automated phone-size tests continue to load all pages. Physical installer handoff and optional Android release signing still require device/maintainer validation.
+
 ## Unreleased — mobile usability and USB
 
 - Local PC suite: **52 Qt checks passed**, plus Lua, Node, headless CLI and

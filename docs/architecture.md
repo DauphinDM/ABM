@@ -1,5 +1,9 @@
 # Architecture and compatibility
 
+## Development: release updates
+
+`AppUpdates` owns fixed-repository release checks and bounded, atomic SHA-256 verified transfers; QML `UpdatesPane` owns the opt-in controls. It is not part of the bridge/phone command allowlist and does not execute installers or interrupt game control. PC and Android share the implementation; native iOS `UpdateChecker` provides opt-in release notifications only. Android's non-exported `UpdateProvider` rehashes a private APK and checks its app ID, current signer set and version code before granting a single read-only URI to the OS installer. Publishing and platform installation limits are documented in [updates](updates.md).
+
 ```text
 BeamNG GE Lua bridge (game user folder)
   ├─ reads game state and vehicle-Lua samples at up to 20 Hz

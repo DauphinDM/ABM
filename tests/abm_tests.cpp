@@ -29,6 +29,7 @@
 #include "mobilehost.h"
 #include "companionfirewall.h"
 #include "usbtunnel.h"
+#include "update_test_cases.h"
 #include <QStringConverter>
 #include <QProcess>
 #include <QStandardPaths>
@@ -144,6 +145,9 @@ class AbmTests : public QObject {
         archive_entry_free(entry); archive_write_close(writer); archive_write_free(writer);
     }
 private slots:
+    void updateReleaseSelectionIsScoped() { UpdateTests::selection(); }
+    void updateDownloadsAreBoundedAndVerified() { UpdateTests::transfers(); }
+    void updatePanelUsesExplicitCheck() { UpdateTests::panel(); }
     void initTestCase() {
         // Exercise the same customizable controls as the app on every platform.
         QQuickStyle::setStyle("MotorsportGlass");

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — opt-in app updates
+
+- Add official-release checks and optional SHA-256 verified downloads on PC/Android, with preview selection, response/transfer bounds and safe cancellation. Default settings do not contact GitHub.
+- Add native iOS release notifications; sideloaded IPAs still require local re-signing or an Apple distribution channel. PC installation remains explicit, never an automatic game interruption.
+- Add a restricted Android APK-installer handoff and optional stable CI release signing through maintainer secrets; mobile packaging advances to build 4.
+- Test release/asset selection, hostile URLs, digest/size failures, redirects, cancellation and opt-in preferences using synthetic network responses.
+
 ## Unreleased — mobile usability and USB
 
 - Send bounded on-demand Garage thumbnails and retain unchanged libraries between 10 Hz telemetry updates; display phone-to-PC round-trip latency separately from game ping.

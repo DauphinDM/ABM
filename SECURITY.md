@@ -1,5 +1,9 @@
 # Security and privacy
 
+## Development: app updates
+
+Update checks are opt-in requests to fixed official GitHub endpoints, separate from remote game commands. PC/Android downloads require bounded size and SHA-256 before atomic acceptance, with restricted redirects and a second hash check before OS handoff. No downloaded code, privileged installer or game shutdown runs automatically. Android grants only a private, read-only APK URI to its installer; iOS only opens the official release page. Repository compromise remains a supply-chain risk. See [update boundaries](docs/updates.md).
+
 ## Development: mobile LAN access
 
 The optional Connect host is off by default and separate from the loopback game receiver. It binds one selected private IPv4 address, or loopback for explicit USB mode. First pairing requires certificate-pinned TLS, a fresh short-lived secret and PC approval. If Remember is selected, a revocable random token permits later explicit reconnects while the host is enabled. PC stores only its hash; iOS uses device-only Keychain and Android private non-backed-up app storage. Stop disconnects but retains remembered devices; **Forget all devices** revokes their tokens. Treat saved tokens like passwords. Existing policy/ownership checks remain. Never forward port 44445 or publish links, tokens or keys. This is experimental and not independently audited; see [mobile boundaries](docs/mobile-companion.md).

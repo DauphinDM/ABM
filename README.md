@@ -14,6 +14,7 @@ and Windows desktop support remain experimental; passing CI is not live-game cer
 **In development, not in 0.12.0:** [ABM Mobile](https://github.com/DauphinDM/ABM-Mobile)
 and a fifth **Connect** screen for opt-in encrypted phone control over private Wi-Fi.
 See [pairing, requirements and limits](docs/mobile-companion.md).
+Development builds also offer [opt-in update checks and verified downloads](docs/updates.md); installation remains explicit and platform-specific.
 
 ## What it does
 
