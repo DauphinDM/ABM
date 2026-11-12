@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — mobile usability and USB
+
+- Send bounded on-demand Garage thumbnails and retain unchanged libraries between 10 Hz telemetry updates; display phone-to-PC round-trip latency separately from game ping.
+- Permit validated spawning into a loaded empty map without requiring an existing car. Ownership, stopping, policy and target fences remain where relevant.
+- Add optional remembered-device tokens with explicit reconnect, PC-side hash-only storage and revocation. Stop disconnects; Forget all devices revokes saved access.
+- Add explicit iPhone iproxy and Android adb USB modes using loopback-only relays with the same certificate-pinned TLS. Helpers are optional and existing Android forwards are not replaced. Physical cable operation still needs testing.
+- Mobile actions apply directly without redundant Send to PC confirmation; keyboards have explicit dismissal. Security approval and administrator firewall confirmation remain.
+- Add TLS/thumbnail/resume/revocation/empty-map and mocked-helper byte-bridge tests. Fix a Windows macro collision in firewall adapter lookup.
+
 ## Unreleased — companion firewall setup
 
 - PC Connect now explains stalled secure connections and offers explicit, administrator-approved LAN firewall setup for Linux UFW and Windows Private profiles. Rules use the selected interface's actual subnet and bound TCP address/port, never all networks or router forwards. Other firewalls/masks remain manual; persistent-rule scope and removal are explained before confirmation.

@@ -7,9 +7,11 @@
 #include <QElapsedTimer>
 #include <QJsonObject>
 #include <QHash>
+#include <QSet>
+#include <QQueue>
 class Backend;
 
-// Opt-in, session-only LAN control. Never expose the receiver's UDP/socket API.
+// Opt-in TLS control. Never expose the receiver's UDP/socket API.
 class MobileHost : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool running READ running NOTIFY changed)
@@ -18,6 +20,7 @@ class MobileHost : public QObject {
     Q_PROPERTY(QString pendingDevice READ pendingDevice NOTIFY changed)
     Q_PROPERTY(QString connectedDevice READ connectedDevice NOTIFY changed)
     Q_PROPERTY(QStringList addresses READ addresses CONSTANT)
+    Q_PROPERTY(int rememberedCount READ rememberedCount NOTIFY changed)
 public:
     explicit MobileHost(Backend *backend, const QString &directory = {}, QObject *parent = nullptr);
     ~MobileHost() override;
@@ -27,12 +30,15 @@ public:
     QString pendingDevice() const { return m_pendingName; }
     QString connectedDevice() const { return m_device; }
     QStringList addresses() const;
+    int rememberedCount() const { return m_trusted.size(); }
     QHostAddress listenAddress() const { return m_server.serverAddress(); }
     quint16 listenPort() const { return m_server.serverPort(); }
     static bool localAddress(const QHostAddress &address);
     Q_INVOKABLE bool start(const QString &address, int port = 44445);
     Q_INVOKABLE void stop();
     Q_INVOKABLE void approve();
+    Q_INVOKABLE void approveRemembered(bool remember);
+    Q_INVOKABLE void forgetDevices();
     Q_INVOKABLE void reject();
     Q_INVOKABLE void copyPairingLink();
     QJsonObject snapshot() const;
@@ -44,13 +50,21 @@ private:
     void fail(QSslSocket *socket, const QString &message);
     QJsonObject target() const;
     QString dispatch(const QJsonObject &command);
+    void activate(QSslSocket *socket, const QString &name);
+    void loadDevices();
+    bool saveDevices();
     Backend *m_backend;
     QSslServer m_server;
     QHash<QSslSocket *, QByteArray> m_buffers;
     QPointer<QSslSocket> m_pending, m_client;
     QTimer m_publish, m_expiry;
     QElapsedTimer m_rate;
-    int m_commands = 0;
+    int m_commands = 0, m_messages = 0;
     qint64 m_sequence = 0;
     QString m_directory, m_secret, m_link, m_message, m_pendingName, m_device;
+    QJsonObject m_trusted;
+    QByteArray m_libraryHash;
+    QSet<QString> m_imageRequests;
+    QQueue<QString> m_images;
+    QTimer m_imageTimer;
 };

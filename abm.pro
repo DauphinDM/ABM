@@ -10,5 +10,5 @@ win32 {
     LIBS += -L$$(VCPKG_ROOT)/installed/x64-windows/lib -larchive
 }
 RESOURCES += src/resources.qrc
-HEADERS += src/mobilehost.h src/companionfirewall.h
-SOURCES += src/mobilehost.cpp src/companionfirewall.cpp
+HEADERS += src/mobilehost.h src/companionfirewall.h src/usbtunnel.h
+SOURCES += src/mobilehost.cpp src/companionfirewall.cpp src/usbtunnel.cpp

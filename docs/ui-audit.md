@@ -1,5 +1,24 @@
 # ABM visual audit
 
+## Unreleased — mobile usability and USB
+
+- Local PC suite: **52 Qt checks passed**, plus Lua, Node, headless CLI and
+  standalone lifecycle. New fixtures cover bounded JPEG delivery and library
+  deltas, remembered-token resume/revocation, empty-map spawning and multiplayer
+  denial, non-destructive Android USB mappings, and pinned TLS through the PC
+  iPhone byte relay. USB helpers and game responses are mocked; no real device
+  settings or game state are changed by these tests.
+- Mobile Qt checks load the real window, dismiss editor focus with Done and
+  verify that Apply sends the exact power command without an extra confirmation.
+  They also exercise saved reconnects and a forty-thumbnail bounded pipeline.
+- Inspected the demo Connect transport selector at 560×840 without QML warnings.
+  Native iOS checks now cover keyboard dismissal, thumbnail display, direct
+  spawn/power actions, Keychain revocation and the phone-side byte relay; these
+  require the new Mac CI run before claiming a native pass.
+- Earlier physical Wi-Fi pairing was confirmed by the user. The new USB mode,
+  remembered-device workflow and updated mobile features still need physical
+  device validation; synthetic relay tests are not a latency benchmark.
+
 ## Unreleased — companion firewall setup
 
 - Connect includes a visible explanation of a stalled secure connection, a

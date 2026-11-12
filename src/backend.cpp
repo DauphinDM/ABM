@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QBuffer>
 #include <QStandardPaths>
 #include <QUuid>
 #include <QCryptographicHash>
@@ -324,6 +325,20 @@ void Backend::send(const QString &action, const QJsonObject &parameters) {
     });
 }
 void Backend::requestCatalog() { send("catalog"); }
+QByteArray Backend::mobileThumbnail(const QString &id) {
+    if (!m_previews || !QRegularExpression("^[0-9a-f]{64}$").match(id).hasMatch()) return {};
+    const auto source = "image://vehicles/" + id;
+    bool allowed = false;
+    for (const auto &list : {m_catalog, m_configs}) for (const auto &entry : list) {
+        const auto item = entry.toMap();
+        allowed |= item.value("thumbnail").toString() == source || item.value("modelThumbnail").toString() == source;
+    }
+    if (!allowed) return {};
+    auto image = m_previews->requestImage(id, nullptr, QSize(320,200));
+    QByteArray bytes; QBuffer buffer(&bytes); buffer.open(QIODevice::WriteOnly);
+    if (!image.isNull()) image.save(&buffer,"JPEG",70);
+    return bytes.size() <= 65536 ? bytes : QByteArray{};
+}
 void Backend::requestConfigs(const QString &model) {
     if (!Protocol::model(model) || busy()) return;
     m_configs.clear(); m_configsModel.clear(); m_requestedModel = model; emit configsChanged();

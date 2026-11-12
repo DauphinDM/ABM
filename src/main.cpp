@@ -27,6 +27,7 @@
 #include "protocol.h"
 #include "mobilehost.h"
 #include "companionfirewall.h"
+#include "usbtunnel.h"
 
 int main(int argc, char *argv[]) {
     QStringList args;
@@ -181,6 +182,7 @@ int main(int argc, char *argv[]) {
     Backend backend;
     MobileHost mobileHost(&backend);
     CompanionFirewall companionFirewall(&mobileHost);
+    UsbTunnel usbTunnel(&mobileHost);
     QQmlApplicationEngine engine;
     auto *previews = new Previews; engine.addImageProvider("vehicles",previews); backend.setPreviews(previews);
     if (demo) backend.setDemo(args.contains("--dev-open") && args.value(args.indexOf("--dev-open") + 1) == "blocked");
@@ -192,6 +194,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("backend",&backend);
     engine.rootContext()->setContextProperty("mobileHost",&mobileHost);
     engine.rootContext()->setContextProperty("companionFirewall",&companionFirewall);
+    engine.rootContext()->setContextProperty("usbTunnel",&usbTunnel);
     engine.rootContext()->setContextProperty("demoMode",demo);
     const QColor accentColor{theme.accent()};
     QPalette palette; // Omarchy-dark, compact desktop palette; Basic-style controls draw from it.

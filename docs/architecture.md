@@ -67,15 +67,21 @@ Development builds add an **off-by-default** phone connection in the dashboard
 process, not the receiver. `MobileHost` listens on a selected private IPv4 address
 using TLS 1.2 or later. A short-lived invitation pins the locally generated
 certificate and carries a random secret; a phone still needs explicit PC approval.
-Approval is connection-only and stopping access revokes it. This does not expose
-the game's UDP port, command socket, filesystem or arbitrary Lua.
+Approval can optionally issue a revocable random token: PC persists only its hash,
+with at most 16 remembered devices. Explicit resume still requires the pinned PC
+certificate and an enabled listener. Stop disconnects; Forget revokes saved tokens.
+`UsbTunnel` uses optional iproxy/adb helpers and bounded loopback byte relays without
+terminating TLS or opening a LAN port. Android uses no-rebind and matching same-device
+cleanup. Game UDP, the command socket and arbitrary Lua are never exposed.
 
-Snapshots use a field allowlist and omit local preview paths. Commands use a fixed
-allowlist, bounded frames, monotonic sequence numbers and a frozen game/vehicle
-target. Mutations require current ownership, permission and a known stopped speed,
-then pass through the existing backend/receiver/bridge validation. Receipts are
-not physics verification. The separate [ABM-Mobile repository](https://github.com/DauphinDM/ABM-Mobile)
-contains the Android client; see [mobile companion](mobile-companion.md) for setup,
+Snapshots use a field allowlist, 100 ms cadence, backpressure and library deltas.
+Opaque preview IDs resolve only against the current library; bounded JPEG thumbnails
+(320×200, 64 KiB) replace local paths. Commands use a fixed allowlist, bounded frames,
+monotonic sequences and a frozen target. Mutations require ownership, permission and
+known stopped speed; spawning into a loaded empty map does not require an existing car.
+Backend/receiver/bridge validation still applies. Receipts are not physics verification.
+The separate [ABM-Mobile repository](https://github.com/DauphinDM/ABM-Mobile) contains
+Android and native SwiftUI clients; see [mobile companion](mobile-companion.md) for setup,
 limitations and security details. This is not part of the published 0.12.0 binaries.
 
 The receiver only forwards an explicit action allowlist. Commands carry a current

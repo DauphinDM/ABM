@@ -836,7 +836,7 @@ ApplicationWindow {
                          Button { objectName: "sessionDiagnostics"; text: qsTr("Diagnostics"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: diagnostics.open() }
                      }
                  }
-                 ConnectPane { id: phoneConnect; host: win.phoneHost; firewall: typeof companionFirewall !== "undefined" ? companionFirewall : null; demo: demoMode }
+                 ConnectPane { id: phoneConnect; host: win.phoneHost; firewall: typeof companionFirewall !== "undefined" ? companionFirewall : null; usb: typeof usbTunnel !== "undefined" ? usbTunnel : null; demo: demoMode }
             }
             }
             }

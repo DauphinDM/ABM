@@ -28,11 +28,23 @@
 #include "presetstore.h"
 #include "mobilehost.h"
 #include "companionfirewall.h"
+#include "usbtunnel.h"
 #include <QStringConverter>
 #include <QProcess>
 #include <QStandardPaths>
 
 namespace {
+class CablePeer : public QTcpServer {
+public:
+    QPointer<QSslSocket> phone;
+protected:
+    void incomingConnection(qintptr descriptor) override {
+        phone=new QSslSocket(this); phone->setPeerVerifyMode(QSslSocket::VerifyNone);
+        if (!phone->setSocketDescriptor(descriptor)) { phone->deleteLater(); phone.clear(); return; }
+        // The real phone originates TLS, even though the PC opens the USB pipe.
+        phone->startClientEncryption();
+    }
+};
 class ProfileReply : public QNetworkReply {
 public:
     ProfileReply(const QNetworkRequest &request, QObject *parent) : QNetworkReply(parent) {
@@ -303,6 +315,108 @@ private slots:
         const auto invalid=QJsonDocument(QJsonObject{{"kind","command"},{"seq",1},{"action","runLua"},{"target",host.snapshot().value("target")}}).toJson(QJsonDocument::Compact)+'\n';
         replay.write(invalid); QTest::qWait(80); replay.write(invalid);
         QTRY_COMPARE(replay.state(),QAbstractSocket::UnconnectedState); QTRY_VERIFY(host.connectedDevice().isEmpty());
+    }
+    void mobileCompanionRemembersRevokesStreamsPhotosAndSpawnsIntoEmptyMap() {
+        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local TLS identity generation is unavailable");
+        Fixture f; QVERIFY(f.start()); Backend backend(f.path); Previews previews; backend.setPreviews(&previews);
+        const auto root=f.dir.filePath("game"); QDir().mkpath(root+"/vehicles/etk800");
+        QImage image(640,400,QImage::Format_RGB32); image.fill(Qt::yellow); QVERIFY(image.save(root+"/vehicles/etk800/default.jpg"));
+        backend.launcher()->setGameFolder(root);
+        auto state=QJsonDocument::fromJson(packet()).object(); state.insert("multiplayer",false);
+        state.insert("bridgeVersion","0.11.0"); state.insert("map","empty_map");
+        QTimer heartbeat; heartbeat.setInterval(100); connect(&heartbeat,&QTimer::timeout,this,[&] { f.send(state); }); heartbeat.start(); f.send(state);
+        QTRY_VERIFY(backend.connected()); QTRY_COMPARE(backend.state().value("map").toString(),QString("empty_map"));
+        QVERIFY(!backend.state().contains("vehicleId"));
+        backend.requestCatalog(); QTRY_VERIFY(f.game.hasPendingDatagrams()); const auto catalog=f.command();
+        f.send({{"kind","catalog"},{"requestId",catalog.value("requestId")},{"chunk",0},{"complete",true},
+            {"items",QJsonArray{QJsonObject{{"id","etk800"},{"name","Fixture car"},{"preview",QJsonObject{{"path","/vehicles/etk800/default.jpg"},{"real",root+"/vehicles/etk800/default.jpg"}}}}}}});
+        QTRY_COMPARE(backend.catalog().size(),1); QTRY_VERIFY(!backend.busy());
+        backend.requestConfigs("etk800"); QTRY_VERIFY(f.game.hasPendingDatagrams()); f.configs(f.command()); QTRY_COMPARE(backend.configs().size(),1); QTRY_VERIFY(!backend.busy());
+        const auto directory=f.dir.filePath("mobile"); MobileHost host(&backend,directory); QVERIFY(host.start("127.0.0.1",0));
+        auto invite=[&] { return QJsonDocument::fromJson(QByteArray::fromBase64(host.pairingLink().mid(11).toLatin1(),QByteArray::Base64UrlEncoding)).object(); };
+        auto send=[](QSslSocket &socket,QJsonObject value) { socket.write(QJsonDocument(value).toJson(QJsonDocument::Compact)+'\n'); };
+        QSslSocket phone; phone.setPeerVerifyMode(QSslSocket::VerifyNone); phone.connectToHostEncrypted("127.0.0.1",quint16(invite().value("port").toInt())); QTRY_VERIFY(phone.isEncrypted());
+        QList<QJsonObject> inbox;
+        auto collect=[&] { while (phone.canReadLine()) inbox.append(QJsonDocument::fromJson(phone.readLine()).object()); };
+        auto find=[&](const QString &kind,int seq=0) { collect(); for (const auto &item:inbox) if (item.value("kind")==kind && (!seq || item.value("seq").toInt()==seq)) return item; return QJsonObject{}; };
+        send(phone,{{"kind","pair"},{"v",1},{"secret",invite().value("secret")},{"device","Remembered fixture"}});
+        QTRY_VERIFY(!host.pendingDevice().isEmpty()); host.approveRemembered(true);
+        QTRY_VERIFY(!find("trusted").isEmpty()); const auto credential=find("trusted"); QCOMPARE(host.rememberedCount(),1);
+        QFile saved(directory+"/devices.json"); QVERIFY(saved.open(QIODevice::ReadOnly)); const auto stored=saved.readAll();
+        QVERIFY(!stored.contains(credential.value("token").toString().toLatin1())); QVERIFY(stored.contains("hash"));
+        const auto snapshot=host.snapshot(); const auto photo=snapshot.value("catalog").toArray().first().toObject().value("photo").toString(); QCOMPARE(photo.size(),64);
+        QVERIFY(!QJsonDocument(snapshot).toJson().contains(root.toUtf8()));
+        send(phone,{{"kind","thumbnail"},{"id",photo}}); QTRY_VERIFY(!find("thumbnail").isEmpty());
+        const auto bytes=QByteArray::fromBase64(find("thumbnail").value("jpeg").toString().toLatin1()); QVERIFY(!bytes.isEmpty()); QVERIFY(bytes.size()<=65536);
+        const auto decoded=QImage::fromData(bytes,"JPEG"); QVERIFY(!decoded.isNull()); QVERIFY(decoded.width()<=320 && decoded.height()<=200);
+        QVERIFY(backend.mobileThumbnail(QString(64,'0')).isEmpty()); QVERIFY(backend.mobileThumbnail("../private").isEmpty());
+        QTest::qWait(350); collect(); bool full=false,delta=false;
+        for (const auto &item:inbox) if (item.value("kind")=="snapshot") { full|=item.contains("catalog"); delta|=!item.contains("catalog"); }
+        QVERIFY(full); QVERIFY(delta);
+        send(phone,{{"kind","ping"},{"stamp",42}}); QTRY_COMPARE(find("pong").value("stamp").toInt(),42);
+        send(phone,{{"kind","command"},{"seq",1},{"action","spawn"},{"args",QJsonObject{{"config","etk800/Racely (M)"}}},{"target",snapshot.value("target")}});
+        QTRY_VERIFY(f.game.hasPendingDatagrams()); const auto spawn=f.command(); QCOMPARE(spawn.value("action").toString(),QString("spawn")); QCOMPARE(spawn.value("config").toString(),QString("Racely (M)"));
+        f.send({{"kind","result"},{"requestId",spawn.value("requestId")},{"ok",true}}); QTRY_VERIFY(!backend.busy());
+        state.insert("multiplayer",true); state.insert("server","Unverified fixture"); state.insert("serverIp","203.0.113.8"); state.insert("serverPort",30814); f.send(state);
+        QTRY_VERIFY(backend.state().value("multiplayer").toBool()); QTRY_VERIFY(!backend.state().value("sandboxAllowed").toBool());
+        send(phone,{{"kind","command"},{"seq",2},{"action","spawn"},{"args",QJsonObject{{"config","etk800/Racely (M)"}}},{"target",host.snapshot().value("target")}});
+        QTRY_VERIFY(!find("receipt",2).isEmpty()); QVERIFY(find("receipt",2).value("message").toString().contains("permission"));
+        // The receiver refreshes its fail-closed MP policy lease, never a spawn.
+        while (f.game.hasPendingDatagrams()) QCOMPARE(f.command().value("action").toString(),QString("serverPolicy"));
+        host.stop(); QTRY_COMPARE(phone.state(),QAbstractSocket::UnconnectedState);
+        MobileHost restored(&backend,directory); QCOMPARE(restored.rememberedCount(),1); QVERIFY(restored.start("127.0.0.1",0));
+        const auto next=QJsonDocument::fromJson(QByteArray::fromBase64(restored.pairingLink().mid(11).toLatin1(),QByteArray::Base64UrlEncoding)).object();
+        QSslSocket resumed; resumed.setPeerVerifyMode(QSslSocket::VerifyNone); resumed.connectToHostEncrypted("127.0.0.1",quint16(next.value("port").toInt())); QTRY_VERIFY(resumed.isEncrypted());
+        send(resumed,{{"kind","resume"},{"v",1},{"id",credential.value("id")},{"token",credential.value("token")}});
+        QTRY_COMPARE(restored.connectedDevice(),QString("Remembered fixture")); QVERIFY(restored.pendingDevice().isEmpty());
+        restored.forgetDevices(); QCOMPARE(restored.rememberedCount(),0); QTRY_COMPARE(resumed.state(),QAbstractSocket::UnconnectedState);
+        QVERIFY(restored.start("127.0.0.1",0));
+        const auto revoked=QJsonDocument::fromJson(QByteArray::fromBase64(restored.pairingLink().mid(11).toLatin1(),QByteArray::Base64UrlEncoding)).object();
+        QSslSocket rejected; rejected.setPeerVerifyMode(QSslSocket::VerifyNone); rejected.connectToHostEncrypted("127.0.0.1",quint16(revoked.value("port").toInt())); QTRY_VERIFY(rejected.isEncrypted());
+        send(rejected,{{"kind","resume"},{"v",1},{"id",credential.value("id")},{"token",credential.value("token")}});
+        QTRY_COMPARE(rejected.state(),QAbstractSocket::UnconnectedState); QVERIFY(restored.connectedDevice().isEmpty());
+    }
+    void androidUsbMappingDoesNotReplaceUnrelatedForwards() {
+#ifdef Q_OS_UNIX
+        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local TLS identity generation is unavailable");
+        QTemporaryDir directory; const auto path=qgetenv("PATH");
+        struct PathGuard { QByteArray value; ~PathGuard() { qputenv("PATH",value); } } guard{path};
+        const auto helper=directory.filePath("adb"), log=directory.filePath("calls"), mapping=directory.filePath("mapping");
+        const auto script=QString("#!/bin/sh\necho \"$*\" >> '%1'\ncase \"$*\" in\n '-d get-serialno') echo fixture-serial;;\n '-s fixture-serial reverse --list') cat '%2';;\n '-s fixture-serial reverse --no-rebind tcp:44445 tcp:44445') echo 'fixture-serial tcp:44445 tcp:44445' > '%2';;\n '-s fixture-serial reverse --remove tcp:44445') : > '%2';;\n *) exit 2;;\nesac\n").arg(log,mapping);
+        write(helper,script.toUtf8()); QVERIFY(QFile::setPermissions(helper,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner)); write(mapping,{});
+        qputenv("PATH",directory.path().toUtf8()+":"+path);
+        Backend backend(directory.filePath("missing-state.json")); MobileHost host(&backend,directory.filePath("mobile")); UsbTunnel usb(&host);
+        QVERIFY(usb.start("android")); QTRY_VERIFY(usb.running()); QCOMPARE(host.listenAddress(),QHostAddress(QHostAddress::LocalHost));
+        QVERIFY(usb.pairingLink().startsWith("abm://pair/")); usb.stop(); QVERIFY(!host.running());
+        QFile removed(mapping); QVERIFY(removed.open(QIODevice::ReadOnly)); QVERIFY(removed.readAll().isEmpty()); removed.close();
+        write(mapping,"other tcp:44445 tcp:9999\n"); QVERIFY(usb.start("android")); QTRY_VERIFY(usb.message().contains("will not replace")); QVERIFY(!usb.running());
+        QFile untouched(mapping); QVERIFY(untouched.open(QIODevice::ReadOnly)); QCOMPARE(untouched.readAll(),QByteArray("other tcp:44445 tcp:9999\n"));
+        QFile calls(log); QVERIFY(calls.open(QIODevice::ReadOnly)); const auto commands=calls.readAll(); QVERIFY(!commands.contains("--remove-all")); QCOMPARE(commands.count("--no-rebind"),1); QCOMPARE(commands.count("--remove tcp:44445"),1);
+#else
+        QSKIP("Fake POSIX helper test; Windows uses the same argument-building state machine");
+#endif
+    }
+    void iphoneUsbByteBridgePreservesPinnedTlsAndPcApproval() {
+#ifdef Q_OS_UNIX
+        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local TLS identity generation is unavailable");
+        CablePeer cable; if (!cable.listen(QHostAddress::LocalHost,44448)) QSKIP("Test USB loopback port is in use");
+        QTemporaryDir directory; const auto path=qgetenv("PATH");
+        struct PathGuard { QByteArray value; ~PathGuard() { qputenv("PATH",value); } } guard{path};
+        const auto tool=directory.filePath("iproxy"); write(tool,"#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n");
+        QVERIFY(QFile::setPermissions(tool,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner)); qputenv("PATH",directory.path().toUtf8()+":"+path);
+        Backend backend(directory.filePath("missing-state.json")); MobileHost host(&backend,directory.filePath("mobile")); UsbTunnel usb(&host);
+        QVERIFY(usb.start("iphone")); QTRY_VERIFY(usb.running());
+        const auto invitation=QJsonDocument::fromJson(QByteArray::fromBase64(usb.pairingLink().mid(11).toLatin1(),QByteArray::Base64UrlEncoding)).object();
+        QCOMPARE(invitation.value("transport").toString(),QString("usb-iphone")); QCOMPARE(invitation.value("host").toString(),QString("127.0.0.1")); QCOMPARE(invitation.value("port").toInt(),44447);
+        QTRY_VERIFY(cable.phone && cable.phone->isEncrypted());
+        QCOMPARE(QString::fromLatin1(cable.phone->peerCertificate().digest(QCryptographicHash::Sha256).toHex()),invitation.value("sha256").toString());
+        cable.phone->write(QJsonDocument(QJsonObject{{"kind","pair"},{"v",1},{"secret",invitation.value("secret")},{"device","Cable fixture"}}).toJson(QJsonDocument::Compact)+'\n');
+        QTRY_COMPARE(host.pendingDevice(),QString("Cable fixture")); QVERIFY(host.connectedDevice().isEmpty()); host.approveRemembered(true);
+        QTRY_COMPARE(host.connectedDevice(),QString("Cable fixture")); usb.stop(); QVERIFY(!host.running()); QVERIFY(!usb.running());
+        QTRY_VERIFY(!cable.phone || cable.phone->state()==QAbstractSocket::UnconnectedState);
+#else
+        QSKIP("Fake POSIX iproxy transport; native iOS loopback relay is tested on macOS");
+#endif
     }
     void validatesBoundsAndIgnoresUnknownKeys() {
         auto input=QJsonDocument::fromJson(packet()).object();

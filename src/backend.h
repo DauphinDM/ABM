@@ -65,6 +65,7 @@ public:
     QString presetProgress() const { return m_presetProgress; }
     QString convoyNotes() const { return m_convoyNotes; }
     void setPreviews(Previews *previews) { m_previews = previews; }
+    QByteArray mobileThumbnail(const QString &id);
     bool gameSeen() const { return m_gameSeen; }
     void setMetric(bool metric);
     Q_INVOKABLE void toggleFavorite(const QString &model);

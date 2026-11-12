@@ -111,10 +111,10 @@ void CompanionFirewall::refresh() {
     if (m_busy) return;
     Rule next;
     if (m_host->running()) {
-        for (const auto &interface : QNetworkInterface::allInterfaces())
-            for (const auto &entry : interface.addressEntries())
+        for (const auto &adapter : QNetworkInterface::allInterfaces())
+            for (const auto &entry : adapter.addressEntries())
                 if (entry.ip()==m_host->listenAddress())
-                    next=ruleFor(entry.ip().toString(),entry.prefixLength(),interface.name(),
+                    next=ruleFor(entry.ip().toString(),entry.prefixLength(),adapter.name(),
                                  QCoreApplication::applicationFilePath(),m_host->listenPort());
     }
     const auto binding=m_host->running() ? m_host->listenAddress().toString()+":"+QString::number(m_host->listenPort()) : QString();
