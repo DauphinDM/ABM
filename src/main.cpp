@@ -17,6 +17,8 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QEventLoop>
+#include <QElapsedTimer>
+#include <QThread>
 #include <cstdio>
 #include "backend.h"
 #include "telemetry.h"
@@ -142,15 +144,25 @@ int main(int argc, char *argv[]) {
 #else
     const auto guiSocket = QFileInfo(Telemetry::defaultPath()).dir().filePath("dashboard.sock");
 #endif
-    if (!capture && !demo) {
+    const auto activateExisting = [&] {
         QLocalSocket existing; existing.connectToServer(guiSocket);
-        if (existing.waitForConnected(250)) {
-            existing.write(QJsonDocument(QJsonObject{{"tab",tabIndex}}).toJson(QJsonDocument::Compact) + '\n');
-            existing.waitForBytesWritten(250); return 0;
-        }
-    }
+        if (!existing.waitForConnected(100)) return false;
+        const auto request = QJsonDocument(QJsonObject{{"tab",tabIndex}}).toJson(QJsonDocument::Compact) + '\n';
+        if (existing.write(request) != request.size()) return false;
+        return existing.bytesToWrite() == 0 || existing.waitForBytesWritten(250);
+    };
+    if (!capture && !demo && activateExisting()) return 0;
     QLockFile lock(Telemetry::defaultPath() + ".window.lock");
-    if (!capture && !demo && !lock.tryLock(0)) { fputs("Another ABM window is starting.\n",stderr); return 1; }
+    if (!capture && !demo && !lock.tryLock(0)) {
+        // The receiver publishes state before QML and the activation listener are
+        // ready. A simultaneous launch must wait for that owner, not bypass it.
+        QElapsedTimer startup; startup.start();
+        while (startup.elapsed() < 5000) {
+            if (activateExisting()) return 0;
+            QThread::msleep(25);
+        }
+        fputs("Another ABM window is still starting; please retry.\n",stderr); return 1;
+    }
     std::unique_ptr<Telemetry> ownedReceiver;
     QString receiverError;
     if (!demo) {

@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -25,31 +24,21 @@ with tempfile.TemporaryDirectory(prefix='beamside-standalone-', dir=parent) as s
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
                 assert app.poll() is None, 'Standalone app exited during startup'
-                # Qt uses named pipes on Windows, not the Unix filesystem
-                # socket probed below. State publication gates the startup;
-                # the second process then verifies real activation over Qt IPC.
-                if sys.platform == 'win32':
-                    state_path = root / 'runtime' / 'state.json'
-                    if state_path.is_file():
-                        break
-                    time.sleep(.2)
-                    continue
-                gui_socket = root / 'runtime' / 'dashboard.sock'
-                try:
-                    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    probe.settimeout(1)
-                    probe.connect(str(gui_socket))
-                    probe.close()
+                # Publication precedes QML/activation readiness on every OS.
+                # Exercise the startup handoff, including Windows named pipes,
+                # rather than waiting for the GUI socket and hiding the race.
+                if (root / 'runtime' / 'state.json').is_file():
                     break
-                except OSError:
-                    probe.close()
-                    time.sleep(.2)
+                time.sleep(.02)
             else:
-                raise AssertionError('Activation socket never appeared')
+                raise AssertionError('Receiver state never appeared')
             state_files = list(root.rglob('state.json'))
             assert state_files and json.loads(state_files[0].read_text()).get('kind') == 'state', 'Standalone receiver did not publish a snapshot'
             second = subprocess.run([str(binary), 'open', '--tab', 'garage', '--receiver-port', str(port)], env=env, capture_output=True, timeout=8)
-            assert second.returncode == 0, second.stderr.decode(errors='replace')
+            assert second.returncode == 0, (second.returncode, second.stderr.decode(errors='replace'))
+            assert app.poll() is None
+            third = subprocess.run([str(binary), 'open', '--tab', 'session', '--receiver-port', str(port)], env=env, capture_output=True, timeout=8)
+            assert third.returncode == 0, (third.returncode, third.stderr.decode(errors='replace'))
             assert app.poll() is None
             time.sleep(.3)
         finally:

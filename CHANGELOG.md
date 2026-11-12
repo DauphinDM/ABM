@@ -6,6 +6,7 @@
 - Keep text-field, text-area and editable-combo context menus compatible with Qt 6.8; test right-click copying and keyboard opening. Explicitly constrain responsive content width and wait for settled layout geometry in CI tests.
 - Report the release version consistently in CLI help, `--version` and support bundles.
 - Isolate CLI skill installation explicitly on Windows, where Qt's native profile lookup ignores a temporary `HOME`; preserve overwrite protection and reject relative override directories. Treat identical reinstalls as a no-write success, avoiding Windows open-file replacement failures.
+- Wait briefly for an already-starting window's activation listener instead of rejecting a simultaneous launch; test early and subsequent activation on both Windows and Linux without bypassing the single-window lock.
 
 ### Session action fixes
 
