@@ -8,6 +8,9 @@ replaces=('beamdeck')
 arch=('x86_64' 'aarch64')
 license=('MIT')
 depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'qt6-svg' 'libarchive')
+optdepends=('openssl: Generate the local mobile TLS identity'
+            'polkit: Administrator prompt for optional companion firewall setup'
+            'ufw: Optional private-LAN companion firewall rule on Linux')
 makedepends=('gcc' 'make')
 source=()
 sha256sums=()

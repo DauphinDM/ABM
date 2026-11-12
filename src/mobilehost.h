@@ -27,6 +27,8 @@ public:
     QString pendingDevice() const { return m_pendingName; }
     QString connectedDevice() const { return m_device; }
     QStringList addresses() const;
+    QHostAddress listenAddress() const { return m_server.serverAddress(); }
+    quint16 listenPort() const { return m_server.serverPort(); }
     static bool localAddress(const QHostAddress &address);
     Q_INVOKABLE bool start(const QString &address, int port = 44445);
     Q_INVOKABLE void stop();

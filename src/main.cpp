@@ -26,6 +26,7 @@
 #include "translator.h"
 #include "protocol.h"
 #include "mobilehost.h"
+#include "companionfirewall.h"
 
 int main(int argc, char *argv[]) {
     QStringList args;
@@ -179,6 +180,7 @@ int main(int argc, char *argv[]) {
     Theme theme(capture ? QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/beamside-preview-theme" : QString());
     Backend backend;
     MobileHost mobileHost(&backend);
+    CompanionFirewall companionFirewall(&mobileHost);
     QQmlApplicationEngine engine;
     auto *previews = new Previews; engine.addImageProvider("vehicles",previews); backend.setPreviews(previews);
     if (demo) backend.setDemo(args.contains("--dev-open") && args.value(args.indexOf("--dev-open") + 1) == "blocked");
@@ -189,6 +191,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("theme",&theme);
     engine.rootContext()->setContextProperty("backend",&backend);
     engine.rootContext()->setContextProperty("mobileHost",&mobileHost);
+    engine.rootContext()->setContextProperty("companionFirewall",&companionFirewall);
     engine.rootContext()->setContextProperty("demoMode",demo);
     const QColor accentColor{theme.accent()};
     QPalette palette; // Omarchy-dark, compact desktop palette; Basic-style controls draw from it.
@@ -243,7 +246,7 @@ int main(int argc, char *argv[]) {
                     if (!client->canReadLine()) return;
                     const auto bytes = client->readLine(1024);
                     const int page = QJsonDocument::fromJson(bytes).object().value("tab").toInt(-1);
-                    if (page >= 0 && page <= 3) window->setProperty("page",page);
+                    if (page >= 0 && page <= 4) window->setProperty("page",page);
                     window->showNormal(); window->raise(); window->requestActivate(); client->disconnectFromServer();
                 };
                 QObject::connect(client,&QLocalSocket::readyRead,&app,activate);

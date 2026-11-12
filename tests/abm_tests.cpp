@@ -27,6 +27,8 @@
 #include "playerprofiles.h"
 #include "presetstore.h"
 #include "mobilehost.h"
+#include "companionfirewall.h"
+#include <QStringConverter>
 #include <QProcess>
 #include <QStandardPaths>
 
@@ -138,6 +140,98 @@ private slots:
     void rejectsInvalidPackets() {
         for (const auto &p : {QByteArray("[]"),QByteArray("null"),QByteArray("{}"),QByteArray("{bad"),QByteArray(40000,'x'),QByteArray(R"({"schema":2,"source":"beamdeck"})")})
             QVERIFY(Telemetry::sanitize(p).isEmpty());
+    }
+    void companionFirewallRulesStayOnSelectedPrivateSubnet() {
+        using Firewall=CompanionFirewall;
+        const auto rule=Firewall::ruleFor("192.168.12.42",23,"enp10s0","/opt/ABM's folder/abm",44445);
+        QVERIFY(rule.valid()); QCOMPARE(rule.subnet,QString("192.168.12.0/23"));
+        QCOMPARE(Firewall::ufwArguments(rule),(QStringList{"allow","in","on","enp10s0","proto","tcp","from","192.168.12.0/23","to","192.168.12.42","port","44445","comment","ABM mobile companion LAN"}));
+        for (const auto &address : {"0.0.0.0","127.0.0.1","8.8.8.8","169.254.1.2","::1","::ffff:192.168.1.2","192.168.001.2"})
+            QVERIFY(!Firewall::ruleFor(address,24,"eth0","/app",44445).valid());
+        for (int prefix : {-1,0,8,15,31,32})
+            QVERIFY(!Firewall::ruleFor("10.1.2.3",prefix,"eth0","/app",44445).valid());
+        QVERIFY(Firewall::ruleFor("172.20.1.4",16,"eth0","/app",44445).valid());
+        QVERIFY(!Firewall::ruleFor("192.168.1.2",16,"eth0","/app",0).valid());
+        QVERIFY(!Firewall::ruleFor("192.168.1.2",16,"eth0","/app",65536).valid());
+        auto injected=rule; injected.interfaceName="eth0; touch /tmp/no";
+        QVERIFY(Firewall::ufwArguments(injected).isEmpty());
+        injected.interfaceName="--force"; QVERIFY(Firewall::ufwArguments(injected).isEmpty());
+        const auto script=Firewall::windowsScript(rule);
+        QVERIFY(script.contains("-Profile Private")); QVERIFY(script.contains("-Protocol TCP -LocalPort 44445"));
+        QVERIFY(script.contains("-LocalAddress '192.168.12.42' -RemoteAddress '192.168.12.0/23'"));
+        QVERIFY(script.contains("ABM''s folder")); QVERIFY(!script.contains("-Profile Any"));
+        QVERIFY(!script.contains("Set-NetFirewallProfile")); QVERIFY(!script.contains("Remove-NetFirewallRule"));
+        QStringDecoder decoder(QStringConverter::Utf16LE);
+        QCOMPARE(QString(decoder(QByteArray::fromBase64(Firewall::encodedScript(script).toLatin1()))),script);
+#ifdef Q_OS_WIN
+        // Parse, but NEVER execute, the administrative script on Windows CI.
+        QProcess parser;
+        const auto check="$tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseInput("
+            "[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('"+Firewall::encodedScript(script)+"')),[ref]$tokens,[ref]$errors); if($errors.Count){exit 1}";
+        parser.start("powershell.exe",{"-NoProfile","-NonInteractive","-EncodedCommand",Firewall::encodedScript(check)});
+        QVERIFY(parser.waitForFinished(10000)); QCOMPARE(parser.exitCode(),0);
+#endif
+        QTemporaryDir directory; Backend backend(directory.filePath("missing-state.json"));
+        MobileHost host(&backend,directory.filePath("mobile")); CompanionFirewall firewall(&host);
+        QVERIFY(!firewall.supported()); QVERIFY(!firewall.busy()); QVERIFY(firewall.scope().isEmpty());
+        firewall.requestAccess("stale scope"); QVERIFY(!firewall.busy());
+        QVERIFY(firewall.message().contains("changed"));
+    }
+    void connectFirewallRequiresExplicitConfirmation() {
+        QTemporaryDir directory; Theme theme(directory.path());
+        QQmlEngine engine; engine.rootContext()->setContextProperty("theme",&theme);
+        QList<QQmlError> warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const auto &values) { warnings.append(values); });
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import QtQuick.Controls
+            import QtQuick.Layouts
+            import "qrc:/"
+            ApplicationWindow {
+                width: 560; height: 840; visible: true
+                property alias requests: fixture.requests
+                property alias confirmed: fixture.confirmed
+                property alias pane: connectPane
+                QtObject {
+                    id: fixture
+                    property bool supported: true
+                    property bool busy: false
+                    property string message: "Manual firewall setup"
+                    property string scope: "192.168.12.0/24 to 192.168.12.42:44445"
+                    property int requests: 0
+                    property string confirmed: ""
+                    function requestAccess(value) { confirmed=value; requests++ }
+                }
+                ConnectPane { id: connectPane; anchors.fill: parent; firewall: fixture }
+            })",QUrl("qrc:/FirewallFixture.qml"));
+        QScopedPointer<QObject> object(component.create()); QVERIFY2(object,qPrintable(component.errorString()));
+        auto *window=qobject_cast<QQuickWindow *>(object.data()); QVERIFY(window); QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto find=[&](const QString &name) {
+            std::function<QQuickItem *(QQuickItem *)> walk=[&](QQuickItem *item)->QQuickItem * {
+                if (item->objectName()==name) return item;
+                for (auto *child:item->childItems()) if (auto *found=walk(child)) return found;
+                return nullptr;
+            };
+            return walk(window->contentItem());
+        };
+        auto *button=find("mobileFirewallSetup"); QVERIFY(button); QVERIFY(button->isEnabled());
+        QVERIFY(QMetaObject::invokeMethod(button,"clicked")); QTest::qWait(20);
+        QObject *dialog=nullptr;
+        for (auto *candidate:window->findChildren<QObject *>())
+            if (candidate->objectName()=="mobileFirewallConfirm") dialog=candidate;
+        QVERIFY(dialog); QVERIFY(dialog->property("visible").toBool()); QCOMPARE(window->property("requests").toInt(),0);
+        QVERIFY(QMetaObject::invokeMethod(dialog,"reject")); QCOMPARE(window->property("requests").toInt(),0);
+        QVERIFY(QMetaObject::invokeMethod(button,"clicked")); QVERIFY(QMetaObject::invokeMethod(dialog,"accept"));
+        QCOMPARE(window->property("requests").toInt(),1);
+        QCOMPARE(window->property("confirmed").toString(),QString("192.168.12.0/24 to 192.168.12.42:44445"));
+        window->resize(320,440); QVERIFY(QMetaObject::invokeMethod(button,"clicked")); QTest::qWait(50);
+        QVERIFY(dialog->property("height").toReal()<=window->height()-24);
+        if (qEnvironmentVariableIsSet("BEAMSIDE_FIREWALL_SCREENSHOT"))
+            QVERIFY(window->grabWindow().save(qEnvironmentVariable("BEAMSIDE_FIREWALL_SCREENSHOT")));
+        QVERIFY(QMetaObject::invokeMethod(dialog,"reject"));
+        auto *pane=qvariant_cast<QObject *>(window->property("pane")); QVERIFY(pane); pane->setProperty("demo",true);
+        QTRY_VERIFY(!button->isEnabled()); QVERIFY(warnings.isEmpty());
     }
     void mobileHostRequiresTlsApprovalTargetAndRevocation() {
         if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local OpenSSL certificate generation is unavailable");

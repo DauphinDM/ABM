@@ -299,6 +299,7 @@ ApplicationWindow {
         sequence: "Escape"; context: Qt.ApplicationShortcut
         onActivated: {
             if (commandPalette.visible) commandPalette.close()
+            else if (phoneConnect.firewallConfirmationVisible) phoneConnect.dismissFirewallConfirmation()
             else if (facetsDialog.visible) facetsDialog.close()
             else if (resetVehicleDialog.visible) resetVehicleDialog.close()
             else if (confirmDialog.visible) confirmDialog.close()
@@ -835,7 +836,7 @@ ApplicationWindow {
                          Button { objectName: "sessionDiagnostics"; text: qsTr("Diagnostics"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: diagnostics.open() }
                      }
                  }
-                 ConnectPane { host: win.phoneHost; demo: demoMode }
+                 ConnectPane { id: phoneConnect; host: win.phoneHost; firewall: typeof companionFirewall !== "undefined" ? companionFirewall : null; demo: demoMode }
             }
             }
             }

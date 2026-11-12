@@ -1,5 +1,24 @@
 # ABM visual audit
 
+## Unreleased — companion firewall setup
+
+- Connect includes a visible explanation of a stalled secure connection, a
+  supported-platform firewall setup button, and a separate scope/persistence
+  confirmation before any administrator prompt. Demo mode disables this action.
+- Pure rule tests check actual subnet calculation, exact interface/address/TCP
+  scope, unsupported/public/loopback/mask rejection, PowerShell quoting and
+  UTF-16 encoding. Windows CI additionally parses, but never executes, the
+  administrative script. No automated test modifies any firewall.
+- Real QML interaction checks opening/canceling/accepting the confirmation,
+  unchanged request count on cancellation, demo disabling and bounded dialog
+  height at 320×440. The permission text is scrollable at small sizes.
+- Local full suite: **49 Qt checks passed**, plus Lua, Node, headless CLI and
+  standalone lifecycle. Inspected the demo Connect page and 320×440 scope
+  confirmation without QML warnings; all screenshot addresses are synthetic.
+- On one local machine, kernel logs confirmed dropped phone SYNs to the listener;
+  a separately user-approved, single-phone/interface TCP rule was added. This
+  confirms that immediate blocker, not end-to-end pairing or Windows UAC behavior.
+
 ## Unreleased — phone connection foundation
 
 - PC Connect uses the same scrollable panels and adaptive navigation as the

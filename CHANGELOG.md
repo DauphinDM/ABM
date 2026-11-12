@@ -1,4 +1,9 @@
 # Changelog
+
+## Unreleased — companion firewall setup
+
+- PC Connect now explains stalled secure connections and offers explicit, administrator-approved LAN firewall setup for Linux UFW and Windows Private profiles. Rules use the selected interface's actual subnet and bound TCP address/port, never all networks or router forwards. Other firewalls/masks remain manual; persistent-rule scope and removal are explained before confirmation.
+- Added scope/command/PowerShell-encoding and real QML confirmation/cancellation/demo-safety tests; no test modifies the machine's firewall. Existing-window activation now honors the Connect tab too.
 ## Unreleased — Android companion foundation
 
 - Add a fifth **Connect** screen and opt-in private-IPv4 TLS host for the separate [ABM Mobile](https://github.com/DauphinDM/ABM-Mobile) Android app. This is not included in the 0.12.0 release assets.

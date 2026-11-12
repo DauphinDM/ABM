@@ -24,6 +24,7 @@ BeamNG GE Lua bridge (game user folder)
 | `src/playerprofiles.*` | Explicit public-profile lookup, browser and clipboard actions |
 | `src/presetstore.*` | Validated ABM-only preset files, atomic writes and bounded history |
 | `src/mobilehost.*`, `src/ConnectPane.qml` | Opt-in private-LAN TLS pairing, approval and bounded remote request gateway |
+| `src/companionfirewall.*` | Explicitly confirmed, administrator-approved private-subnet firewall permission; never started by pairing or remote commands |
 | `src/Main.qml` and components | Basic-style dashboard, dialogs, keyboard/UI behavior |
 | `src/theme.*`, `src/translator.*` | Omarchy theme/language integration and fallback |
 | `game/` | User-folder GE bridge, startup script and vehicle tuning extension |

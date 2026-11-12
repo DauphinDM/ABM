@@ -30,10 +30,30 @@ started. The game is never closed. If another service already provides the
 receiver, the app reuses it instead.
 
 Windows uses per-user local named pipes for commands and IPv4 loopback UDP port
-44444 for game telemetry. No inbound internet/LAN access is required. Do not
+44444 for game telemetry. Desktop-only operation needs no inbound internet/LAN access. Do not
 open/forward this port on a router. Settings use Qt's per-user application config
 location with the `abm` application ID. The legacy game extension ID remains
 `beamdeck`; see the architecture guide for protocol compatibility details.
+
+## Development: pairing a phone
+
+Newer development builds add **Connect**; the published 0.12.0 release does not
+include it. First-time TLS identity creation needs the `openssl` executable on
+PATH (the ZIP does not supply its CLI). Keep phone and PC on a trusted LAN,
+enable access, transfer the fresh private link and approve the phone on PC.
+
+If the phone stays on “Connecting securely,” open **Firewall & connection help**
+on PC Connect. **Allow LAN pairing through firewall…** shows the actual subnet,
+bound address and TCP port before requesting UAC approval. Its rule is limited
+to this executable, address/port, local subnet and **Private** network profiles.
+It never changes a Public network to Private or disables Windows Firewall.
+The rule persists until removed in Windows Firewall; stopping Connect closes
+the listener and revokes phone approval. Canceling UAC is supported. Other
+security products or guest-Wi-Fi isolation may still block access.
+
+Use a new two-minute pairing link after setup. Never forward the companion port
+or the game receiver through a router. See [mobile setup](mobile-companion.md)
+for scope, limits and removal guidance.
 
 ## Building
 
