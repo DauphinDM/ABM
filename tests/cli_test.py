@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='beamdeck-cli-', dir=scratch_parent) as 
         assert result.returncode == 0 and result.stdout.startswith(f'ABM {version}'), (flag, result.stdout, result.stderr)
     def run(*args, ok=True):
         result = subprocess.run([str(binary), *args], env=env, text=True, capture_output=True)
-        assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
+        assert (result.returncode == 0) == ok, (args, result.returncode, result.stdout, result.stderr)
         return json.loads(result.stdout) if ok else result
     assert run('preferences', '--units', 'mph', '--favorite', 'etk800', '--json') == {'metric': False, 'favorites': ['etk800']}
     assert run('preferences', '--json')['metric'] is False
@@ -33,7 +33,9 @@ with tempfile.TemporaryDirectory(prefix='beamdeck-cli-', dir=scratch_parent) as 
     result = run('skill', 'install', '--json')
     target = Path(result['path']).resolve()
     assert target == (skill_dir / 'SKILL.md').resolve() and target.is_relative_to(root) and target.is_file(), (target, root)
-    run('skill', 'install', '--json')
+    installed_stat = target.stat()
+    assert run('skill', 'install', '--json') == result
+    assert target.stat().st_mtime_ns == installed_stat.st_mtime_ns, 'An identical skill must not be rewritten'
     target.write_text('Existing user content')
     run('skill', 'install', '--json', ok=False)
     assert target.read_text() == 'Existing user content'

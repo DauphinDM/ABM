@@ -60,11 +60,19 @@ int main(int argc, char *argv[]) {
         if (!QDir::isAbsolutePath(directory)) { fputs("BEAMSIDE_SKILL_DIR must be an absolute directory.\n", stderr); return 1; }
         const auto path = QDir(directory).filePath("SKILL.md");
         QFile previous(path);
-        if (previous.exists() && (!previous.open(QIODevice::ReadOnly) || previous.readAll() != bytes)) {
-            fputs("Refusing to overwrite an existing, different agent skill.\n", stderr); return 1;
+        if (previous.exists()) {
+            if (!previous.open(QIODevice::ReadOnly) || previous.readAll() != bytes) {
+                fputs("Refusing to overwrite an existing, different agent skill.\n", stderr); return 1;
+            }
+            // An identical install is already complete. Windows cannot replace
+            // this file atomically while the comparison handle remains open.
+            print({{"ok",true},{"path",path}}); return 0;
         }
-        QDir().mkpath(QFileInfo(path).absolutePath()); QSaveFile output(path);
-        if (!output.open(QIODevice::WriteOnly) || output.write(bytes) != bytes.size() || !output.commit()) return 1;
+        if (!QDir().mkpath(QFileInfo(path).absolutePath())) { fputs("Cannot create the agent skill directory.\n", stderr); return 1; }
+        QSaveFile output(path);
+        if (!output.open(QIODevice::WriteOnly) || output.write(bytes) != bytes.size() || !output.commit()) {
+            fprintf(stderr,"Cannot save the agent skill: %s\n",qPrintable(output.errorString())); return 1;
+        }
         print({{"ok",true},{"path",path}}); return 0;
     }
     if (command == "serve") {
