@@ -11,6 +11,10 @@ Public, MIT-licensed source with Linux and Windows downloads. This is an
 independent project, not affiliated with BeamNG or BeamMP. Gameplay integration
 and Windows desktop support remain experimental; passing CI is not live-game certification.
 
+**In development, not in 0.12.0:** [ABM Mobile](https://github.com/DauphinDM/ABM-Mobile)
+and a fifth **Connect** screen for opt-in encrypted phone control over private Wi-Fi.
+See [pairing, requirements and limits](docs/mobile-companion.md).
+
 ## What it does
 
 | Page | Features |
@@ -50,6 +54,7 @@ See the [changelog](CHANGELOG.md) for features, limits and validation status.
 - [Architecture and compatibility](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Windows build and limitations](docs/windows.md)
+- [Android companion and private-Wi-Fi pairing (development)](docs/mobile-companion.md)
 - [Portable Linux: AppImage and bundled archive](docs/portable-linux.md)
 - [Sandbox feature research and roadmap](docs/sandbox-research.md)
 - [Official-server allowlist, cleanup and limitations](docs/server-policy.md)

@@ -26,6 +26,9 @@
 #include "translator.h"
 #include "playerprofiles.h"
 #include "presetstore.h"
+#include "mobilehost.h"
+#include <QProcess>
+#include <QStandardPaths>
 
 namespace {
 class ProfileReply : public QNetworkReply {
@@ -135,6 +138,77 @@ private slots:
     void rejectsInvalidPackets() {
         for (const auto &p : {QByteArray("[]"),QByteArray("null"),QByteArray("{}"),QByteArray("{bad"),QByteArray(40000,'x'),QByteArray(R"({"schema":2,"source":"beamdeck"})")})
             QVERIFY(Telemetry::sanitize(p).isEmpty());
+    }
+    void mobileHostRequiresTlsApprovalTargetAndRevocation() {
+        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local OpenSSL certificate generation is unavailable");
+        Fixture f; QVERIFY(f.start()); Backend backend(f.path);
+        auto state = QJsonDocument::fromJson(packet()).object();
+        state.insert("multiplayer",false); state.insert("vehicleId",42); state.insert("vehicleOwned",true);
+        state.insert("bridgeVersion","0.11.0");
+        state.insert("vehicle","Test car"); state.insert("map","test_map");
+        state.insert("gameFolder","/private/game/path"); f.send(state);
+        QTimer heartbeat; heartbeat.setInterval(100);
+        connect(&heartbeat,&QTimer::timeout,this,[&] { f.send(state); }); heartbeat.start();
+        QTRY_VERIFY(backend.connected()); QTRY_COMPARE(backend.state().value("vehicleId").toInt(),42);
+        MobileHost host(&backend,f.dir.filePath("mobile")); QVERIFY(!host.running());
+        QVERIFY(!host.start("0.0.0.0",0)); QVERIFY(!host.start("8.8.8.8",0));
+        QVERIFY(host.start("127.0.0.1",0)); QVERIFY(host.running());
+        const auto link = host.pairingLink(); QVERIFY(link.startsWith("abm://pair/"));
+        const auto invitation = QJsonDocument::fromJson(QByteArray::fromBase64(link.mid(11).toLatin1(),QByteArray::Base64UrlEncoding)).object();
+        QCOMPARE(invitation.value("secret").toString().size(),64);
+        QSslSocket phone; phone.setPeerVerifyMode(QSslSocket::VerifyNone);
+        phone.connectToHostEncrypted("127.0.0.1",quint16(invitation.value("port").toInt())); QTRY_VERIFY(phone.isEncrypted());
+        QCOMPARE(QString::fromLatin1(phone.peerCertificate().digest(QCryptographicHash::Sha256).toHex()),invitation.value("sha256").toString());
+        auto send = [&](QJsonObject message) { phone.write(QJsonDocument(message).toJson(QJsonDocument::Compact)+'\n'); };
+        QString receiptMessage;
+        QHash<int,QString> receipts;
+        auto received = [&](int seq) {
+            while (phone.canReadLine()) {
+                const auto message=QJsonDocument::fromJson(phone.readLine()).object();
+                if (message.value("kind")=="receipt") receipts.insert(message.value("seq").toInt(),message.value("message").toString());
+            }
+            receiptMessage=receipts.value(seq); return receipts.contains(seq);
+        };
+        send({{"kind","pair"},{"v",1},{"secret",invitation.value("secret")},{"device","Test phone"}});
+        QTRY_COMPARE(host.pendingDevice(),QString("Test phone")); QVERIFY(host.connectedDevice().isEmpty());
+        QVERIFY(!f.game.hasPendingDatagrams()); host.approve();
+        QCOMPARE(host.connectedDevice(),QString("Test phone")); QVERIFY(host.pairingLink().isEmpty());
+        const auto snapshot = host.snapshot(); QVERIFY(!snapshot.value("state").toObject().contains("gameFolder"));
+        QVERIFY(!snapshot.contains("secret"));
+        send({{"kind","command"},{"seq",1},{"action","runLua"},{"target",snapshot.value("target")}});
+        QTRY_VERIFY(received(1)); QVERIFY(receiptMessage.contains("Unsupported")); QVERIFY(!f.game.hasPendingDatagrams());
+        send({{"kind","command"},{"seq",2},{"action","repair"},{"target",QJsonObject{{"vehicle",99}}}});
+        QTRY_VERIFY(received(2)); QVERIFY(receiptMessage.contains("changed")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("telemetry",QJsonObject{{"speed",12}}); f.send(state);
+        QTRY_COMPARE(backend.state().value("telemetry").toMap().value("speed").toDouble(),12);
+        send({{"kind","command"},{"seq",3},{"action","repair"},{"target",snapshot.value("target")}});
+        QTRY_VERIFY(received(3)); QVERIFY(receiptMessage.contains("stopped")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("telemetry",QJsonObject{{"speed",0}}); state.insert("vehicleOwned",false); f.send(state);
+        QTRY_VERIFY(!backend.state().value("vehicleOwned").toBool());
+        send({{"kind","command"},{"seq",4},{"action","repair"},{"target",snapshot.value("target")}});
+        QTRY_VERIFY(received(4)); QVERIFY(receiptMessage.contains("owned")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("vehicleOwned",true); state.insert("joining",true); f.send(state);
+        QTRY_VERIFY(backend.state().value("joining").toBool());
+        send({{"kind","command"},{"seq",5},{"action","repair"},{"target",snapshot.value("target")}});
+        QTRY_VERIFY(received(5)); QVERIFY(receiptMessage.contains("permission")); QVERIFY(!f.game.hasPendingDatagrams());
+        state.insert("joining",false); f.send(state); QTRY_VERIFY(backend.state().value("sandboxAllowed").toBool());
+        send({{"kind","command"},{"seq",6},{"action","repair"},{"target",snapshot.value("target")}});
+        QTRY_VERIFY(f.game.hasPendingDatagrams());
+        const auto command=f.command(); QCOMPARE(command.value("action").toString(),QString("repair"));
+        host.stop(); QVERIFY(!host.running()); QVERIFY(host.connectedDevice().isEmpty()); QTRY_COMPARE(phone.state(),QAbstractSocket::UnconnectedState);
+        QVERIFY(host.start("127.0.0.1",0)); QVERIFY(host.pairingLink()!=link);
+        const auto next = QJsonDocument::fromJson(QByteArray::fromBase64(host.pairingLink().mid(11).toLatin1(),QByteArray::Base64UrlEncoding)).object();
+        QSslSocket stranger; stranger.setPeerVerifyMode(QSslSocket::VerifyNone);
+        stranger.connectToHostEncrypted("127.0.0.1",quint16(next.value("port").toInt())); QTRY_VERIFY(stranger.isEncrypted());
+        stranger.write(QJsonDocument(QJsonObject{{"kind","pair"},{"v",1},{"secret",invitation.value("secret")},{"device","Expired"}}).toJson(QJsonDocument::Compact)+'\n');
+        QTRY_COMPARE(stranger.state(),QAbstractSocket::UnconnectedState); QVERIFY(host.pendingDevice().isEmpty());
+        QSslSocket replay; replay.setPeerVerifyMode(QSslSocket::VerifyNone);
+        replay.connectToHostEncrypted("127.0.0.1",quint16(next.value("port").toInt())); QTRY_VERIFY(replay.isEncrypted());
+        replay.write(QJsonDocument(QJsonObject{{"kind","pair"},{"v",1},{"secret",next.value("secret")},{"device","New phone"}}).toJson(QJsonDocument::Compact)+'\n');
+        QTRY_COMPARE(host.pendingDevice(),QString("New phone")); host.approve();
+        const auto invalid=QJsonDocument(QJsonObject{{"kind","command"},{"seq",1},{"action","runLua"},{"target",host.snapshot().value("target")}}).toJson(QJsonDocument::Compact)+'\n';
+        replay.write(invalid); QTest::qWait(80); replay.write(invalid);
+        QTRY_COMPARE(replay.state(),QAbstractSocket::UnconnectedState); QTRY_VERIFY(host.connectedDevice().isEmpty());
     }
     void validatesBoundsAndIgnoresUnknownKeys() {
         auto input=QJsonDocument::fromJson(packet()).object();

@@ -8,10 +8,10 @@ Item {
     property int currentPage: 0
     property bool vertical: false
     property color accentColor: theme.accent
-    property var labels: [qsTr("Drive"), qsTr("Car"), qsTr("Garage"), qsTr("Session")]
+    property var labels: [qsTr("Drive"), qsTr("Car"), qsTr("Garage"), qsTr("Session"), qsTr("Connect")]
     signal selected(int page)
     implicitWidth: vertical ? 144 : 280
-    implicitHeight: vertical ? 208 : 44
+    implicitHeight: vertical ? labels.length * 48 + (labels.length - 1) * 8 : 44
 
     Rectangle {
         visible: !dock.vertical
@@ -20,7 +20,7 @@ Item {
     }
     GridLayout {
         anchors.fill: parent
-        columns: dock.vertical ? 1 : 4
+        columns: dock.vertical ? 1 : dock.labels.length
         rowSpacing: 8; columnSpacing: 4
         Repeater {
             model: dock.labels.length
@@ -29,6 +29,8 @@ Item {
                 required property int index
                 readonly property bool active: dock.currentPage === index
                 Layout.fillWidth: true; Layout.fillHeight: true
+                Layout.minimumWidth: 0
+                Layout.preferredWidth: dock.vertical ? 144 : 1
                 padding: dock.vertical ? 12 : 4
                 text: dock.labels[index]
                 Accessible.role: Accessible.PageTab
@@ -45,10 +47,12 @@ Item {
                     }
                     PlainLabel {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: tab.text
+                        wrapMode: Text.NoWrap; elide: Text.ElideRight
                         horizontalAlignment: dock.vertical ? Text.AlignLeft : Text.AlignHCenter
                         color: tab.active ? "#f1f4f9" : "#a4adbd"
-                        font.pixelSize: 13; font.weight: tab.active ? Font.DemiBold : Font.Normal
+                        font.pixelSize: dock.width < 360 && !dock.vertical ? 11 : 13; font.weight: tab.active ? Font.DemiBold : Font.Normal
                     }
                 }
                 background: Rectangle {

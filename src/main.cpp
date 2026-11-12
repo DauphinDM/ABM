@@ -25,6 +25,7 @@
 #include "theme.h"
 #include "translator.h"
 #include "protocol.h"
+#include "mobilehost.h"
 
 int main(int argc, char *argv[]) {
     QStringList args;
@@ -43,7 +44,7 @@ int main(int argc, char *argv[]) {
     app.setWindowIcon(QIcon::fromTheme("abm"));
     if (version) { printf("ABM %s\n", qPrintable(app.applicationVersion())); return 0; }
     if (help) {
-        printf("ABM %s — Advanced BeamNG.Drive Manager\n\nabm open [--tab drive|car|garage|session]\nabm serve\nabm status --json\nabm launch --auto --json   Start BeamNG, or BeamMP with --no-launch\nabm launch-status --json\nabm setup --user-folder PATH [--game-folder PATH] [--launcher PATH] --json\nabm preferences --json [--units kmh|mph] [--favorite MODEL/CONFIG]\nabm skill install --json\nabm open --demo --screenshot PATH\n", qPrintable(app.applicationVersion()));
+        printf("ABM %s — Advanced BeamNG.Drive Manager\n\nabm open [--tab drive|car|garage|session|connect]\nabm serve\nabm status --json\nabm launch --auto --json   Start BeamNG, or BeamMP with --no-launch\nabm launch-status --json\nabm setup --user-folder PATH [--game-folder PATH] [--launcher PATH] --json\nabm preferences --json [--units kmh|mph] [--favorite MODEL/CONFIG]\nabm skill install --json\nabm open --demo --screenshot PATH\n", qPrintable(app.applicationVersion()));
         return 0;
     }
     if (!commands.contains(command)) { fputs("Unknown command; use --help.\n", stderr); return 1; }
@@ -123,8 +124,8 @@ int main(int argc, char *argv[]) {
     }
     auto tab = args.contains("--tab") ? args.value(args.indexOf("--tab")+1) : QString("drive");
     if (tab == "beammp") tab = "session"; // Compatibility for old shortcuts.
-    const int tabIndex = QStringList{"drive","car","garage","session"}.indexOf(tab);
-    if (tabIndex < 0) { fputs("Unknown tab: choose drive, car, garage or session.\n",stderr); return 1; }
+    const int tabIndex = QStringList{"drive","car","garage","session","connect"}.indexOf(tab);
+    if (tabIndex < 0) { fputs("Unknown tab: choose drive, car, garage, session or connect.\n",stderr); return 1; }
     if (capture && (!demo || args.indexOf("--screenshot")+1 >= args.size())) {
         fputs("Screenshots require --demo and an output path.\n",stderr); return 1;
     }
@@ -177,6 +178,7 @@ int main(int argc, char *argv[]) {
     Translator translator; app.installTranslator(&translator);
     Theme theme(capture ? QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/beamside-preview-theme" : QString());
     Backend backend;
+    MobileHost mobileHost(&backend);
     QQmlApplicationEngine engine;
     auto *previews = new Previews; engine.addImageProvider("vehicles",previews); backend.setPreviews(previews);
     if (demo) backend.setDemo(args.contains("--dev-open") && args.value(args.indexOf("--dev-open") + 1) == "blocked");
@@ -186,6 +188,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("translator",&translator);
     engine.rootContext()->setContextProperty("theme",&theme);
     engine.rootContext()->setContextProperty("backend",&backend);
+    engine.rootContext()->setContextProperty("mobileHost",&mobileHost);
     engine.rootContext()->setContextProperty("demoMode",demo);
     const QColor accentColor{theme.accent()};
     QPalette palette; // Omarchy-dark, compact desktop palette; Basic-style controls draw from it.

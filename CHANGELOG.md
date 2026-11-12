@@ -1,4 +1,11 @@
 # Changelog
+## Unreleased — Android companion foundation
+
+- Add a fifth **Connect** screen and opt-in private-IPv4 TLS host for the separate [ABM Mobile](https://github.com/DauphinDM/ABM-Mobile) Android app. This is not included in the 0.12.0 release assets.
+- Require a short-lived random pairing link, certificate pinning and explicit PC approval; stop revokes access. No cloud relay, automatic firewall changes, saved approval or public listener.
+- Route only fixed remote operations through existing Backend/game validation, with target identity, stopped/owned/policy gates, bounded messages, sequence and rate checks. No shell, arbitrary Lua or direct game UDP exposure.
+- Add isolated TLS/approval/target/ownership/movement/policy/revocation tests. Android/device and live-game validation remain pending; mobile is an early subset rather than full desktop parity.
+
 ## 0.12.0 — Dashboard and Session actions (preview)
 
 - Publish public Linux and Windows preview downloads with SHA256 checksums and dependency notices. Keep bridge compatibility at 0.11.0; update/install the bundled bridge files for Session fixes.

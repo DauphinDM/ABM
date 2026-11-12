@@ -1,5 +1,6 @@
 <RCC><qresource prefix="/">
   <file>Main.qml</file>
+  <file>ConnectPane.qml</file>
   <file>Garage.js</file>
         <file>GarageFilter.qml</file>
         <file>GearEditor.qml</file>

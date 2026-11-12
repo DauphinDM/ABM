@@ -23,6 +23,7 @@ BeamNG GE Lua bridge (game user folder)
 | `src/previews.*` | Bounded local image registration, loose/archive image reads |
 | `src/playerprofiles.*` | Explicit public-profile lookup, browser and clipboard actions |
 | `src/presetstore.*` | Validated ABM-only preset files, atomic writes and bounded history |
+| `src/mobilehost.*`, `src/ConnectPane.qml` | Opt-in private-LAN TLS pairing, approval and bounded remote request gateway |
 | `src/Main.qml` and components | Basic-style dashboard, dialogs, keyboard/UI behavior |
 | `src/theme.*`, `src/translator.*` | Omarchy theme/language integration and fallback |
 | `game/` | User-folder GE bridge, startup script and vehicle tuning extension |
@@ -60,6 +61,21 @@ Internal test names and saved vehicle-Lua base-curve fields may also retain
 legacy names; the application and release artifacts are ABM.
 
 ## Commands and trust
+
+Development builds add an **off-by-default** phone connection in the dashboard
+process, not the receiver. `MobileHost` listens on a selected private IPv4 address
+using TLS 1.2 or later. A short-lived invitation pins the locally generated
+certificate and carries a random secret; a phone still needs explicit PC approval.
+Approval is connection-only and stopping access revokes it. This does not expose
+the game's UDP port, command socket, filesystem or arbitrary Lua.
+
+Snapshots use a field allowlist and omit local preview paths. Commands use a fixed
+allowlist, bounded frames, monotonic sequence numbers and a frozen game/vehicle
+target. Mutations require current ownership, permission and a known stopped speed,
+then pass through the existing backend/receiver/bridge validation. Receipts are
+not physics verification. The separate [ABM-Mobile repository](https://github.com/DauphinDM/ABM-Mobile)
+contains the Android client; see [mobile companion](mobile-companion.md) for setup,
+limitations and security details. This is not part of the published 0.12.0 binaries.
 
 The receiver only forwards an explicit action allowlist. Commands carry a current
 session ID and request ID; replies route to their requester. Bridge-side bounds

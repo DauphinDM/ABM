@@ -21,6 +21,7 @@ ApplicationWindow {
     property bool metric: backend.metric
     onMetricChanged: backend.metric = metric
     property int page: 0
+    readonly property var phoneHost: typeof mobileHost !== "undefined" ? mobileHost : null
     property bool helpVisible: false
     property bool focusMode: false
     readonly property bool wide: width >= 760
@@ -35,6 +36,7 @@ ApplicationWindow {
         {id:"car", label:qsTr("Car workshop"), hint:"2"},
         {id:"garage", label:qsTr("Garage"), hint:"3"},
         {id:"session", label:qsTr("Session"), hint:"4"},
+        {id:"connect", label:qsTr("Connect phone"), hint:"5"},
         {id:"focus", label:focusMode ? qsTr("Leave focus mode") : qsTr("Focus mode"), hint:"Ctrl+Shift+F"},
         {id:"diagnostics", label:qsTr("Diagnostics and support bundle"), hint:""},
         {id:"settings", label:qsTr("Paths and bridge setup"), hint:""},
@@ -43,8 +45,8 @@ ApplicationWindow {
         {id:"help", label:qsTr("Keyboard and safety help"), hint:"?"}
     ]
     function runPaletteCommand(id) {
-        if (id === "drive" || id === "car" || id === "garage" || id === "session") {
-            page = ["drive","car","garage","session"].indexOf(id); return
+        if (id === "drive" || id === "car" || id === "garage" || id === "session" || id === "connect") {
+            page = ["drive","car","garage","session","connect"].indexOf(id); return
         }
         if (id === "focus") { focusMode = !focusMode; receiptStamp(focusMode ? qsTr("Focus mode on") : qsTr("Focus mode off")); return }
         if (id === "diagnostics") { diagnostics.open(); return }
@@ -187,7 +189,7 @@ ApplicationWindow {
     // Development aid: --dev-open TARGET pre-opens pages, dialogs and menus.
     property string devOpen: ""
     onDevOpenChanged: {
-        const targets = {drive:0, car:1, garage:2, session:3}
+        const targets = {drive:0, car:1, garage:2, session:3, connect:4}
         if (targets[devOpen] !== undefined) win.page = targets[devOpen]
         else if (["handling", "gears", "fun", "engine", "dimensions", "blocked"].indexOf(devOpen) >= 0) { win.page = 1; carSection.currentIndex = {handling:1,gears:1,fun:2,engine:0,dimensions:3,blocked:0}[devOpen] }
         else if (devOpen === "owned") ownedDialog.open()
@@ -292,6 +294,7 @@ ApplicationWindow {
     Shortcut { sequence: "2"; context: Qt.ApplicationShortcut; onActivated: win.page = 1 }
     Shortcut { sequence: "3"; context: Qt.ApplicationShortcut; onActivated: win.page = 2 }
     Shortcut { sequence: "4"; context: Qt.ApplicationShortcut; onActivated: win.page = 3 }
+    Shortcut { sequence: "5"; context: Qt.ApplicationShortcut; onActivated: win.page = 4 }
     Shortcut {
         sequence: "Escape"; context: Qt.ApplicationShortcut
         onActivated: {
@@ -403,8 +406,8 @@ ApplicationWindow {
                     Layout.fillWidth: true; Layout.topMargin: 6; spacing: 8
                     ColumnLayout {
                         Layout.fillWidth: true; spacing: 4
-                        PlainLabel { text: [qsTr("Drive"), qsTr("Workshop"), qsTr("Garage"), qsTr("Session")][win.page]; color: win.textMain; font.pixelSize: 26; font.weight: Font.DemiBold; font.letterSpacing: -.5 }
-                        PlainLabel { Layout.fillWidth: true; text: [qsTr("Your car, at a glance."), qsTr("Tune deliberately. Keep control."), qsTr("Find your next drive."), qsTr("The road so far.")][win.page]; color: win.textDim; font.pixelSize: 12; elide: Text.ElideRight }
+                        PlainLabel { text: [qsTr("Drive"), qsTr("Workshop"), qsTr("Garage"), qsTr("Session"),qsTr("Connect")][win.page]; color: win.textMain; font.pixelSize: 26; font.weight: Font.DemiBold; font.letterSpacing: -.5 }
+                        PlainLabel { Layout.fillWidth: true; text: [qsTr("Your car, at a glance."), qsTr("Tune deliberately. Keep control."), qsTr("Find your next drive."), qsTr("The road so far."),qsTr("Your phone. Your PC. Your approval.")][win.page]; color: win.textDim; font.pixelSize: 12; elide: Text.ElideRight }
                     }
                     Button { text: "⋯"; implicitWidth: 36; implicitHeight: 34; flat: true; font.pixelSize: 20; Accessible.name: qsTr("Settings and help"); onClicked: settingsMenu.popup(this, 0, height) }
                 }
@@ -829,9 +832,10 @@ ApplicationWindow {
                             text: backend.convoyNotes; maximumLength: 2048; onTextEdited: backend.setConvoyNotes(text) }
                         Button { objectName: "sessionVehicles"; text: qsTr("Your vehicles"); visible: backend.activeVehicles.length > 0; Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: ownedDialog.open() }
                         Button { objectName: "sessionResetTrip"; text: qsTr("Reset trip"); enabled: !demoMode && !backend.busy; Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: tripDialog.open() }
-                        Button { objectName: "sessionDiagnostics"; text: qsTr("Diagnostics"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: diagnostics.open() }
-                    }
-                }
+                         Button { objectName: "sessionDiagnostics"; text: qsTr("Diagnostics"); Layout.fillWidth: true; font.pixelSize: 11; padding: 6; implicitHeight: 30; flat: true; onClicked: diagnostics.open() }
+                     }
+                 }
+                 ConnectPane { host: win.phoneHost; demo: demoMode }
             }
             }
             }
@@ -960,7 +964,7 @@ ApplicationWindow {
             MouseArea { anchors.fill:parent; onClicked:win.helpVisible=false }
             ColumnLayout { anchors.centerIn:parent; width:parent.width-40; spacing: 16
                 PlainLabel { text:qsTr("Keyboard shortcuts"); font.pixelSize: 16; color: textMain }
-                PlainLabel { text:qsTr("1–4 — Drive, Car, Garage, Session\nCtrl+K — Command palette\nCtrl+Shift+F — Focus mode\nSpace — Pause/resume display\nU — Change units\nEscape — Clear search, go back or close dialog\n? — Help\nQ — Close window"); Layout.fillWidth:true; lineHeight:1.6; color: textDim; font.pixelSize: 12 }
+                PlainLabel { text:qsTr("1–5 — Drive, Car, Garage, Session, Connect\nCtrl+K — Command palette\nCtrl+Shift+F — Focus mode\nSpace — Pause/resume display\nU — Change units\nEscape — Clear search, go back or close dialog\n? — Help\nQ — Close window"); Layout.fillWidth:true; lineHeight:1.6; color: textDim; font.pixelSize: 12 }
                 PlainLabel { text:qsTr("On Omarchy the receiver keeps running after this window closes. In standalone mode it runs while the app is open."); Layout.fillWidth:true; color:textDim; font.pixelSize: 10 }
             }
         }

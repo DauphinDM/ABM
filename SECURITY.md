@@ -1,5 +1,9 @@
 # Security and privacy
 
+## Development: mobile LAN access
+
+The new optional Connect host is off by default and separate from the loopback game receiver. It binds one selected private IPv4 address and requires TLS certificate pinning, a fresh short-lived pairing secret and explicit PC approval. Only fixed validated actions and whitelisted game state are exposed; existing policy/ownership checks remain. See [mobile security boundaries and known limits](docs/mobile-companion.md). Never forward port 44445 or publish pairing links/private keys. Approval lasts one connection; stop access to revoke. This is experimental and has not been independently audited.
+
 ABM is a local convenience tool, not a sandbox against code running as your user.
 
 - The game receiver binds IPv4 **loopback**, UDP port 44444; never forward it

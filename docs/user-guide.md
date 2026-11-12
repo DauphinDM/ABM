@@ -21,7 +21,7 @@ limitations](server-policy.md); this is not anti-cheat or staff protection.
 
 ## Dashboard layout
 
-The window opens at 560×840 and can shrink to 320×440. The four page tabs become
+The window opens at 560×840 and can shrink to 320×440. The page tabs become
 a left sidebar on wide windows. **Car** opens the Workshop; its section selector
 keeps related controls together. Short windows hide large page headings to leave
 more room for content. Pages scroll when needed.
@@ -32,6 +32,10 @@ Use Tab to focus a card, Enter or Space to open it, and the separate star button
 to favorite it. Ctrl+K opens the command palette; `?` shows keyboard shortcuts.
 Appearance changes do not grant permission to change the game: ownership,
 movement, bridge capability and server-policy checks still apply.
+
+The development build adds a fifth **Connect** tab for [ABM Mobile pairing](mobile-companion.md).
+Phone access is off by default, unavailable in demo mode and requires explicit PC approval.
+This tab is not in the released 0.12.0 binaries.
 
 ## Launch and connection state
 

@@ -1,5 +1,18 @@
 # ABM visual audit
 
+## Unreleased — phone connection foundation
+
+- PC Connect uses the same scrollable panels and adaptive navigation as the
+  dashboard; demo mode disables networking and displays a synthetic private IP.
+- The mobile repository has real QML checks for all five pages at 320×600,
+  412×860 and 800×600, without QML warnings. Its native-host tests exercise real
+  TLS against a local fixture, certificate pin rejection and stale-state shutdown.
+- The PC TLS fixture covers explicit approval, snapshot redaction, revocation,
+  replay rejection and stale/moving/unowned/joining command denial without a live
+  game. Local PC suite: 47 Qt checks plus the existing Lua/Node/Python suites.
+- These checks do not prove Android device behavior or live multiplayer control.
+  No phone listener was enabled on a real LAN during testing.
+
 ## Unreleased — Session actions
 
 - Inspected demo Session at 560×840 and 320×440, the owned-vehicle disabled-reason

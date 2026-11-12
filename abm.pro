@@ -10,3 +10,5 @@ win32 {
     LIBS += -L$$(VCPKG_ROOT)/installed/x64-windows/lib -larchive
 }
 RESOURCES += src/resources.qrc
+HEADERS += src/mobilehost.h
+SOURCES += src/mobilehost.cpp
