@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f141b">
+<title>ABM Web Control</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>ABM</h1>
+    <p class="muted">Web control for this PC</p>
+  </div>
+  <span id="badge" class="badge off">NOT PAIRED</span>
+</header>
+
+<main>
+  <section id="pairView" class="panel">
+    <h2>Connect this browser</h2>
+    <p class="muted">Use the private pairing link from <strong>PC ABM &rarr; Connect</strong>. The link expires after two minutes. Control starts only after you approve this browser on the PC.</p>
+    <label for="device">Browser name</label>
+    <input id="device" maxlength="64" autocomplete="off" value="Web browser">
+    <label for="link">Pairing link or secret</label>
+    <input id="link" autocomplete="off" spellcheck="false" placeholder="abm://pair/... or 64-character secret">
+    <div class="row">
+      <button id="pairButton" class="primary">Request approval</button>
+      <button id="resumeButton" class="secondary" hidden>Resume saved browser</button>
+    </div>
+    <p id="pairMessage" class="message" role="status"></p>
+    <p class="fine">The connection uses HTTPS with the PC's local certificate. Your browser will warn that the certificate is self-signed; accept it only for this PC on your trusted private network. Never forward port 44445 from your router.</p>
+  </section>
+
+  <section id="pendingView" class="panel" hidden>
+    <h2>Waiting for PC approval</h2>
+    <p class="muted">Approve <strong id="pendingName">this browser</strong> in <strong>PC ABM &rarr; Connect</strong>. This page will continue automatically.</p>
+    <div class="row">
+      <button id="cancelButton" class="secondary">Cancel</button>
+    </div>
+    <p id="pendingMessage" class="message" role="status"></p>
+  </section>
+
+  <section id="appView" hidden>
+    <nav class="tabs" aria-label="Pages">
+      <button data-page="drive" class="active">Drive</button>
+      <button data-page="workshop">Car</button>
+      <button data-page="garage">Garage</button>
+      <button data-page="session">Session</button>
+      <button data-page="connect">Connect</button>
+    </nav>
+
+    <div id="statusLine" class="panel status">
+      <span id="connectionText">Connecting...</span>
+      <span id="actionMessage" class="muted"></span>
+    </div>
+
+    <section id="page-drive" class="page">
+      <div class="grid">
+        <article class="card"><span class="label">Speed</span><strong id="speed">--</strong><span class="unit">km/h</span></article>
+        <article class="card"><span class="label">Gear</span><strong id="gear">--</strong><span class="unit">&nbsp;</span></article>
+        <article class="card"><span class="label">Engine</span><strong id="rpm">--</strong><span class="unit">RPM</span></article>
+        <article class="card"><span class="label">Fuel</span><strong id="fuel">--</strong><span class="unit">%</span></article>
+        <article class="card"><span class="label">Coolant</span><strong id="coolant">--</strong><span class="unit">&deg;C</span></article>
+        <article class="card"><span class="label">Latency</span><strong id="latency">--</strong><span class="unit">ms</span></article>
+      </div>
+      <p class="fine">Live telemetry from your PC. This page cannot steer or apply throttle. Vehicle changes still require a stopped, owned vehicle, an allowed server and the game's own validation.</p>
+    </section>
+
+    <section id="page-workshop" class="page" hidden>
+      <p id="workshopNote" class="muted"></p>
+      <div class="panel">
+        <h2>Engine</h2>
+        <label for="power">Power percent (1&ndash;2000)</label>
+        <input id="power" type="number" min="1" max="2000" step="1" value="100" inputmode="numeric">
+        <button id="powerApply" data-action="power" class="primary">Apply power</button>
+        <label for="rpmLimit">Maximum RPM (100&ndash;30000)</label>
+        <input id="rpmLimit" type="number" min="100" max="30000" step="1" inputmode="numeric">
+        <button id="rpmApply" data-action="rpm" class="primary">Apply RPM limit</button>
+        <div class="row">
+          <button data-action="clutch" data-bool="true">Enable clutch protection</button>
+          <button data-action="clutch" data-bool="false">Disable clutch protection</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Gearbox</h2>
+        <label for="ratios">Forward ratios, separated by spaces</label>
+        <textarea id="ratios" rows="2" maxlength="4000" placeholder="3.5 2.1 1.4 1.0 0.8"></textarea>
+        <button id="ratiosApply" data-action="gears" class="primary">Apply ratios</button>
+      </div>
+      <div class="panel">
+        <h2>Vehicle actions</h2>
+        <div class="row wrap">
+          <button data-action="repair">Repair</button>
+          <button data-action="extinguish">Extinguish</button>
+          <button data-action="stability">Stabilize</button>
+          <button data-action="fullReset">Clear ABM tuning &amp; reset</button>
+        </div>
+        <p class="fine">Each action is checked again by the PC and game. A receipt means the request reached the PC, not that the game accepted it.</p>
+      </div>
+    </section>
+
+    <section id="page-garage" class="page" hidden>
+      <div class="panel">
+        <div class="row">
+          <button id="catalogButton" class="primary">Refresh models</button>
+          <button id="backModels" class="secondary" hidden>Back to models</button>
+        </div>
+        <p id="garageNote" class="muted"></p>
+        <div id="garageList" class="list"></div>
+        <div class="row">
+          <button id="spawnButton" class="primary" disabled>Spawn</button>
+          <button id="replaceButton" class="secondary" disabled>Replace</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="page-session" class="page" hidden>
+      <div class="panel">
+        <h2 id="serverName">No live game</h2>
+        <p class="muted">Session IDs are temporary. This page cannot grant server permission or control another player's vehicle.</p>
+        <div id="players" class="list"></div>
+        <button id="resetTrip" data-action="resetTrip">Reset trip</button>
+      </div>
+    </section>
+
+    <section id="page-connect" class="page" hidden>
+      <div class="panel">
+        <h2>This browser</h2>
+        <p id="browserInfo" class="muted"></p>
+        <div class="row">
+          <button id="disconnectButton" class="danger">Disconnect browser</button>
+          <button id="forgetButton" class="secondary">Forget saved browser</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Private and revocable</h2>
+        <p class="muted">PC approval is required. Stop access or Forget devices on the PC revokes this browser immediately. The page never stores your pairing secret; a saved browser credential can be removed above. Keep this address private and use it only on a trusted LAN.</p>
+      </div>
+    </section>
+  </section>
+</main>
+<footer class="fine">ABM &mdash; local-first BeamNG.drive manager. Not affiliated with BeamNG or BeamMP.</footer>
+<script src="/app.js"></script>
+</body>
+</html>

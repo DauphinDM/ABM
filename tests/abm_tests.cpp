@@ -249,6 +249,82 @@ private slots:
         auto *pane=qvariant_cast<QObject *>(window->property("pane")); QVERIFY(pane); pane->setProperty("demo",true);
         QTRY_VERIFY(!button->isEnabled()); QVERIFY(warnings.isEmpty());
     }
+    void browserControlPairsApprovesResumesAndRejectsUnsafeRequests() {
+        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local OpenSSL certificate generation is unavailable");
+        QTemporaryDir dir; Backend backend(dir.filePath("missing-state.json"));
+        MobileHost host(&backend,dir.filePath("mobile")); QVERIFY(host.start("127.0.0.1",0));
+        QCOMPARE(host.browserUrl(),QString("https://127.0.0.1:%1/").arg(host.listenPort()));
+        const auto invitation=QJsonDocument::fromJson(QByteArray::fromBase64(host.pairingLink().mid(11).toLatin1(),QByteArray::Base64UrlEncoding)).object();
+        struct Reply { int status=0; QByteArray raw, body; };
+        auto send=[&](const QByteArray &method,const QByteArray &path,const QByteArray &body=QByteArray(),
+                      const QByteArray &cookie=QByteArray(),bool api=true,bool autoLength=true,const QByteArray &extra=QByteArray()) {
+            QByteArray request=method+" "+path+" HTTP/1.1\r\nHost: 127.0.0.1\r\n";
+            if(api && method=="POST") request+="Content-Type: application/json\r\nX-ABM-Web: 1\r\n";
+            if(!cookie.isEmpty()) request+="Cookie: "+cookie+"\r\n";
+            if(autoLength && (method=="POST" || !body.isEmpty())) request+="Content-Length: "+QByteArray::number(body.size())+"\r\n";
+            request+=extra; request+="Connection: close\r\n\r\n"+body;
+            QSslSocket socket; socket.setPeerVerifyMode(QSslSocket::VerifyNone);
+            socket.connectToHostEncrypted("127.0.0.1",host.listenPort());
+            QElapsedTimer timer; timer.start();
+            while(!socket.isEncrypted() && timer.elapsed()<3000) QTest::qWait(20);
+            if(!socket.isEncrypted()) return Reply{};
+            socket.write(request); socket.flush();
+            QByteArray raw; timer.restart();
+            while(timer.elapsed()<4000) {
+                QTest::qWait(20); raw+=socket.readAll();
+                if(socket.state()==QAbstractSocket::UnconnectedState) break;
+            }
+            raw+=socket.readAll();
+            Reply reply; reply.raw=raw;
+            const int split=raw.indexOf("\r\n\r\n"); if(split<0) return reply;
+            const auto head=raw.left(split);
+            reply.status=head.left(head.indexOf("\r\n")).split(' ').value(1).toInt();
+            reply.body=raw.mid(split+4); return reply;
+        };
+        const auto page=send("GET","/"); QCOMPARE(page.status,200); QVERIFY(page.body.contains("ABM Web Control"));
+        QVERIFY(page.raw.contains("Content-Security-Policy: default-src 'none'"));
+        QVERIFY(page.raw.contains("Cache-Control: no-store")); QVERIFY(!page.raw.contains("unsafe-inline"));
+        QCOMPARE(send("GET","/app.js").status,200); QCOMPARE(send("GET","/api/state").status,401);
+        const auto pairBody=QJsonDocument(QJsonObject{{"secret",invitation.value("secret")},{"device","Browser test"}}).toJson(QJsonDocument::Compact);
+        QCOMPARE(send("POST","/api/pair",pairBody,QByteArray(),false).status,403);
+        QCOMPARE(send("POST","/api/pair",QJsonDocument(QJsonObject{{"secret",QString(64,'0')},{"device","Browser test"}}).toJson(QJsonDocument::Compact)).status,403);
+        const auto pending=send("POST","/api/pair",pairBody); QCOMPARE(pending.status,200);
+        QCOMPARE(QJsonDocument::fromJson(pending.body).object().value("status").toString(),QString("pending"));
+        const int cookieAt=pending.raw.toLower().indexOf("set-cookie: abm_web=");
+        QVERIFY(cookieAt>=0); const int cookieStart=cookieAt+int(qstrlen("set-cookie: abm_web="));
+        const int cookieEnd=pending.raw.indexOf(';',cookieStart); QVERIFY(cookieEnd>cookieStart);
+        const QByteArray cookie="abm_web="+pending.raw.mid(cookieStart,cookieEnd-cookieStart); QCOMPARE(cookie.size(),72);
+        QCOMPARE(host.pendingDevice(),QString("Browser test")); QVERIFY(host.connectedDevice().isEmpty());
+        QCOMPARE(send("POST","/api/pair",QJsonDocument(QJsonObject{{"secret",invitation.value("secret")},{"device","Other browser"}}).toJson(QJsonDocument::Compact)).status,403);
+        QCOMPARE(host.pendingDevice(),QString("Browser test"));
+        const auto pendingState=send("GET","/api/state",QByteArray(),cookie);
+        QCOMPARE(pendingState.status,200); QCOMPARE(QJsonDocument::fromJson(pendingState.body).object().value("status").toString(),QString("pending"));
+        host.approveRemembered(true); QCOMPARE(host.connectedDevice(),QString("Browser test"));
+        const auto approved=send("GET","/api/state",QByteArray(),cookie); QCOMPARE(approved.status,200);
+        const auto approvedJson=QJsonDocument::fromJson(approved.body).object();
+        QCOMPARE(approvedJson.value("status").toString(),QString("approved")); QVERIFY(approvedJson.value("snapshot").isObject()); QVERIFY(approvedJson.value("seq").isDouble());
+        const auto trusted=approvedJson.value("trusted").toObject(); QCOMPARE(trusted.value("id").toString().size(),32); QCOMPARE(trusted.value("token").toString().size(),64);
+        QVERIFY(!QJsonDocument::fromJson(send("GET","/api/state",QByteArray(),cookie).body).object().contains("trusted"));
+        const auto headState=send("HEAD","/api/state",QByteArray(),cookie); QCOMPARE(headState.status,200); QVERIFY(headState.body.isEmpty());
+        QCOMPARE(send("POST","/api/command",QJsonDocument(QJsonObject{{"seq",1},{"action","repair"},{"args",QJsonObject{}},{"target",QJsonObject{{"vehicle",99}}}}).toJson(QJsonDocument::Compact)).status,401);
+        const auto commandBody=QJsonDocument(QJsonObject{{"seq",qint64(approvedJson.value("seq").toDouble())+1},{"action","repair"},
+            {"args",QJsonObject{}},{"target",QJsonObject{{"vehicle",99}}}}).toJson(QJsonDocument::Compact);
+        const auto receipt=send("POST","/api/command",commandBody,QByteArray(),true,true,"Cookie: "+cookie+"\r\n");
+        QCOMPARE(receipt.status,200); QVERIFY(receipt.body.contains("changed"));
+        QCOMPARE(send("POST","/api/command",QJsonDocument(QJsonObject{{"seq",999},{"action","repair"},{"args",QJsonObject{}}}).toJson(QJsonDocument::Compact),cookie).status,400);
+        QCOMPARE(send("POST","/api/pair",pairBody,cookie,true,false,"Transfer-Encoding: chunked\r\n").status,400);
+        QCOMPARE(send("POST","/api/pair",pairBody,cookie,true,false,"Content-Length: 20000\r\n").status,413);
+        QCOMPARE(send("GET","/api/unknown").status,404);
+        QCOMPARE(send("POST","/api/unpair",QByteArray(),cookie).status,200);
+        QCOMPARE(send("GET","/api/state",QByteArray(),cookie).status,401);
+        QCOMPARE(send("POST","/api/resume",QJsonDocument(QJsonObject{{"id",trusted.value("id")},{"token",QString(64,'0')}}).toJson(QJsonDocument::Compact)).status,403);
+        const auto resumed=send("POST","/api/resume",QJsonDocument(trusted).toJson(QJsonDocument::Compact)); QCOMPARE(resumed.status,200);
+        const int resumedAt=resumed.raw.toLower().indexOf("set-cookie: abm_web="); QVERIFY(resumedAt>=0);
+        const int resumedStart=resumedAt+int(qstrlen("set-cookie: abm_web=")), resumedEnd=resumed.raw.indexOf(';',resumedStart);
+        const QByteArray resumedCookie="abm_web="+resumed.raw.mid(resumedStart,resumedEnd-resumedStart);
+        QCOMPARE(QJsonDocument::fromJson(send("GET","/api/state",QByteArray(),resumedCookie).body).object().value("status").toString(),QString("approved"));
+        host.stop(); QVERIFY(!host.running());
+    }
     void mobileHostRequiresTlsApprovalTargetAndRevocation() {
         if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local OpenSSL certificate generation is unavailable");
         Fixture f; QVERIFY(f.start()); Backend backend(f.path);

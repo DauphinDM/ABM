@@ -121,7 +121,7 @@ void CompanionFirewall::refresh() {
     if (m_rule.scope()!=next.scope() || m_binding!=binding || m_message.isEmpty()) {
         m_rule=next;
         m_binding=binding;
-        m_message = !m_host->running() ? tr("Enable phone access first. If the phone stays on Connecting securely, check inbound TCP access here.")
+        m_message = !m_host->running() ? tr("Enable remote access first. If the device stays on Connecting securely, check inbound TCP access here.")
             : supported() ? tr("A firewall can silently block pairing. After confirmation, ABM can request local-subnet TCP access using your system administrator prompt. Windows rules apply only to Private networks.")
             : tr("Automatic setup is unavailable for this interface or firewall. Allow only inbound TCP to the displayed PC address and port from your trusted LAN using your firewall manager. Linux automatic setup requires UFW and pkexec; other firewalls need manual setup.");
     }

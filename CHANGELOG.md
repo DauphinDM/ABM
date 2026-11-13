@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.0: Browser control for older devices
+
+- Added an embedded HTTPS control page on the existing Connect listener. Older phones, tablets, and computers on the private LAN can use telemetry, workshop actions, Garage spawn and replace, session switching, and explicit disconnect without installing ABM Mobile.
+- Pairing still needs the same two-minute secret and explicit PC approval. The browser gets an HttpOnly, Secure, SameSite=Strict 12-hour session cookie. Only one controller is allowed at a time, and remembered-browser tokens can be revoked.
+- HTTP handling accepts one bounded request per TLS connection and checks Host, Origin, and a custom header. Bodies must use Content-Length. Responses set no-store and strict CSP, COOP, and CORP headers. Browser commands go through the existing exact target, sequence, rate, ownership, stopped, sandbox, and server-policy checks. No arbitrary RPC or thumbnails are exposed.
+- Added QtTest coverage for static assets, pairing, pending and approved state, one-controller refusal, target rejection, unpair, saved-browser resume, and malformed or oversized requests.
+
 ## 0.13.0: App updates and mobile companions (preview)
 
 Ship PC 0.13.0 with the matching [ABM Mobile 0.2.0](https://github.com/DauphinDM/ABM-Mobile/releases) release. Previously published PC 0.12.0 assets stay available and are not replaced.

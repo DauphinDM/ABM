@@ -8,6 +8,8 @@ ABM is a native, local-first manager for **BeamNG.drive and BeamMP**. Launch the
 
 **New in 0.13.0:** [ABM Mobile](https://github.com/DauphinDM/ABM-Mobile) and a fifth **Connect** screen. If you opt in, you can control ABM from your phone over your private Wi-Fi with an encrypted connection. See [pairing, requirements, and limits](docs/mobile-companion.md). This release also adds [opt-in update checks and verified downloads](docs/updates.md). Installation is still platform-specific.
 
+The same **Connect** host serves an embedded HTTPS **browser control page** for older devices that cannot install the mobile apps. It requires the same two-minute pairing link and explicit PC approval, and keeps the same fixed action allowlist and game checks. See [browser control](docs/mobile-companion.md#browser-control-for-older-devices).
+
 ## What it does
 
 | Page | Features |

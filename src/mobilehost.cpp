@@ -15,6 +15,8 @@
 #include <QClipboard>
 #include <QSaveFile>
 #include <QUuid>
+#include <QDateTime>
+#include <QRegularExpression>
 #include <cmath>
 
 MobileHost::MobileHost(Backend *backend, const QString &directory, QObject *parent)
@@ -35,7 +37,7 @@ MobileHost::MobileHost(Backend *backend, const QString &directory, QObject *pare
             connect(socket, &QSslSocket::disconnected, this, [this, socket] {
                 m_buffers.remove(socket);
                 if (m_pending == socket) { m_pending.clear(); m_pendingName.clear(); }
-                if (m_client == socket) { m_backend->cancelPowerEdits(); m_client.clear(); m_device.clear(); m_message = tr("Phone disconnected. Remembered devices can reconnect while access is enabled."); }
+                if (m_client == socket) { m_backend->cancelPowerEdits(); m_client.clear(); m_device.clear(); m_message = tr("Device disconnected. Remembered devices can reconnect while access is enabled."); }
                 socket->deleteLater(); emit changed();
             });
             QTimer::singleShot(15000, socket, [this, socket] {
@@ -135,18 +137,34 @@ bool MobileHost::start(const QString &address, int port) {
         {"sha256",QString::fromLatin1(cert.digest(QCryptographicHash::Sha256).toHex())},{"secret",m_secret}};
     m_link = "abm://pair/" + QString::fromLatin1(QJsonDocument(invitation).toJson(QJsonDocument::Compact).toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
     m_message = tr("Pairing available for two minutes. Treat the link as a password.");
-    m_sequence = 0; m_rate.start(); m_commands = 0; m_expiry.start(); m_publish.start(); m_imageTimer.start(); emit changed(); return true;
+    m_sequence = 0; m_webSequence = 0; m_webPending = m_webApproved = false; m_webToken.clear();
+    m_webName.clear(); m_webTrustedId.clear(); m_webTrustedToken.clear(); m_webExpires = 0;
+    m_webPairAttempts = 0; m_webPairRate.start(); m_webRate.start(); m_webCommands = m_webMessages = 0;
+    m_rate.start(); m_commands = 0; m_expiry.start(); m_publish.start(); m_imageTimer.start(); emit changed(); return true;
 }
 void MobileHost::stop() {
-    if (m_client) m_backend->cancelPowerEdits();
+    if (m_client || m_webApproved) m_backend->cancelPowerEdits();
     m_server.close(); m_publish.stop(); m_expiry.stop(); m_imageTimer.stop();
     m_secret.clear(); m_link.clear(); m_pending.clear(); m_client.clear(); m_pendingName.clear(); m_device.clear();
+    m_webToken.clear(); m_webPending = m_webApproved = false; m_webName.clear(); m_webTrustedId.clear(); m_webTrustedToken.clear();
+    m_webExpires = 0; m_webSequence = 0; m_webCommands = m_webMessages = m_webPairAttempts = 0;
     const auto sockets = m_buffers.keys(); m_buffers.clear();
     for (auto *socket : sockets) { disconnect(socket,nullptr,this,nullptr); socket->abort(); socket->deleteLater(); }
     m_libraryHash.clear(); m_imageRequests.clear(); m_images.clear();
-    m_message = tr("Phone access is off. Remembered devices are retained; use Forget devices to revoke them."); emit changed();
+    m_message = tr("Remote access is off. Remembered devices are retained; use Forget devices to revoke them."); emit changed();
 }
 void MobileHost::copyPairingLink() { if (!m_link.isEmpty() && QGuiApplication::clipboard()) QGuiApplication::clipboard()->setText(m_link); }
+QString MobileHost::browserUrl() const {
+    if (!running()) return {};
+    auto host = m_server.serverAddress().toString();
+    if (m_server.serverAddress() == QHostAddress(QHostAddress::Any)) {
+        const auto list = addresses();
+        host = list.isEmpty() ? QStringLiteral("127.0.0.1") : list.first();
+    }
+    if (host.contains(':')) host = "[" + host + "]";
+    return "https://" + host + ":" + QString::number(m_server.serverPort()) + "/";
+}
+void MobileHost::copyBrowserUrl() { const auto url = browserUrl(); if (!url.isEmpty() && QGuiApplication::clipboard()) QGuiApplication::clipboard()->setText(url); }
 void MobileHost::send(QSslSocket *socket, const QJsonObject &message) {
     if (!socket || !socket->isEncrypted()) return;
     const auto bytes = QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
@@ -158,6 +176,12 @@ void MobileHost::receive(QSslSocket *socket) {
     if (!m_buffers.contains(socket)) return;
     m_buffers[socket] += socket->readAll();
     if (m_buffers.value(socket).size() > 32768) { socket->abort(); return; }
+    const auto pendingBytes = m_buffers.value(socket);
+    if (!pendingBytes.startsWith('{')) {
+        if (pendingBytes.startsWith("GET ") || pendingBytes.startsWith("POST") || pendingBytes.startsWith("HEAD")) { handleHttp(socket); return; }
+        if (pendingBytes.size() < 4 && (QByteArray("GET ").startsWith(pendingBytes) || QByteArray("POST").startsWith(pendingBytes) || QByteArray("HEAD").startsWith(pendingBytes))) return;
+        fail(socket,tr("Invalid message.")); return;
+    }
     // A failed send can synchronously disconnect and erase the socket's buffer.
     // Do not retain a reference into the hash across dispatch or socket writes.
     while (m_buffers.contains(socket) && m_buffers.value(socket).contains('\n')) {
@@ -167,7 +191,7 @@ void MobileHost::receive(QSslSocket *socket) {
         if (error.error != QJsonParseError::NoError || !doc.isObject()) { fail(socket,tr("Invalid message.")); return; }
         const auto data = doc.object();
         if (socket != m_client) {
-            if (data.value("kind")=="resume" && data.value("v").toInt()==1 && !m_client && !m_pending) {
+            if (data.value("kind")=="resume" && data.value("v").toInt()==1 && !m_client && !m_pending && !m_webPending && !m_webApproved) {
                 const auto record=m_trusted.value(data.value("id").toString()).toObject();
                 const auto token=data.value("token").toString();
                 if (token.size()!=64 || record.isEmpty() || record.value("hash").toString()!=QString::fromLatin1(QCryptographicHash::hash(token.toLatin1(),QCryptographicHash::Sha256).toHex())) {
@@ -176,7 +200,7 @@ void MobileHost::receive(QSslSocket *socket) {
                 activate(socket,record.value("name").toString()); continue;
             }
             const auto name = data.value("device").toString();
-            if (m_client || m_secret.isEmpty() || m_pending || data.value("v").toInt() != 1 || data.value("kind") != "pair"
+            if (m_client || m_webApproved || m_webPending || m_secret.isEmpty() || m_pending || data.value("v").toInt() != 1 || data.value("kind") != "pair"
                 || data.value("secret").toString() != m_secret || name.isEmpty() || name.size() > 64) { fail(socket,tr("Pairing refused or expired.")); return; }
             m_pending = socket; m_pendingName = name; m_message = tr("Approve this phone on the PC to allow control.");
             send(socket,{{"kind","pending"},{"message",m_message}}); emit changed();
@@ -201,6 +225,18 @@ void MobileHost::approve() {
     approveRemembered(false);
 }
 void MobileHost::approveRemembered(bool remember) {
+    if (m_webPending) {
+        if (remember) {
+            if (m_trusted.size()>=16) { m_message=tr("Remembered-device limit reached. Forget old devices first."); emit changed(); return; }
+            const auto id=QUuid::createUuid().toString(QUuid::Id128);
+            QByteArray token(32,Qt::Uninitialized); for (auto &byte:token) byte=char(QRandomGenerator::system()->generate()&255);
+            const auto secret=QString::fromLatin1(token.toHex());
+            m_trusted.insert(id,QJsonObject{{"name",m_webName},{"hash",QString::fromLatin1(QCryptographicHash::hash(secret.toLatin1(),QCryptographicHash::Sha256).toHex())}});
+            if (!saveDevices()) { m_trusted.remove(id); m_message=tr("Cannot save this browser. Retry or approve without remembering."); emit changed(); return; }
+            m_webTrustedId=id; m_webTrustedToken=secret;
+        }
+        activateWeb(m_webName); return;
+    }
     if (!m_pending || !m_expiry.isActive()) return;
     auto socket=m_pending; const auto name=m_pendingName;
     if (remember) {
@@ -221,7 +257,179 @@ void MobileHost::activate(QSslSocket *socket, const QString &name) {
     m_message = tr("Phone connected. Stop access to disconnect; Forget devices revokes saved access.");
     send(m_client,{{"kind","ready"}}); send(m_client,snapshot()); emit changed();
 }
-void MobileHost::reject() { if (m_pending) { auto socket = m_pending; m_pending.clear(); m_pendingName.clear(); fail(socket,tr("PC declined pairing.")); } emit changed(); }
+void MobileHost::reject() {
+    if (m_webPending) { m_webPending=false; m_webName.clear(); m_webToken.clear(); m_webExpires=0; m_pendingName.clear(); m_message=tr("PC declined browser pairing."); }
+    if (m_pending) { auto socket = m_pending; m_pending.clear(); m_pendingName.clear(); fail(socket,tr("PC declined pairing.")); }
+    emit changed();
+}
+void MobileHost::activateWeb(const QString &name) {
+    m_webApproved=true; m_webPending=false; m_webName=name; m_device=name; m_pendingName.clear();
+    m_secret.clear(); m_link.clear(); m_expiry.stop(); m_webSequence=0; m_webExpires=QDateTime::currentMSecsSinceEpoch()+12LL*60*60*1000;
+    m_webRate.restart(); m_webCommands=m_webMessages=0;
+    m_message=tr("Browser connected. Stop access to disconnect; Forget devices revokes saved access."); emit changed();
+}
+void MobileHost::endWeb(const QString &message) {
+    if (m_webApproved) m_backend->cancelPowerEdits();
+    m_webToken.clear(); m_webPending=m_webApproved=false; m_webName.clear(); m_webTrustedId.clear(); m_webTrustedToken.clear();
+    m_webExpires=0; m_webSequence=0; m_webCommands=m_webMessages=0;
+    m_pendingName.clear();
+    if (!message.isEmpty()) m_message=message;
+    emit changed();
+}
+bool MobileHost::webCookieMatches(const QHash<QByteArray, QByteArray> &headers) const {
+    if (m_webToken.size()!=64) return false;
+    for (const auto &part : headers.value("cookie").split(';')) {
+        const auto value=part.trimmed();
+        if (value.startsWith("abm_web=")) return value.mid(8)==m_webToken;
+    }
+    return false;
+}
+void MobileHost::respond(QSslSocket *socket, int status, const QByteArray &type, const QByteArray &body,
+                         const QByteArray &extra, bool headOnly) {
+    if (!socket || !socket->isEncrypted()) return;
+    const char *reason = status==200 ? "OK" : status==400 ? "Bad Request" : status==401 ? "Unauthorized"
+        : status==403 ? "Forbidden" : status==404 ? "Not Found" : status==405 ? "Method Not Allowed"
+        : status==409 ? "Conflict" : status==413 ? "Payload Too Large" : status==415 ? "Unsupported Media Type"
+        : status==429 ? "Too Many Requests" : status==431 ? "Request Header Fields Too Large" : "Error";
+    QByteArray head = "HTTP/1.1 " + QByteArray::number(status) + " " + reason + "\r\n";
+    head += "Content-Type: " + type + "\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n";
+    head += "Cache-Control: no-store\r\nPragma: no-cache\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\n";
+    head += "Cross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin\r\nPermissions-Policy: camera=(), microphone=(), geolocation=()\r\n";
+    head += "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'\r\n";
+    head += "Connection: close\r\n" + extra + "\r\n";
+    socket->write(head); if (!headOnly) socket->write(body);
+    socket->disconnectFromHost();
+}
+void MobileHost::respondJson(QSslSocket *socket, int status, const QJsonObject &body, const QByteArray &extra, bool headOnly) {
+    respond(socket,status,"application/json; charset=utf-8",QJsonDocument(body).toJson(QJsonDocument::Compact),extra,headOnly);
+}
+void MobileHost::handleHttp(QSslSocket *socket) {
+    if (!m_buffers.contains(socket)) return;
+    const auto &buffer = m_buffers[socket];
+    int end = buffer.indexOf("\r\n\r\n"), separator = 4;
+    if (end < 0) { end = buffer.indexOf("\n\n"); separator = 2; }
+    if (end < 0) { if (buffer.size() > 8192) respond(socket,431,"text/plain; charset=utf-8","Headers too large."); return; }
+    if (end > 8192) { respond(socket,431,"text/plain; charset=utf-8","Headers too large."); return; }
+    QList<QByteArray> lines = buffer.left(end).split('\n');
+    for (auto &line : lines) if (line.endsWith('\r')) line.chop(1);
+    const auto request = lines.takeFirst().split(' ');
+    if (request.size()!=3 || request[0].size()>4 || request[1].isEmpty() || request[1].size()>2048
+        || (request[0]!="GET" && request[0]!="POST" && request[0]!="HEAD")
+        || (request[2]!="HTTP/1.1" && request[2]!="HTTP/1.0")) {
+        respond(socket,400,"text/plain; charset=utf-8","Bad request."); return;
+    }
+    QHash<QByteArray,QByteArray> headers;
+    for (const auto &line : lines) {
+        const int colon=line.indexOf(':');
+        if (colon<=0) { respond(socket,400,"text/plain; charset=utf-8","Bad headers."); return; }
+        const auto key=line.left(colon).trimmed().toLower(), value=line.mid(colon+1).trimmed();
+        if (key.isEmpty() || headers.contains(key)) { respond(socket,400,"text/plain; charset=utf-8","Bad headers."); return; }
+        headers.insert(key,value);
+    }
+    if (headers.value("transfer-encoding").toLower().contains("chunked") || headers.contains("expect")) {
+        respond(socket,400,"text/plain; charset=utf-8","Unsupported request body."); return;
+    }
+    bool ok=false; const int length=headers.value("content-length","0").toInt(&ok);
+    if (!ok || length<0 || length>16384 || (request[0]!="POST" && length!=0)) {
+        respond(socket,413,"text/plain; charset=utf-8","Request too large."); return;
+    }
+    if (buffer.size() < end+separator+length) { if (buffer.size() > 24576) respond(socket,413,"text/plain; charset=utf-8","Request too large."); return; }
+    if (buffer.size() > end+separator+length) { respond(socket,400,"text/plain; charset=utf-8","Unexpected request data."); return; }
+    const auto method=request[0], target=request[1], body=buffer.mid(end+separator,length);
+    m_buffers[socket].clear();
+    handleHttpRequest(socket,method,target,headers,body);
+}
+void MobileHost::handleHttpRequest(QSslSocket *socket, const QByteArray &method, const QByteArray &target,
+                                   const QHash<QByteArray,QByteArray> &headers, const QByteArray &body) {
+    const bool head=method=="HEAD", read=method=="GET" || head;
+    QByteArray path=target; const int query=path.indexOf('?'); if (query>=0) path=path.left(query);
+    if (method=="POST") {
+        const auto host=headers.value("host"), origin=headers.value("origin");
+        if (headers.value("x-abm-web")!="1" || host.isEmpty()
+            || (!origin.isEmpty() && origin != "https://"+host)
+            || !headers.value("content-type").toLower().startsWith("application/json")) {
+            respondJson(socket,403,{{"ok",false},{"error","Request rejected."}}); return;
+        }
+    }
+    auto jsonBody = [&body] { QJsonParseError error; const auto doc=QJsonDocument::fromJson(body,&error);
+        return error.error==QJsonParseError::NoError && doc.isObject() ? doc.object() : QJsonObject{}; };
+    if (read && (path=="/" || path=="/index.html" || path=="/app.css" || path=="/app.js")) {
+        const QByteArray type=path=="/app.css"?"text/css; charset=utf-8":path=="/app.js"?"application/javascript; charset=utf-8":"text/html; charset=utf-8";
+        QFile file(QStringLiteral(":/web") + QString::fromLatin1(path=="/" ? "/index.html" : path));
+        if (!file.open(QIODevice::ReadOnly)) { respond(socket,500,"text/plain; charset=utf-8","Web interface unavailable."); return; }
+        respond(socket,200,type,file.readAll(),{},head); return;
+    }
+    if (path=="/api/state" && read) {
+        if (!webCookieMatches(headers)) { respondJson(socket,401,{{"ok",false},{"status","unpaired"}},{},head); return; }
+        if (m_webExpires>0 && QDateTime::currentMSecsSinceEpoch()>m_webExpires) {
+            endWeb(tr("Browser session expired. Pair again.")); respondJson(socket,401,{{"ok",false},{"status","expired"}},{},head); return;
+        }
+        if (m_webApproved) {
+            QJsonObject out{{"ok",true},{"status","approved"},{"device",m_webName},{"seq",double(m_webSequence)},{"snapshot",snapshot()}};
+            if (!m_webTrustedId.isEmpty()) { out.insert("trusted",QJsonObject{{"id",m_webTrustedId},{"token",m_webTrustedToken}}); m_webTrustedId.clear(); m_webTrustedToken.clear(); }
+            respondJson(socket,200,out,{},head); return;
+        }
+        if (m_webPending) { respondJson(socket,200,{{"ok",true},{"status","pending"},{"device",m_webName}},{},head); return; }
+        respondJson(socket,401,{{"ok",false},{"status","unpaired"}},{},head); return;
+    }
+    if (path=="/api/pair" && method=="POST") {
+        if (m_webPending && webCookieMatches(headers)) { respondJson(socket,200,{{"ok",true},{"status","pending"}}); return; }
+        if (m_webApproved && webCookieMatches(headers)) { respondJson(socket,200,{{"ok",true},{"status","approved"}}); return; }
+        if (m_webPairRate.elapsed()>=60000) { m_webPairRate.restart(); m_webPairAttempts=0; }
+        if (++m_webPairAttempts>10) { respondJson(socket,429,{{"ok",false},{"error","Too many pairing attempts. Wait a minute."}}); return; }
+        const auto data=jsonBody();
+        const auto name=data.value("device").toString().trimmed();
+        if (m_client || m_pending || m_webPending || m_webApproved || m_secret.isEmpty() || m_expiry.isActive()==false
+            || data.value("secret").toString()!=m_secret || name.isEmpty() || name.size()>64) {
+            respondJson(socket,403,{{"ok",false},{"error","Pairing refused or expired."}}); return;
+        }
+        QByteArray random(32,Qt::Uninitialized); for (auto &byte:random) byte=char(QRandomGenerator::system()->generate()&255);
+        m_webToken=random.toHex(); m_webPending=true; m_webApproved=false; m_webName=name; m_pendingName=name; m_webTrustedId.clear(); m_webTrustedToken.clear();
+        m_webExpires=QDateTime::currentMSecsSinceEpoch()+12LL*60*60*1000; m_message=tr("Approve this browser on the PC to allow control."); emit changed();
+        respondJson(socket,200,{{"ok",true},{"status","pending"}},
+            "Set-Cookie: abm_web="+m_webToken+"; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200\r\n"); return;
+    }
+    if (path=="/api/resume" && method=="POST") {
+        if (m_webPairRate.elapsed()>=60000) { m_webPairRate.restart(); m_webPairAttempts=0; }
+        if (++m_webPairAttempts>10) { respondJson(socket,429,{{"ok",false},{"error","Too many attempts. Wait a minute."}}); return; }
+        const auto data=jsonBody();
+        const auto id=data.value("id").toString(), token=data.value("token").toString();
+        const auto record=m_trusted.value(id).toObject();
+        if (m_client || m_pending || m_webPending || m_webApproved || id.size()!=32 || token.size()!=64 || record.isEmpty()
+            || record.value("hash").toString()!=QString::fromLatin1(QCryptographicHash::hash(token.toLatin1(),QCryptographicHash::Sha256).toHex())) {
+            respondJson(socket,403,{{"ok",false},{"error","Saved browser revoked or invalid. Pair again."}}); return;
+        }
+        QByteArray random(32,Qt::Uninitialized); for (auto &byte:random) byte=char(QRandomGenerator::system()->generate()&255);
+        m_webToken=random.toHex(); m_webName=record.value("name").toString(); activateWeb(m_webName);
+        respondJson(socket,200,{{"ok",true},{"status","approved"}},
+            "Set-Cookie: abm_web="+m_webToken+"; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200\r\n"); return;
+    }
+    if (path=="/api/command" && method=="POST") {
+        if (!webCookieMatches(headers) || !m_webApproved) { respondJson(socket,401,{{"ok",false},{"error","Approve this browser on the PC first."}}); return; }
+        if (m_webExpires>0 && QDateTime::currentMSecsSinceEpoch()>m_webExpires) {
+            endWeb(tr("Browser session expired. Pair again.")); respondJson(socket,401,{{"ok",false},{"status","expired"}}); return;
+        }
+        if (m_webRate.elapsed()>=1000) { m_webRate.restart(); m_webCommands=m_webMessages=0; }
+        if (++m_webMessages>64) { respondJson(socket,429,{{"ok",false},{"error","Message rate exceeded."}}); return; }
+        const auto data=jsonBody();
+        const double seq=data.value("seq").toDouble(-1);
+        if (!data.contains("action") || !data.value("args").isObject() || !data.value("target").isObject()
+            || !std::isfinite(seq) || seq<=m_webSequence || seq>1e9 || std::floor(seq)!=seq) {
+            respondJson(socket,400,{{"ok",false},{"error","Invalid or repeated command."}}); return;
+        }
+        if (++m_webCommands>10) { respondJson(socket,429,{{"ok",false},{"error","Command rate exceeded."}}); return; }
+        m_webSequence=qint64(seq);
+        respondJson(socket,200,{{"ok",true},{"message",dispatch(data)}}); return;
+    }
+    if (path=="/api/unpair" && method=="POST") {
+        if (!webCookieMatches(headers)) { respondJson(socket,401,{{"ok",false},{"error","No browser session."}}); return; }
+        endWeb(tr("Browser disconnected. Approve a new pairing to resume control."));
+        respondJson(socket,200,{{"ok",true}},
+            "Set-Cookie: abm_web=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0\r\n"); return;
+    }
+    if (path.startsWith("/api/")) respondJson(socket,404,{{"ok",false},{"error","Not found."}});
+    else respond(socket,404,"text/plain; charset=utf-8","Not found.");
+}
 QJsonObject MobileHost::target() const {
     const auto state = m_backend->state(); const auto workshop = state.value("workshop").toMap();
     return {{"session",state.value("sessionId").toString()},{"vehicle",QJsonValue::fromVariant(state.value("vehicleId"))},

@@ -2,6 +2,8 @@
 
 The separate public [ABM Mobile repository](https://github.com/DauphinDM/ABM-Mobile) adapts PC ABM's Qt Quick dashboard for Android and adds an independent native SwiftUI app for iOS 26+. The iOS app uses system Liquid Glass navigation and controls. Both use the same **Connect** protocol. **You need PC ABM 0.13.0 or newer.** The older 0.12.0 release doesn't have the host. This change doesn't replace any existing release assets.
 
+The same PC listener also serves a browser control page for older devices that can't install the mobile apps. It uses the same pairing secret, explicit PC approval, command allowlist, and game checks. See [browser control](#browser-control-for-older-devices).
+
 Android development APKs build in CI. iOS provides simulator artifacts and an unsigned arm64 device IPA that needs your own local signing and provisioning. A simulator app can't be installed on an iPhone. See [native iOS notes](https://github.com/DauphinDM/ABM-Mobile/blob/main/docs/ios.md). An earlier locally re-signed iPhone build was installed over USB and paired over Wi-Fi. The new USB transport and remembered-device flow still need physical-device testing. This isn't general signing-tool or live-game certification.
 
 ## Pairing
@@ -13,6 +15,15 @@ Android development APKs build in CI. iOS provides simulator artifacts and an un
 5. Later, enable the PC listener and tap **Reconnect** on the phone. A remembered device doesn't need a new pairing link. There is no automatic reconnect. **Stop** disconnects but keeps saved devices. **Forget all devices** on the PC revokes them and stops access. QR scanning and discovery are not included.
 
 The PC needs Qt 6.8+ with a working TLS backend and the `openssl` executable on PATH to create the local certificate the first time. On Windows, that may mean a separate OpenSSL installation. The current Windows ZIP doesn't supply its CLI. Failures show up in Connect instead of falling back to plaintext. On Linux, private identity files are stored owner-only under the app config directory's `mobile/` subdirectory. On Windows, normal account configuration-directory ACLs apply. ABM doesn't automate ACL hardening.
+
+## Browser control for older devices
+
+1. Enable remote access in PC **Connect**. The existing HTTPS listener on port 44445 serves the browser page as well as the mobile apps.
+2. Open the displayed **browser address** on the older phone, tablet or computer. It must be on the same trusted private network. Accept the self-signed certificate warning only for this PC and this network; a certificate warning over the internet is never acceptable.
+3. Paste the same two-minute pairing link (or its 64-character secret) and enter a browser name. Request approval, then approve that browser on the PC. The browser and native phone cannot control ABM at the same time.
+4. The page provides Drive telemetry, Workshop controls, Garage model/configuration selection with spawn/replace, Session roster/owned-vehicle switching and disconnect controls. It does not load Garage thumbnails or update checks. A dispatch receipt is not proof that the game accepted the request.
+
+The browser session uses an HttpOnly, Secure, SameSite=Strict cookie and expires after 12 hours. The pairing secret is not stored in the page. If **Remember this device** was selected during PC approval, the browser may store a revocable token in local storage for a **Resume saved browser** action; use **Forget saved browser** to remove it from that browser and **Forget all devices** on the PC to revoke it everywhere. Stopping access closes the listener immediately. All actions still require a live game, the exact frozen target, an owner-permitted stopped vehicle where applicable, and server policy permission.
 
 ## Firewall setup and a stuck secure connection
 

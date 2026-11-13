@@ -3,7 +3,7 @@
   "id": "snobbledev.abm",
   "name": "ABM",
   "description": "BeamNG launcher, BeamMP controls and local telemetry. Right-click for the standalone dashboard.",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "author": "snobbledev",
   "kinds": ["bar-widget"],
   "entryPoints": {"barWidget": "AbmWidget.qml"},

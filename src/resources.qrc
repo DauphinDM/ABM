@@ -23,6 +23,9 @@
   <file>CommandPalette.qml</file>
   <file>agent-skill.md</file>
   <file>i18n/en.json</file>
+  <file alias="web/index.html">web/index.html</file>
+  <file alias="web/app.css">web/app.css</file>
+  <file alias="web/app.js">web/app.js</file>
   <file alias="bridge/beamdeck.lua">../game/lua/ge/extensions/beamdeck.lua</file>
   <file alias="bridge/modScript.lua">../game/scripts/beamdeck/modScript.lua</file>
   <file alias="bridge/abmTuning.lua">../game/lua/vehicle/extensions/abmTuning.lua</file>

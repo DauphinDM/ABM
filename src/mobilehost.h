@@ -21,6 +21,7 @@ class MobileHost : public QObject {
     Q_PROPERTY(QString connectedDevice READ connectedDevice NOTIFY changed)
     Q_PROPERTY(QStringList addresses READ addresses CONSTANT)
     Q_PROPERTY(int rememberedCount READ rememberedCount NOTIFY changed)
+    Q_PROPERTY(QString browserUrl READ browserUrl NOTIFY changed)
 public:
     explicit MobileHost(Backend *backend, const QString &directory = {}, QObject *parent = nullptr);
     ~MobileHost() override;
@@ -31,6 +32,7 @@ public:
     QString connectedDevice() const { return m_device; }
     QStringList addresses() const;
     int rememberedCount() const { return m_trusted.size(); }
+    QString browserUrl() const;
     QHostAddress listenAddress() const { return m_server.serverAddress(); }
     quint16 listenPort() const { return m_server.serverPort(); }
     static bool localAddress(const QHostAddress &address);
@@ -41,6 +43,7 @@ public:
     Q_INVOKABLE void forgetDevices();
     Q_INVOKABLE void reject();
     Q_INVOKABLE void copyPairingLink();
+    Q_INVOKABLE void copyBrowserUrl();
     QJsonObject snapshot() const;
 signals:
     void changed();
@@ -48,6 +51,15 @@ private:
     void receive(QSslSocket *socket);
     void send(QSslSocket *socket, const QJsonObject &message);
     void fail(QSslSocket *socket, const QString &message);
+    void handleHttp(QSslSocket *socket);
+    void handleHttpRequest(QSslSocket *socket, const QByteArray &method, const QByteArray &target,
+                           const QHash<QByteArray, QByteArray> &headers, const QByteArray &body);
+    void respond(QSslSocket *socket, int status, const QByteArray &type, const QByteArray &body,
+                 const QByteArray &extra = {}, bool headOnly = false);
+    void respondJson(QSslSocket *socket, int status, const QJsonObject &body, const QByteArray &extra = {}, bool headOnly = false);
+    bool webCookieMatches(const QHash<QByteArray, QByteArray> &headers) const;
+    void activateWeb(const QString &name);
+    void endWeb(const QString &message);
     QJsonObject target() const;
     QString dispatch(const QJsonObject &command);
     void activate(QSslSocket *socket, const QString &name);
@@ -67,4 +79,10 @@ private:
     QSet<QString> m_imageRequests;
     QQueue<QString> m_images;
     QTimer m_imageTimer;
+    QByteArray m_webToken;
+    bool m_webPending = false, m_webApproved = false;
+    QString m_webName, m_webTrustedId, m_webTrustedToken;
+    qint64 m_webExpires = 0, m_webSequence = 0;
+    QElapsedTimer m_webRate, m_webPairRate;
+    int m_webCommands = 0, m_webMessages = 0, m_webPairAttempts = 0;
 };
