@@ -26,10 +26,11 @@ bool LocalTls::generate(QByteArray &certificate, QByteArray &privateKey) {
         || !X509_gmtime_adj(X509_getm_notBefore(cert.get()),-300)
         || !X509_gmtime_adj(X509_getm_notAfter(cert.get()),3650L*24*60*60)
         || X509_set_pubkey(cert.get(),key.get())!=1) return false;
-    auto *subject=X509_get_subject_name(cert.get());
-    if (!subject || X509_NAME_add_entry_by_txt(subject,"CN",MBSTRING_ASC,
+    std::unique_ptr<X509_NAME, decltype(&X509_NAME_free)> subject(X509_NAME_new(),X509_NAME_free);
+    if (!subject || X509_NAME_add_entry_by_txt(subject.get(),"CN",MBSTRING_ASC,
             reinterpret_cast<const unsigned char *>("ABM Local Companion"),-1,-1,0)!=1
-        || X509_set_issuer_name(cert.get(),subject)!=1) return false;
+        || X509_set_subject_name(cert.get(),subject.get())!=1
+        || X509_set_issuer_name(cert.get(),subject.get())!=1) return false;
     X509V3_CTX extensions;
     X509V3_set_ctx(&extensions,cert.get(),cert.get(),nullptr,nullptr,0);
     for (const auto &entry : {std::pair<int,const char *>{NID_basic_constraints,"critical,CA:FALSE"},
