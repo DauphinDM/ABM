@@ -270,6 +270,7 @@ void MobileHost::activateWeb(const QString &name) {
 }
 void MobileHost::endWeb(const QString &message) {
     if (m_webApproved) m_backend->cancelPowerEdits();
+    m_device.clear();
     m_webToken.clear(); m_webPending=m_webApproved=false; m_webName.clear(); m_webTrustedId.clear(); m_webTrustedToken.clear();
     m_webExpires=0; m_webSequence=0; m_webCommands=m_webMessages=0;
     m_pendingName.clear();
@@ -355,7 +356,8 @@ void MobileHost::handleHttpRequest(QSslSocket *socket, const QByteArray &method,
         return error.error==QJsonParseError::NoError && doc.isObject() ? doc.object() : QJsonObject{}; };
     if (read && (path=="/" || path=="/index.html" || path=="/app.css" || path=="/app.js")) {
         const QByteArray type=path=="/app.css"?"text/css; charset=utf-8":path=="/app.js"?"application/javascript; charset=utf-8":"text/html; charset=utf-8";
-        QFile file(QStringLiteral(":/web") + QString::fromLatin1(path=="/" ? "/index.html" : path));
+        const QByteArray assetPath = path=="/" ? QByteArray("/index.html") : path;
+        QFile file(QStringLiteral(":/web") + QString::fromLatin1(assetPath));
         if (!file.open(QIODevice::ReadOnly)) { respond(socket,500,"text/plain; charset=utf-8","Web interface unavailable."); return; }
         respond(socket,200,type,file.readAll(),{},head); return;
     }
@@ -366,7 +368,10 @@ void MobileHost::handleHttpRequest(QSslSocket *socket, const QByteArray &method,
         }
         if (m_webApproved) {
             QJsonObject out{{"ok",true},{"status","approved"},{"device",m_webName},{"seq",double(m_webSequence)},{"snapshot",snapshot()}};
-            if (!m_webTrustedId.isEmpty()) { out.insert("trusted",QJsonObject{{"id",m_webTrustedId},{"token",m_webTrustedToken}}); m_webTrustedId.clear(); m_webTrustedToken.clear(); }
+            if (!m_webTrustedId.isEmpty()) {
+                out.insert("trusted",QJsonObject{{"id",m_webTrustedId},{"token",m_webTrustedToken}});
+                if (!head) { m_webTrustedId.clear(); m_webTrustedToken.clear(); }
+            }
             respondJson(socket,200,out,{},head); return;
         }
         if (m_webPending) { respondJson(socket,200,{{"ok",true},{"status","pending"},{"device",m_webName}},{},head); return; }

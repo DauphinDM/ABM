@@ -25,6 +25,8 @@ The PC needs Qt 6.8+ with a working TLS backend and the `openssl` executable on 
 
 The browser session uses an HttpOnly, Secure, SameSite=Strict cookie and expires after 12 hours. The pairing secret is not stored in the page. If **Remember this device** was selected during PC approval, the browser may store a revocable token in local storage for a **Resume saved browser** action; use **Forget saved browser** to remove it from that browser and **Forget all devices** on the PC to revoke it everywhere. Stopping access closes the listener immediately. All actions still require a live game, the exact frozen target, an owner-permitted stopped vehicle where applicable, and server policy permission.
 
+Browser requests time out after five seconds. If a state check fails, the page clears its readings and disables game controls until a fresh snapshot arrives. It retries state checks, not commands. A command timeout doesn't prove that nothing happened; check the current game state before trying again.
+
 ## Firewall setup and a stuck secure connection
 
 If the phone stays on **Connecting securely to PC**, first check that PC Connect says it's listening, that the link is fresh, that iPhone Local Network permission is allowed, and that both devices are on the same trusted LAN. A listening socket doesn't prove that a firewall lets the phone reach it. Guest Wi-Fi isolation can also block traffic.

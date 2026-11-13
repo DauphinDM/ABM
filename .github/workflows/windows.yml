@@ -28,6 +28,8 @@ jobs:
         run: ./bin/build-windows.ps1 -Test
       - name: Test plugin model
         run: node tests/plugin_test.cjs
+      - name: Test browser control client
+        run: node tests/web_test.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: ABM-Windows-x64

@@ -6,6 +6,8 @@
 - Pairing still needs the same two-minute secret and explicit PC approval. The browser gets an HttpOnly, Secure, SameSite=Strict 12-hour session cookie. Only one controller is allowed at a time, and remembered-browser tokens can be revoked.
 - HTTP handling accepts one bounded request per TLS connection and checks Host, Origin, and a custom header. Bodies must use Content-Length. Responses set no-store and strict CSP, COOP, and CORP headers. Browser commands go through the existing exact target, sequence, rate, ownership, stopped, sandbox, and server-policy checks. No arbitrary RPC or thumbnails are exposed.
 - Added QtTest coverage for static assets, pairing, pending and approved state, one-controller refusal, target rejection, unpair, saved-browser resume, and malformed or oversized requests.
+- Fixed the MSVC build error in browser asset routing. Browser requests now time out after five seconds, and failed state polls clear stale readings and disable game controls until fresh state arrives. Timed-out commands aren't replayed.
+- Browser disconnect now clears the PC's connected-device status. A HEAD request no longer consumes the saved-browser credential before the browser can retrieve it, and reconnect timeouts no longer delete saved access. Added client regression tests to Linux and Windows checks.
 
 ## 0.13.0: App updates and mobile companions (preview)
 

@@ -12,5 +12,6 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_FORCE_STDERR_LOGGING=1 ./
 cd "$ROOT"
 luajit tests/game_test.lua
 node tests/plugin_test.cjs
+node tests/web_test.cjs
 python tests/cli_test.py
 python tests/standalone_test.py

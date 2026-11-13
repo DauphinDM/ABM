@@ -35,7 +35,7 @@ ScrollView {
             PlainLabel { Layout.fillWidth: true; color: "#a0aabb"; font.pixelSize: 12
                 text: pane.demo ? qsTr("Demo mode: networking is disabled.") : pane.host ? pane.host.message : qsTr("Phone connection is unavailable.") }
             PlainLabel { visible: !!(pane.host && pane.host.connectedDevice); Layout.fillWidth: true; color: "#edf1f7"; font.pixelSize: 13
-                text: qsTr("Connected phone: %1").arg(pane.host ? pane.host.connectedDevice : "") }
+                text: qsTr("Connected device: %1").arg(pane.host ? pane.host.connectedDevice : "") }
             PlainLabel { visible: transport.currentIndex>0; Layout.fillWidth: true; color: "#a0aabb"; font.pixelSize: 12
                 text: (pane.usb ? pane.usb.message : "")+"\n"+qsTr("iPhone: install iproxy/libusbmuxd and Apple USB drivers where needed, unlock/trust the PC, then enable USB mode in the mobile app. Android: adb and explicit USB-debugging authorization are required. Cable mode binds only to loopback and does not open the LAN firewall. Keep only the intended phone connected.") }
         }
@@ -92,7 +92,7 @@ ScrollView {
             Layout.fillWidth: true
             PlainLabel { text: qsTr("Safe by default"); color: "#edf1f7"; font.pixelSize: 15 }
             PlainLabel { Layout.fillWidth: true; color: "#a0aabb"; font.pixelSize: 12
-                text: qsTr("TLS and certificate pinning protect every connection. The browser page uses an HttpOnly, Secure, SameSite session cookie and the same PC approval and fixed game actions. Remembering a device stores a revocable credential; stop closes all connections, Forget devices revokes saved credentials. Vehicle edits require a stopped, owned vehicle and server permission; spawning into an empty map does not require an existing vehicle. Never forward the port to the internet. First-time certificate creation requires OpenSSL on the PC's PATH.") }
+                text: qsTr("Native apps pin the PC's TLS certificate. Browsers use HTTPS with the PC's local certificate; verify that you're connecting to your PC before accepting its certificate warning. The browser page uses an HttpOnly, Secure, SameSite session cookie and the same PC approval and fixed game actions. Remembering a device stores a revocable credential; stop closes all connections, Forget devices revokes saved credentials. Vehicle edits require a stopped, owned vehicle and server permission; spawning into an empty map does not require an existing vehicle. Never forward the port to the internet. First-time certificate creation requires OpenSSL on the PC's PATH.") }
         }
     }
     Dialog {

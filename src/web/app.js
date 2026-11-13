@@ -26,16 +26,24 @@
   }
 
   function api(method, path, body, done) {
-    var xhr = new XMLHttpRequest();
+    var xhr = new XMLHttpRequest(), completed = false;
+    function finish() {
+      if (completed) return;
+      completed = true;
+      var data = null;
+      try { data = JSON.parse(xhr.responseText); } catch (ignore) {}
+      done(xhr.status, data);
+    }
     xhr.open(method, path, true);
+    xhr.timeout = 5000;
     xhr.setRequestHeader('X-ABM-Web', '1');
     if (body !== null) xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.onreadystatechange = function () {
       if (xhr.readyState !== 4) return;
-      var data = null;
-      try { data = JSON.parse(xhr.responseText); } catch (ignore) {}
-      done(xhr.status, data);
+      finish();
     };
+    xhr.onerror = finish;
+    xhr.ontimeout = finish;
     xhr.send(body === null ? null : JSON.stringify(body));
   }
 
@@ -69,6 +77,8 @@
         show('pair');
         updateResume();
       } else {
+        snapshot = null;
+        render();
         message('Connection lost. Retrying...');
         schedule(2000);
         return;
@@ -146,9 +156,10 @@
         pairMessage('');
         poll();
       } else {
-        clearTrusted();
+        if (code === 403) clearTrusted();
         updateResume();
-        pairMessage((data && (data.error || data.message)) || 'Saved browser access was revoked. Pair again.');
+        pairMessage((data && (data.error || data.message)) || (code === 403
+          ? 'Saved browser access was revoked. Pair again.' : 'Could not reconnect. Your saved access is kept; try again when the PC is available.'));
       }
     });
   }
@@ -200,7 +211,7 @@
     var connected = stateName === 'approved' && !!state.connected;
     var badge = id('badge');
     badge.className = 'badge ' + (connected ? 'on' : 'off');
-    badge.textContent = connected ? 'GAME CONNECTED' : stateName === 'approved' ? 'PC CONNECTED' : 'NOT PAIRED';
+    badge.textContent = connected ? 'GAME CONNECTED' : stateName === 'approved' ? (snapshot ? 'PC CONNECTED' : 'RECONNECTING') : 'NOT PAIRED';
     setText('connectionText', deviceName ? ('Browser: ' + deviceName) : 'Browser connected');
     message(snapshot && snapshot.actionMessage ? snapshot.actionMessage : '');
     setText('speed', finite(telemetry.speed) ? format(Number(telemetry.speed) * 3.6, 0) : '--');

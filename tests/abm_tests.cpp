@@ -285,8 +285,12 @@ private slots:
         QVERIFY(page.raw.contains("Content-Security-Policy: default-src 'none'"));
         QVERIFY(page.raw.contains("Cache-Control: no-store")); QVERIFY(!page.raw.contains("unsafe-inline"));
         QCOMPARE(send("GET","/app.js").status,200); QCOMPARE(send("GET","/api/state").status,401);
+        const auto css=send("GET","/app.css"); QCOMPARE(css.status,200); QVERIFY(!css.body.isEmpty());
+        const auto index=send("GET","/index.html"); QCOMPARE(index.status,200); QCOMPARE(index.body,page.body);
+        const auto headPage=send("HEAD","/"); QCOMPARE(headPage.status,200); QVERIFY(headPage.body.isEmpty());
         const auto pairBody=QJsonDocument(QJsonObject{{"secret",invitation.value("secret")},{"device","Browser test"}}).toJson(QJsonDocument::Compact);
         QCOMPARE(send("POST","/api/pair",pairBody,QByteArray(),false).status,403);
+        QCOMPARE(send("POST","/api/pair",pairBody,QByteArray(),true,true,"Origin: https://example.invalid\r\n").status,403);
         QCOMPARE(send("POST","/api/pair",QJsonDocument(QJsonObject{{"secret",QString(64,'0')},{"device","Browser test"}}).toJson(QJsonDocument::Compact)).status,403);
         const auto pending=send("POST","/api/pair",pairBody); QCOMPARE(pending.status,200);
         QCOMPARE(QJsonDocument::fromJson(pending.body).object().value("status").toString(),QString("pending"));
@@ -300,6 +304,8 @@ private slots:
         const auto pendingState=send("GET","/api/state",QByteArray(),cookie);
         QCOMPARE(pendingState.status,200); QCOMPARE(QJsonDocument::fromJson(pendingState.body).object().value("status").toString(),QString("pending"));
         host.approveRemembered(true); QCOMPARE(host.connectedDevice(),QString("Browser test"));
+        const auto headApproved=send("HEAD","/api/state",QByteArray(),cookie);
+        QCOMPARE(headApproved.status,200); QVERIFY(headApproved.body.isEmpty());
         const auto approved=send("GET","/api/state",QByteArray(),cookie); QCOMPARE(approved.status,200);
         const auto approvedJson=QJsonDocument::fromJson(approved.body).object();
         QCOMPARE(approvedJson.value("status").toString(),QString("approved")); QVERIFY(approvedJson.value("snapshot").isObject()); QVERIFY(approvedJson.value("seq").isDouble());
@@ -311,11 +317,13 @@ private slots:
             {"args",QJsonObject{}},{"target",QJsonObject{{"vehicle",99}}}}).toJson(QJsonDocument::Compact);
         const auto receipt=send("POST","/api/command",commandBody,QByteArray(),true,true,"Cookie: "+cookie+"\r\n");
         QCOMPARE(receipt.status,200); QVERIFY(receipt.body.contains("changed"));
+        QCOMPARE(send("POST","/api/command",commandBody,cookie).status,400);
         QCOMPARE(send("POST","/api/command",QJsonDocument(QJsonObject{{"seq",999},{"action","repair"},{"args",QJsonObject{}}}).toJson(QJsonDocument::Compact),cookie).status,400);
         QCOMPARE(send("POST","/api/pair",pairBody,cookie,true,false,"Transfer-Encoding: chunked\r\n").status,400);
         QCOMPARE(send("POST","/api/pair",pairBody,cookie,true,false,"Content-Length: 20000\r\n").status,413);
         QCOMPARE(send("GET","/api/unknown").status,404);
         QCOMPARE(send("POST","/api/unpair",QByteArray(),cookie).status,200);
+        QVERIFY(host.connectedDevice().isEmpty());
         QCOMPARE(send("GET","/api/state",QByteArray(),cookie).status,401);
         QCOMPARE(send("POST","/api/resume",QJsonDocument(QJsonObject{{"id",trusted.value("id")},{"token",QString(64,'0')}}).toJson(QJsonDocument::Compact)).status,403);
         const auto resumed=send("POST","/api/resume",QJsonDocument(trusted).toJson(QJsonDocument::Compact)); QCOMPARE(resumed.status,200);
