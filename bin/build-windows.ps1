@@ -19,7 +19,7 @@ if ($Test) {
         Checked 'qmake' @("$root/tests/abm_tests.pro", 'CONFIG+=release', 'CONFIG-=debug')
         Checked 'nmake' @('/NOLOGO')
         Copy-Item "$env:VCPKG_ROOT/installed/x64-windows/bin/*.dll" "$root/build/tests/release/" -Force
-        Checked 'windeployqt' @('--release', '--qmldir', "$root/src", "$root/build/tests/release/abm_tests.exe")
+        Checked 'windeployqt' @('--release', '--force-openssl', '--qmldir', "$root/src", "$root/build/tests/release/abm_tests.exe")
         $env:QT_QPA_PLATFORM = 'offscreen'
         $env:QT_QUICK_BACKEND = 'software'
         $env:QT_FORCE_STDERR_LOGGING = '1'
@@ -48,7 +48,12 @@ if ($LASTEXITCODE -ne 0 -or $qtVersion -notmatch '^6\.\d+\.\d+$') { throw 'Canno
 foreach ($license in @('LGPL-3.0-only', 'GPL-3.0-only')) {
     Invoke-WebRequest "https://raw.githubusercontent.com/qt/qtbase/v$qtVersion/LICENSES/$license.txt" -OutFile "$licenses/$license.txt"
 }
-Checked 'windeployqt' @('--release', '--qmldir', "$root/src", '--no-translations', "$root/dist/ABM/ABM.exe")
+Checked 'windeployqt' @('--release', '--force-openssl', '--qmldir', "$root/src", '--no-translations', "$root/dist/ABM/ABM.exe")
+foreach ($pattern in @('libcrypto*.dll', 'libssl*.dll', 'tls/qopensslbackend.dll')) {
+    if (-not (Get-ChildItem "$root/dist/ABM/$pattern" -ErrorAction SilentlyContinue)) {
+        throw "Missing bundled TLS dependency: $pattern"
+    }
+}
 if ($Test) {
     $env:BEAMSIDE_BINARY = "$root/dist/ABM/ABM.exe"
     Checked 'python' @("$root/tests/cli_test.py")

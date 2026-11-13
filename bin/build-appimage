@@ -48,7 +48,12 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 version=$(sed -n 's/^pkgver=//p' "$root/pkgbuild/PKGBUILD")
 export VERSION="$version" OUTPUT="$root/dist/ABM-$version-x86_64.AppImage"
 cd "$stage"
-"$tools/linuxdeploy-x86_64.AppImage" --appdir "$appdir" --plugin qt --output appimage
+# Qt resolves OpenSSL's TLS runtime dynamically; it isn't always found by ELF scanning.
+tlsPlugin="$("$QMAKE" -query QT_INSTALL_PLUGINS)/tls/libqopensslbackend.so"
+test -f "$tlsPlugin"
+mkdir -p "$appdir/usr/plugins/tls"
+install -m755 "$tlsPlugin" "$appdir/usr/plugins/tls/"
+"$tools/linuxdeploy-x86_64.AppImage" --appdir "$appdir" --library "$(pkg-config --variable=libdir openssl)/libssl.so.3" --plugin qt --output appimage
 # A plain archive uses the same bundled runtime without requiring FUSE.
 tar -C "$stage" -czf "$root/dist/ABM-$version-x86_64.tar.gz" ABM.AppDir
 cd "$root/dist"

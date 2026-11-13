@@ -63,7 +63,7 @@ On Omarchy, open **ABM** from the launcher. Left-click the bar widget to start B
 
 ### Build from source
 
-You'll need a C++17 compiler, make, Qt 6 (base, declarative, Quick Controls, Wayland, and SVG runtime support), libarchive, and qmake6. The full test suite also needs Python 3, Node.js, and LuaJIT. Linux build scripts use `flock`.
+You'll need a C++17 compiler, make, Qt 6 (base, declarative, Quick Controls, Wayland, and SVG runtime support), libarchive, OpenSSL 3 development libraries, and qmake6. The full test suite also needs Python 3, Node.js, and LuaJIT. Linux build scripts use `flock`.
 
 ```sh
 gh repo clone DauphinDM/ABM

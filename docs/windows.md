@@ -17,7 +17,7 @@ Windows uses per-user local named pipes for commands and IPv4 loopback UDP port 
 
 ## Development: pairing a phone
 
-ABM 0.13.0 adds **Connect**. The older 0.12.0 release doesn't include it. Creating the TLS identity the first time needs the `openssl` executable on PATH. The ZIP doesn't supply its CLI. Keep your phone and PC on a trusted LAN, enable access, transfer the fresh private link, and approve the phone on the PC.
+ABM 0.13.0 adds **Connect**. The older 0.12.0 release doesn't include it. Current builds create the local TLS identity automatically and bundle the required libraries. No separate OpenSSL installation or PATH change is needed. Keep your phone and PC on a trusted LAN, enable access, transfer the fresh private link, and approve the phone on the PC.
 
 If the phone stays on "Connecting securely," open **Firewall & connection help** on PC Connect. **Allow LAN pairing through firewall…** shows the actual subnet, bound address, and TCP port before asking for UAC approval. The rule is limited to this executable, that address and port, your local subnet, and **Private** network profiles. It never changes a Public network to Private or disables Windows Firewall. The rule stays until you remove it in Windows Firewall. Stopping Connect closes the listener and revokes phone approval. Canceling UAC is fine. Other security products or guest Wi-Fi isolation can still block access.
 
@@ -25,11 +25,11 @@ Use a new two-minute pairing link after setup. Never forward the companion port 
 
 ## Building
 
-Use a Windows x64 MSVC developer shell with Qt 6.8.3 or newer (Desktop MSVC 2022 x64), Python 3 for CLI tests, and vcpkg. Install the archive reader:
+Use a Windows x64 MSVC developer shell with Qt 6.8.3 or newer (Desktop MSVC 2022 x64), Python 3 for CLI tests, and vcpkg. Install the archive reader and cryptographic development libraries:
 
 ```powershell
 $env:VCPKG_ROOT = 'C:/vcpkg'
-& "$env:VCPKG_ROOT/vcpkg.exe" install libarchive:x64-windows
+& "$env:VCPKG_ROOT/vcpkg.exe" install libarchive:x64-windows openssl:x64-windows
 ./bin/build-windows.ps1 -Test
 ```
 

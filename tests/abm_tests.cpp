@@ -33,6 +33,8 @@
 #include <QStringConverter>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QSslKey>
+#include <QSslCertificate>
 
 namespace {
 class CablePeer : public QTcpServer {
@@ -249,8 +251,40 @@ private slots:
         auto *pane=qvariant_cast<QObject *>(window->property("pane")); QVERIFY(pane); pane->setProperty("demo",true);
         QTRY_VERIFY(!button->isEnabled()); QVERIFY(warnings.isEmpty());
     }
+    void localTlsIdentityNeedsNoExternalToolsAndKeepsItsFingerprint() {
+        QVERIFY(QSslSocket::supportsSsl());
+        QTemporaryDir dir; QVERIFY(dir.isValid());
+        const auto oldPath=qgetenv("PATH");
+        struct PathGuard { QByteArray value; ~PathGuard() { qputenv("PATH",value); } } guard{oldPath};
+        qputenv("PATH",dir.path().toUtf8());
+        QVERIFY(QStandardPaths::findExecutable("openssl").isEmpty());
+        Backend backend(dir.filePath("missing-state.json"));
+        const auto directory=dir.filePath("mobile"); MobileHost host(&backend,directory);
+        QVERIFY2(host.start("127.0.0.1",0),qPrintable(host.message()));
+        QFile certFile(directory+"/certificate.pem"), keyFile(directory+"/private-key.pem");
+        QVERIFY(certFile.open(QIODevice::ReadOnly)); QVERIFY(keyFile.open(QIODevice::ReadOnly));
+        const auto certificate=certFile.readAll(), privateKey=keyFile.readAll(); certFile.close(); keyFile.close();
+        const QSslCertificate cert(certificate); const QSslKey key(privateKey,QSsl::Rsa);
+        QVERIFY(!cert.isNull()); QVERIFY(!key.isNull()); QCOMPARE(key.length(),2048);
+        QVERIFY(cert.effectiveDate()<=QDateTime::currentDateTimeUtc());
+        QVERIFY(cert.expiryDate()>QDateTime::currentDateTimeUtc().addYears(9));
+#ifdef Q_OS_UNIX
+        QVERIFY(!(QFile::permissions(keyFile.fileName()) & (QFileDevice::ReadGroup|QFileDevice::WriteGroup|QFileDevice::ReadOther|QFileDevice::WriteOther)));
+#endif
+        const auto fingerprint=cert.digest(QCryptographicHash::Sha256);
+        host.stop(); QVERIFY2(host.start("127.0.0.1",0),qPrintable(host.message()));
+        auto invite=[](const MobileHost &value) { return QJsonDocument::fromJson(QByteArray::fromBase64(value.pairingLink().mid(11).toLatin1(),QByteArray::Base64UrlEncoding)).object(); };
+        QCOMPARE(invite(host).value("sha256").toString(),QString::fromLatin1(fingerprint.toHex()));
+        MobileHost other(&backend,dir.filePath("other")); QVERIFY(other.start("127.0.0.1",0));
+        QVERIFY(invite(other).value("sha256")!=invite(host).value("sha256")); other.stop(); host.stop();
+        // Invalid existing identities aren't silently rotated, which would break pinning.
+        write(keyFile.fileName(),"invalid key"); QVERIFY(!host.start("127.0.0.1",0)); QVERIFY(!host.running());
+        QVERIFY(certFile.open(QIODevice::ReadOnly)); QCOMPARE(certFile.readAll(),certificate); certFile.close();
+        const auto blocked=dir.filePath("blocked"); write(blocked,"not a directory");
+        MobileHost unavailable(&backend,blocked); QVERIFY(!unavailable.start("127.0.0.1",0)); QVERIFY(!unavailable.running());
+    }
     void browserControlPairsApprovesResumesAndRejectsUnsafeRequests() {
-        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local OpenSSL certificate generation is unavailable");
+        QVERIFY(QSslSocket::supportsSsl());
         QTemporaryDir dir; Backend backend(dir.filePath("missing-state.json"));
         MobileHost host(&backend,dir.filePath("mobile")); QVERIFY(host.start("127.0.0.1",0));
         QCOMPARE(host.browserUrl(),QString("https://127.0.0.1:%1/").arg(host.listenPort()));
@@ -334,7 +368,7 @@ private slots:
         host.stop(); QVERIFY(!host.running());
     }
     void mobileHostRequiresTlsApprovalTargetAndRevocation() {
-        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local OpenSSL certificate generation is unavailable");
+        QVERIFY(QSslSocket::supportsSsl());
         Fixture f; QVERIFY(f.start()); Backend backend(f.path);
         auto state = QJsonDocument::fromJson(packet()).object();
         state.insert("multiplayer",false); state.insert("vehicleId",42); state.insert("vehicleOwned",true);
@@ -405,7 +439,7 @@ private slots:
         QTRY_COMPARE(replay.state(),QAbstractSocket::UnconnectedState); QTRY_VERIFY(host.connectedDevice().isEmpty());
     }
     void mobileCompanionRemembersRevokesStreamsPhotosAndSpawnsIntoEmptyMap() {
-        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local TLS identity generation is unavailable");
+        QVERIFY(QSslSocket::supportsSsl());
         Fixture f; QVERIFY(f.start()); Backend backend(f.path); Previews previews; backend.setPreviews(&previews);
         const auto root=f.dir.filePath("game"); QDir().mkpath(root+"/vehicles/etk800");
         QImage image(640,400,QImage::Format_RGB32); image.fill(Qt::yellow); QVERIFY(image.save(root+"/vehicles/etk800/default.jpg"));
@@ -466,7 +500,7 @@ private slots:
     }
     void androidUsbMappingDoesNotReplaceUnrelatedForwards() {
 #ifdef Q_OS_UNIX
-        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local TLS identity generation is unavailable");
+        QVERIFY(QSslSocket::supportsSsl());
         QTemporaryDir directory; const auto path=qgetenv("PATH");
         struct PathGuard { QByteArray value; ~PathGuard() { qputenv("PATH",value); } } guard{path};
         const auto helper=directory.filePath("adb"), log=directory.filePath("calls"), mapping=directory.filePath("mapping");
@@ -486,7 +520,7 @@ private slots:
     }
     void iphoneUsbByteBridgePreservesPinnedTlsAndPcApproval() {
 #ifdef Q_OS_UNIX
-        if (QStandardPaths::findExecutable("openssl").isEmpty() || !QSslSocket::supportsSsl()) QSKIP("Local TLS identity generation is unavailable");
+        QVERIFY(QSslSocket::supportsSsl());
         CablePeer cable; if (!cable.listen(QHostAddress::LocalHost,44448)) QSKIP("Test USB loopback port is in use");
         QTemporaryDir directory; const auto path=qgetenv("PATH");
         struct PathGuard { QByteArray value; ~PathGuard() { qputenv("PATH",value); } } guard{path};

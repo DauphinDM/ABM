@@ -92,7 +92,7 @@ ScrollView {
             Layout.fillWidth: true
             PlainLabel { text: qsTr("Safe by default"); color: "#edf1f7"; font.pixelSize: 15 }
             PlainLabel { Layout.fillWidth: true; color: "#a0aabb"; font.pixelSize: 12
-                text: qsTr("Native apps pin the PC's TLS certificate. Browsers use HTTPS with the PC's local certificate; verify that you're connecting to your PC before accepting its certificate warning. The browser page uses an HttpOnly, Secure, SameSite session cookie and the same PC approval and fixed game actions. Remembering a device stores a revocable credential; stop closes all connections, Forget devices revokes saved credentials. Vehicle edits require a stopped, owned vehicle and server permission; spawning into an empty map does not require an existing vehicle. Never forward the port to the internet. First-time certificate creation requires OpenSSL on the PC's PATH.") }
+                text: qsTr("Native apps pin the PC's TLS certificate. Browsers use HTTPS with the PC's local certificate; verify that you're connecting to your PC before accepting its certificate warning. The browser page uses an HttpOnly, Secure, SameSite session cookie and the same PC approval and fixed game actions. Remembering a device stores a revocable credential; stop closes all connections, Forget devices revokes saved credentials. Vehicle edits require a stopped, owned vehicle and server permission; spawning into an empty map does not require an existing vehicle. Never forward the port to the internet. ABM creates its local certificate automatically; no separate OpenSSL installation is needed.") }
         }
     }
     Dialog {

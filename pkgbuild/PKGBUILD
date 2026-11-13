@@ -7,9 +7,8 @@ conflicts=('beamdeck')
 replaces=('beamdeck')
 arch=('x86_64' 'aarch64')
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'qt6-svg' 'libarchive')
-optdepends=('openssl: Generate the local mobile TLS identity'
-            'libusbmuxd: Optional iPhone USB relay (iproxy)'
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'qt6-svg' 'libarchive' 'openssl')
+optdepends=('libusbmuxd: Optional iPhone USB relay (iproxy)'
             'android-tools: Optional Android USB relay (adb)'
             'polkit: Administrator prompt for optional companion firewall setup'
             'ufw: Optional private-LAN companion firewall rule on Linux')

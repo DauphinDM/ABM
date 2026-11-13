@@ -13,7 +13,7 @@ jobs:
       - name: Install build and desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libarchive-dev libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1 libegl1 patchelf desktop-file-utils curl
+          sudo apt-get install -y build-essential libarchive-dev libssl-dev pkg-config libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1 libegl1 patchelf desktop-file-utils curl
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
@@ -67,6 +67,9 @@ jobs:
             export HOME=/tmp/abm-home BEAMSIDE_CONFIG_DIR=/tmp/abm-home/config BEAMSIDE_RUNTIME_DIR=/tmp/abm-home/runtime
             export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_FORCE_STDERR_LOGGING=1
             mkdir -p "$HOME"
+            test -s /portable/ABM.AppDir/usr/lib/libcrypto.so.3
+            test -s /portable/ABM.AppDir/usr/lib/libssl.so.3
+            test -s /portable/ABM.AppDir/usr/plugins/tls/libqopensslbackend.so
             /portable/ABM.AppDir/AppRun preferences --json
             /portable/ABM.AppDir/AppRun open --demo --dev-open engine --screenshot /tmp/engine.png
             test -s /tmp/engine.png

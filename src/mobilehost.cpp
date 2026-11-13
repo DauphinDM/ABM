@@ -1,9 +1,9 @@
 #include "mobilehost.h"
 #include "backend.h"
 #include "protocol.h"
+#include "localtls.h"
 #include <QNetworkInterface>
 #include <QStandardPaths>
-#include <QProcess>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -108,16 +108,21 @@ bool MobileHost::start(const QString &address, int port) {
     if (!localAddress(host) || port < 0 || port > 65535 || !QSslSocket::supportsSsl()) {
         m_message = tr("Choose a private IPv4 address; TLS support is required."); emit changed(); return false;
     }
-    QDir().mkpath(m_directory);
+    if (!QDir().mkpath(m_directory)) { m_message=tr("Cannot create the local TLS identity folder. Check its permissions and retry."); emit changed(); return false; }
     QFile::setPermissions(m_directory, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     const auto certificatePath = m_directory + "/certificate.pem", keyPath = m_directory + "/private-key.pem";
     if (!QFile::exists(certificatePath) || !QFile::exists(keyPath)) {
-        // Generate locally; no shared application-wide key or downloaded certificate.
-        QProcess openssl;
-        openssl.start("openssl", {"req","-x509","-newkey","rsa:2048","-sha256","-nodes","-days","3650",
-                                 "-subj","/CN=ABM Local Companion","-keyout",keyPath,"-out",certificatePath});
-        if (!openssl.waitForFinished(15000) || openssl.exitStatus() != QProcess::NormalExit || openssl.exitCode() != 0) {
-            m_message = tr("Cannot create a local TLS certificate. Install OpenSSL and put openssl on PATH, then retry."); emit changed(); return false;
+        QByteArray certificate, privateKey;
+        if (!LocalTls::generate(certificate,privateKey)) {
+            m_message=tr("Cannot generate the local TLS identity. No listener started."); emit changed(); return false;
+        }
+        auto save=[](const QString &path,const QByteArray &data) {
+            QSaveFile file(path);
+            return file.open(QIODevice::WriteOnly) && file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
+                && file.write(data)==data.size() && file.commit();
+        };
+        if (!save(keyPath,privateKey) || !save(certificatePath,certificate)) {
+            m_message=tr("Cannot save the local TLS identity. Check folder permissions and free disk space, then retry."); emit changed(); return false;
         }
     }
     QFile::setPermissions(keyPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
